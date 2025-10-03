@@ -1,1 +1,0 @@
-app/serverdata-samples/*.json filter=lfs diff=lfs merge=lfs -text
