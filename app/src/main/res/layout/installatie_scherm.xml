@@ -1,0 +1,15 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:padding="24dp"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:background="@color/black"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <Button
+        android:id="@+id/buttonChooseFolder"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Deze toepassing moet kunnen bestanden inlezen, wegschrijven en bewerken.\nBevestig hierna het gebruik van de map 'Documents'. Kies de optie [Deze map gebruiken] om verder te gaan. Alle mappen en bestanden worden voor u aangemaakt indien deze nog niet bestaan. Bij een herinstallatie worden er geen bestanden overschreven!"
+        android:textAllCaps="false" />
+</LinearLayout>

@@ -1,0 +1,37 @@
+# Android/Gradle
+.gradle/
+local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+/.idea/deploymentTargetDropDown.xml
+/.idea/misc.xml
+/.cxx/
+captures/
+*.iml
+
+# Build output
+**/build/
+**/out/
+
+# NDK
+.externalNativeBuild/
+
+# Signing/keystores (nooit committen)
+*.jks
+*.keystore
+keystore.properties
+
+# Logs
+*.log
+
+# OS/Editor
+.DS_Store
+Thumbs.db
+
+# Kotlin/Gradle
+**/.kotlin
+**/.gradle
