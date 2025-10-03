@@ -1,3 +1,548 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:6d491d97cef16ccb036cf7f070081368edfc47b5fd8e980c978e6612cc5fb778
-size 10336
+{
+  "json": [
+    {
+      "id": "1",
+      "protocolid": "1",
+      "veld": "geslacht",
+      "waarde": "M",
+      "tekst": "M",
+      "sortering": "10"
+    },
+    {
+      "id": "10",
+      "protocolid": "2",
+      "veld": "leeftijd",
+      "waarde": "A",
+      "tekst": "Ad",
+      "sortering": "10"
+    },
+    {
+      "id": "11",
+      "protocolid": "2",
+      "veld": "leeftijd",
+      "waarde": "J",
+      "tekst": "Juv",
+      "sortering": "40"
+    },
+    {
+      "id": "12",
+      "protocolid": "2",
+      "veld": "leeftijd",
+      "waarde": "I",
+      "tekst": "Imm",
+      "sortering": "20"
+    },
+    {
+      "id": "16",
+      "protocolid": "2",
+      "veld": "geslacht",
+      "waarde": "M",
+      "tekst": " M ",
+      "sortering": "10"
+    },
+    {
+      "id": "14",
+      "protocolid": "2",
+      "veld": "kleed",
+      "waarde": "L",
+      "tekst": "Light",
+      "sortering": "10"
+    },
+    {
+      "id": "15",
+      "protocolid": "2",
+      "veld": "kleed",
+      "waarde": "D",
+      "tekst": "Dark",
+      "sortering": "20"
+    },
+    {
+      "id": "19",
+      "protocolid": "3",
+      "veld": "leeftijd",
+      "waarde": "A",
+      "tekst": "Adult",
+      "sortering": "10"
+    },
+    {
+      "id": "21",
+      "protocolid": "3",
+      "veld": "leeftijd",
+      "waarde": "I",
+      "tekst": "SubAd",
+      "sortering": "20"
+    },
+    {
+      "id": "22",
+      "protocolid": "3",
+      "veld": "geslacht",
+      "waarde": "M",
+      "tekst": "Male",
+      "sortering": "10"
+    },
+    {
+      "id": "23",
+      "protocolid": "3",
+      "veld": "geslacht",
+      "waarde": "F",
+      "tekst": "Female",
+      "sortering": "20"
+    },
+    {
+      "id": "24",
+      "protocolid": "3",
+      "veld": "kleed",
+      "waarde": "D",
+      "tekst": "Dark",
+      "sortering": "30"
+    },
+    {
+      "id": "26",
+      "protocolid": "2",
+      "veld": "teltype",
+      "waarde": "D",
+      "tekst": "Double count",
+      "sortering": "20"
+    },
+    {
+      "id": "25",
+      "protocolid": "2",
+      "veld": "teltype",
+      "waarde": "S",
+      "tekst": "Single count",
+      "sortering": "10"
+    },
+    {
+      "id": "27",
+      "protocolid": "2",
+      "veld": "trektype",
+      "waarde": "I",
+      "tekst": "Injured bird",
+      "sortering": "10"
+    },
+    {
+      "id": "28",
+      "protocolid": "2",
+      "veld": "trektype",
+      "waarde": "K",
+      "tekst": "Killed bird",
+      "sortering": "20"
+    },
+    {
+      "id": "17",
+      "protocolid": "2",
+      "veld": "geslacht",
+      "waarde": "F",
+      "tekst": " F ",
+      "sortering": "20"
+    },
+    {
+      "id": "18",
+      "protocolid": "2",
+      "veld": "geslacht",
+      "waarde": "FC",
+      "tekst": " FC ",
+      "sortering": "30"
+    },
+    {
+      "id": "20",
+      "protocolid": "3",
+      "veld": "leeftijd",
+      "waarde": "J",
+      "tekst": "Juv",
+      "sortering": "30"
+    },
+    {
+      "id": "7",
+      "protocolid": "2",
+      "veld": "leeftijd",
+      "waarde": "Non-Juv",
+      "tekst": "Non-juv",
+      "sortering": "30"
+    },
+    {
+      "id": "2",
+      "protocolid": "1",
+      "veld": "geslacht",
+      "waarde": "F",
+      "tekst": "F",
+      "sortering": "20"
+    },
+    {
+      "id": "3",
+      "protocolid": "1",
+      "veld": "geslacht",
+      "waarde": "FC",
+      "tekst": "FC",
+      "sortering": "30"
+    },
+    {
+      "id": "4",
+      "protocolid": "1",
+      "veld": "leeftijd",
+      "waarde": "A",
+      "tekst": "A",
+      "sortering": "10"
+    },
+    {
+      "id": "8",
+      "protocolid": "1",
+      "veld": "kleed",
+      "waarde": "L",
+      "tekst": "L",
+      "sortering": "10"
+    },
+    {
+      "id": "9",
+      "protocolid": "1",
+      "veld": "kleed",
+      "waarde": "D",
+      "tekst": "D",
+      "sortering": "20"
+    },
+    {
+      "id": "29",
+      "protocolid": "1",
+      "veld": "kleed",
+      "waarde": "B",
+      "tekst": "B",
+      "sortering": "100"
+    },
+    {
+      "id": "30",
+      "protocolid": "1",
+      "veld": "kleed",
+      "waarde": "W",
+      "tekst": "W",
+      "sortering": "110"
+    },
+    {
+      "id": "6",
+      "protocolid": "1",
+      "veld": "leeftijd",
+      "waarde": "I",
+      "tekst": "I",
+      "sortering": "20"
+    },
+    {
+      "id": "34",
+      "protocolid": "1",
+      "veld": "teltype",
+      "waarde": "C",
+      "tekst": "Clicker used",
+      "sortering": "5"
+    },
+    {
+      "id": "31",
+      "protocolid": "1",
+      "veld": "leeftijd",
+      "waarde": "2",
+      "tekst": "2",
+      "sortering": "15"
+    },
+    {
+      "id": "5",
+      "protocolid": "1",
+      "veld": "leeftijd",
+      "waarde": "1",
+      "tekst": "1",
+      "sortering": "40"
+    },
+    {
+      "id": "35",
+      "protocolid": "4",
+      "veld": "leeftijd",
+      "waarde": "A",
+      "tekst": ">2cy/ad",
+      "sortering": "20"
+    },
+    {
+      "id": "36",
+      "protocolid": "4",
+      "veld": "leeftijd",
+      "waarde": "I",
+      "tekst": ">1cy",
+      "sortering": "10"
+    },
+    {
+      "id": "37",
+      "protocolid": "4",
+      "veld": "leeftijd",
+      "waarde": "1",
+      "tekst": "1cy",
+      "sortering": "30"
+    },
+    {
+      "id": "38",
+      "protocolid": "4",
+      "veld": "leeftijd",
+      "waarde": "2",
+      "tekst": "2cy",
+      "sortering": "40"
+    },
+    {
+      "id": "55",
+      "protocolid": "5",
+      "veld": "leeftijd",
+      "waarde": "A",
+      "tekst": "Adult",
+      "sortering": "10"
+    },
+    {
+      "id": "56",
+      "protocolid": "5",
+      "veld": "leeftijd",
+      "waarde": "I",
+      "tekst": "SubAd",
+      "sortering": "20"
+    },
+    {
+      "id": "57",
+      "protocolid": "5",
+      "veld": "geslacht",
+      "waarde": "M",
+      "tekst": "Male",
+      "sortering": "10"
+    },
+    {
+      "id": "58",
+      "protocolid": "5",
+      "veld": "geslacht",
+      "waarde": "F",
+      "tekst": "Female",
+      "sortering": "20"
+    },
+    {
+      "id": "59",
+      "protocolid": "5",
+      "veld": "kleed",
+      "waarde": "D",
+      "tekst": "Dark",
+      "sortering": "30"
+    },
+    {
+      "id": "60",
+      "protocolid": "5",
+      "veld": "leeftijd",
+      "waarde": "J",
+      "tekst": "Juv",
+      "sortering": "30"
+    },
+    {
+      "id": "45",
+      "protocolid": "4",
+      "veld": "geslacht",
+      "waarde": "FC",
+      "tekst": "female-type",
+      "sortering": "3"
+    },
+    {
+      "id": "46",
+      "protocolid": "4",
+      "veld": "geslacht",
+      "waarde": "F",
+      "tekst": "female",
+      "sortering": "2"
+    },
+    {
+      "id": "47",
+      "protocolid": "4",
+      "veld": "geslacht",
+      "waarde": "M",
+      "tekst": "male",
+      "sortering": "1"
+    },
+    {
+      "id": "50",
+      "protocolid": "4",
+      "veld": "kleed",
+      "waarde": "W",
+      "tekst": "winter p.",
+      "sortering": "20"
+    },
+    {
+      "id": "51",
+      "protocolid": "4",
+      "veld": "kleed",
+      "waarde": "B",
+      "tekst": "summer",
+      "sortering": "10"
+    },
+    {
+      "id": "52",
+      "protocolid": "4",
+      "veld": "teltype",
+      "waarde": "C",
+      "tekst": "Clicker / tally counter used",
+      "sortering": "10"
+    },
+    {
+      "id": "53",
+      "protocolid": "2",
+      "veld": "teltype",
+      "waarde": "C",
+      "tekst": "Clicker / tally counter used",
+      "sortering": "30"
+    },
+    {
+      "id": "48",
+      "protocolid": "4",
+      "veld": "kleed",
+      "waarde": "D",
+      "tekst": "dark morph",
+      "sortering": "50"
+    },
+    {
+      "id": "49",
+      "protocolid": "4",
+      "veld": "kleed",
+      "waarde": "L",
+      "tekst": "pale morph",
+      "sortering": "40"
+    },
+    {
+      "id": "54",
+      "protocolid": "4",
+      "veld": "kleed",
+      "waarde": "I",
+      "tekst": "intermediate",
+      "sortering": "30"
+    },
+    {
+      "id": "61",
+      "protocolid": "5",
+      "veld": "kleed",
+      "waarde": "L",
+      "tekst": "Light",
+      "sortering": "20"
+    },
+    {
+      "id": "63",
+      "protocolid": "5",
+      "veld": "teltype",
+      "waarde": "C",
+      "tekst": "Clicker / tally counter used",
+      "sortering": "10"
+    },
+    {
+      "id": "64",
+      "protocolid": "6",
+      "veld": "geslacht",
+      "waarde": "M",
+      "tekst": "Male",
+      "sortering": "10"
+    },
+    {
+      "id": "65",
+      "protocolid": "6",
+      "veld": "geslacht",
+      "waarde": "F",
+      "tekst": "Female",
+      "sortering": "20"
+    },
+    {
+      "id": "66",
+      "protocolid": "6",
+      "veld": "kleed",
+      "waarde": "D",
+      "tekst": "Dark",
+      "sortering": "30"
+    },
+    {
+      "id": "67",
+      "protocolid": "6",
+      "veld": "kleed",
+      "waarde": "L",
+      "tekst": "Light",
+      "sortering": "20"
+    },
+    {
+      "id": "68",
+      "protocolid": "6",
+      "veld": "teltype",
+      "waarde": "C",
+      "tekst": "Clicker / tally counter used",
+      "sortering": "10"
+    },
+    {
+      "id": "69",
+      "protocolid": "6",
+      "veld": "leeftijd",
+      "waarde": "A",
+      "tekst": "adult",
+      "sortering": "10"
+    },
+    {
+      "id": "70",
+      "protocolid": "6",
+      "veld": "leeftijd",
+      "waarde": "1",
+      "tekst": "1cy",
+      "sortering": "70"
+    },
+    {
+      "id": "71",
+      "protocolid": "6",
+      "veld": "leeftijd",
+      "waarde": "2",
+      "tekst": "2cy",
+      "sortering": "80"
+    },
+    {
+      "id": "72",
+      "protocolid": "6",
+      "veld": "leeftijd",
+      "waarde": "3",
+      "tekst": "3cy",
+      "sortering": "90"
+    },
+    {
+      "id": "73",
+      "protocolid": "6",
+      "veld": "leeftijd",
+      "waarde": "4",
+      "tekst": "4cy",
+      "sortering": "100"
+    },
+    {
+      "id": "74",
+      "protocolid": "6",
+      "veld": "leeftijd",
+      "waarde": "J",
+      "tekst": "juvenile",
+      "sortering": "40"
+    },
+    {
+      "id": "75",
+      "protocolid": "6",
+      "veld": "leeftijd",
+      "waarde": "Non-Juv",
+      "tekst": "Non-Juv",
+      "sortering": "30"
+    },
+    {
+      "id": "76",
+      "protocolid": "6",
+      "veld": "leeftijd",
+      "waarde": "I",
+      "tekst": ">1cy (imm)",
+      "sortering": "20"
+    },
+    {
+      "id": "77",
+      "protocolid": "6",
+      "veld": "leeftijd",
+      "waarde": "S",
+      "tekst": "SubAd",
+      "sortering": "50"
+    },
+    {
+      "id": "78",
+      "protocolid": "6",
+      "veld": "leeftijd",
+      "waarde": "non_adult",
+      "tekst": "NonAd",
+      "sortering": "60"
+    }
+  ]
+}

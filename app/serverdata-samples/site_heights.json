@@ -1,3 +1,19 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:c4fc0f44619a5ccae2cfee24257719c4442589846029130f893b219a0d578d31
-size 284
+{
+  "json": [
+    {
+      "telpostid": "3745",
+      "waarde": ">100",
+      "sortering": "30"
+    },
+    {
+      "telpostid": "3745",
+      "waarde": "50-100",
+      "sortering": "20"
+    },
+    {
+      "telpostid": "3745",
+      "waarde": "<50m",
+      "sortering": "10"
+    }
+  ]
+}

@@ -1,3 +1,460 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:abee55436b304f9bf633a3ef471e4404075489e0e442e448347f8d8afe124eb4
-size 8397
+{
+  "json": [
+    {
+      "id": "1",
+      "protocolid": "2",
+      "soortid": "95",
+      "geslacht": null,
+      "leeftijd": "J",
+      "kleed": null
+    },
+    {
+      "id": "2",
+      "protocolid": "2",
+      "soortid": "95",
+      "geslacht": "M",
+      "leeftijd": "I",
+      "kleed": null
+    },
+    {
+      "id": "3",
+      "protocolid": "2",
+      "soortid": "95",
+      "geslacht": "M",
+      "leeftijd": "A",
+      "kleed": null
+    },
+    {
+      "id": "4",
+      "protocolid": "2",
+      "soortid": "95",
+      "geslacht": "M",
+      "leeftijd": "Non-Juv",
+      "kleed": null
+    },
+    {
+      "id": "5",
+      "protocolid": "2",
+      "soortid": "95",
+      "geslacht": "F",
+      "leeftijd": "I",
+      "kleed": null
+    },
+    {
+      "id": "8",
+      "protocolid": "2",
+      "soortid": "95",
+      "geslacht": "F",
+      "leeftijd": "A",
+      "kleed": null
+    },
+    {
+      "id": "9",
+      "protocolid": "2",
+      "soortid": "95",
+      "geslacht": "F",
+      "leeftijd": "Non-Juv",
+      "kleed": null
+    },
+    {
+      "id": "10",
+      "protocolid": "2",
+      "soortid": "95",
+      "geslacht": "FC",
+      "leeftijd": null,
+      "kleed": null
+    },
+    {
+      "id": "43",
+      "protocolid": "2",
+      "soortid": "97",
+      "geslacht": null,
+      "leeftijd": "J",
+      "kleed": null
+    },
+    {
+      "id": "44",
+      "protocolid": "2",
+      "soortid": "97",
+      "geslacht": "M",
+      "leeftijd": "I",
+      "kleed": null
+    },
+    {
+      "id": "45",
+      "protocolid": "2",
+      "soortid": "97",
+      "geslacht": "M",
+      "leeftijd": "A",
+      "kleed": null
+    },
+    {
+      "id": "46",
+      "protocolid": "2",
+      "soortid": "97",
+      "geslacht": "M",
+      "leeftijd": "Non-Juv",
+      "kleed": null
+    },
+    {
+      "id": "47",
+      "protocolid": "2",
+      "soortid": "97",
+      "geslacht": "F",
+      "leeftijd": "I",
+      "kleed": null
+    },
+    {
+      "id": "48",
+      "protocolid": "2",
+      "soortid": "97",
+      "geslacht": "F",
+      "leeftijd": "A",
+      "kleed": null
+    },
+    {
+      "id": "49",
+      "protocolid": "2",
+      "soortid": "97",
+      "geslacht": "F",
+      "leeftijd": "Non-Juv",
+      "kleed": null
+    },
+    {
+      "id": "51",
+      "protocolid": "2",
+      "soortid": "98",
+      "geslacht": null,
+      "leeftijd": "J",
+      "kleed": null
+    },
+    {
+      "id": "52",
+      "protocolid": "2",
+      "soortid": "98",
+      "geslacht": "M",
+      "leeftijd": "I",
+      "kleed": null
+    },
+    {
+      "id": "53",
+      "protocolid": "2",
+      "soortid": "98",
+      "geslacht": "M",
+      "leeftijd": "A",
+      "kleed": null
+    },
+    {
+      "id": "54",
+      "protocolid": "2",
+      "soortid": "98",
+      "geslacht": "M",
+      "leeftijd": "Non-Juv",
+      "kleed": null
+    },
+    {
+      "id": "55",
+      "protocolid": "2",
+      "soortid": "98",
+      "geslacht": "F",
+      "leeftijd": "I",
+      "kleed": null
+    },
+    {
+      "id": "56",
+      "protocolid": "2",
+      "soortid": "98",
+      "geslacht": "F",
+      "leeftijd": "A",
+      "kleed": null
+    },
+    {
+      "id": "57",
+      "protocolid": "2",
+      "soortid": "98",
+      "geslacht": "F",
+      "leeftijd": "Non-Juv",
+      "kleed": null
+    },
+    {
+      "id": "59",
+      "protocolid": "2",
+      "soortid": "588",
+      "geslacht": null,
+      "leeftijd": "J",
+      "kleed": null
+    },
+    {
+      "id": "60",
+      "protocolid": "2",
+      "soortid": "588",
+      "geslacht": null,
+      "leeftijd": "I",
+      "kleed": null
+    },
+    {
+      "id": "61",
+      "protocolid": "2",
+      "soortid": "588",
+      "geslacht": null,
+      "leeftijd": "A",
+      "kleed": null
+    },
+    {
+      "id": "62",
+      "protocolid": "2",
+      "soortid": "589",
+      "geslacht": null,
+      "leeftijd": "J",
+      "kleed": null
+    },
+    {
+      "id": "63",
+      "protocolid": "2",
+      "soortid": "589",
+      "geslacht": null,
+      "leeftijd": "I",
+      "kleed": null
+    },
+    {
+      "id": "64",
+      "protocolid": "2",
+      "soortid": "589",
+      "geslacht": null,
+      "leeftijd": "A",
+      "kleed": null
+    },
+    {
+      "id": "65",
+      "protocolid": "2",
+      "soortid": "106",
+      "geslacht": null,
+      "leeftijd": "J",
+      "kleed": null
+    },
+    {
+      "id": "66",
+      "protocolid": "2",
+      "soortid": "106",
+      "geslacht": null,
+      "leeftijd": "I",
+      "kleed": null
+    },
+    {
+      "id": "67",
+      "protocolid": "2",
+      "soortid": "106",
+      "geslacht": null,
+      "leeftijd": "A",
+      "kleed": null
+    },
+    {
+      "id": "68",
+      "protocolid": "2",
+      "soortid": "106",
+      "geslacht": null,
+      "leeftijd": "Non-Juv",
+      "kleed": null
+    },
+    {
+      "id": "69",
+      "protocolid": "2",
+      "soortid": "96",
+      "geslacht": null,
+      "leeftijd": "J",
+      "kleed": null
+    },
+    {
+      "id": "70",
+      "protocolid": "2",
+      "soortid": "96",
+      "geslacht": "M",
+      "leeftijd": "I",
+      "kleed": null
+    },
+    {
+      "id": "71",
+      "protocolid": "2",
+      "soortid": "96",
+      "geslacht": "M",
+      "leeftijd": "A",
+      "kleed": null
+    },
+    {
+      "id": "72",
+      "protocolid": "2",
+      "soortid": "96",
+      "geslacht": "M",
+      "leeftijd": "Non-Juv",
+      "kleed": null
+    },
+    {
+      "id": "73",
+      "protocolid": "2",
+      "soortid": "96",
+      "geslacht": "F",
+      "leeftijd": "I",
+      "kleed": null
+    },
+    {
+      "id": "74",
+      "protocolid": "2",
+      "soortid": "96",
+      "geslacht": "F",
+      "leeftijd": "A",
+      "kleed": null
+    },
+    {
+      "id": "75",
+      "protocolid": "2",
+      "soortid": "96",
+      "geslacht": "F",
+      "leeftijd": "Non-Juv",
+      "kleed": null
+    },
+    {
+      "id": "76",
+      "protocolid": "2",
+      "soortid": "96",
+      "geslacht": "FC",
+      "leeftijd": null,
+      "kleed": null
+    },
+    {
+      "id": "81",
+      "protocolid": "2",
+      "soortid": "1102",
+      "geslacht": null,
+      "leeftijd": "J",
+      "kleed": null
+    },
+    {
+      "id": "82",
+      "protocolid": "2",
+      "soortid": "1102",
+      "geslacht": "M",
+      "leeftijd": "Non-Juv",
+      "kleed": null
+    },
+    {
+      "id": "83",
+      "protocolid": "2",
+      "soortid": "1102",
+      "geslacht": "F",
+      "leeftijd": "Non-Juv",
+      "kleed": null
+    },
+    {
+      "id": "84",
+      "protocolid": "2",
+      "soortid": "1102",
+      "geslacht": "FC",
+      "leeftijd": null,
+      "kleed": null
+    },
+    {
+      "id": "85",
+      "protocolid": "2",
+      "soortid": "1102",
+      "geslacht": null,
+      "leeftijd": null,
+      "kleed": null
+    },
+    {
+      "id": "86",
+      "protocolid": "2",
+      "soortid": "98",
+      "geslacht": null,
+      "leeftijd": null,
+      "kleed": "D"
+    },
+    {
+      "id": "87",
+      "protocolid": "2",
+      "soortid": "98",
+      "geslacht": "M",
+      "leeftijd": "I",
+      "kleed": "D"
+    },
+    {
+      "id": "88",
+      "protocolid": "2",
+      "soortid": "98",
+      "geslacht": "F",
+      "leeftijd": "I",
+      "kleed": "D"
+    },
+    {
+      "id": "89",
+      "protocolid": "2",
+      "soortid": "98",
+      "geslacht": "M",
+      "leeftijd": "A",
+      "kleed": "D"
+    },
+    {
+      "id": "90",
+      "protocolid": "2",
+      "soortid": "98",
+      "geslacht": "F",
+      "leeftijd": "A",
+      "kleed": "D"
+    },
+    {
+      "id": "91",
+      "protocolid": "2",
+      "soortid": "98",
+      "geslacht": "M",
+      "leeftijd": "Non-Juv",
+      "kleed": "D"
+    },
+    {
+      "id": "92",
+      "protocolid": "2",
+      "soortid": "98",
+      "geslacht": "F",
+      "leeftijd": "Non-Juv",
+      "kleed": "D"
+    },
+    {
+      "id": "93",
+      "protocolid": "2",
+      "soortid": "98",
+      "geslacht": null,
+      "leeftijd": "J",
+      "kleed": "D"
+    },
+    {
+      "id": "94",
+      "protocolid": "2",
+      "soortid": "95",
+      "geslacht": "M",
+      "leeftijd": "Non-Juv",
+      "kleed": "D"
+    },
+    {
+      "id": "95",
+      "protocolid": "2",
+      "soortid": "95",
+      "geslacht": "M",
+      "leeftijd": "I",
+      "kleed": "D"
+    },
+    {
+      "id": "96",
+      "protocolid": "2",
+      "soortid": "95",
+      "geslacht": "M",
+      "leeftijd": "A",
+      "kleed": "D"
+    },
+    {
+      "id": "98",
+      "protocolid": "2",
+      "soortid": "95",
+      "geslacht": null,
+      "leeftijd": null,
+      "kleed": null
+    }
+  ]
+}

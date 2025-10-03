@@ -1,3 +1,52 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:023ea99afb4b433a4cef6c459e0ec769a64ad42fcc8ab94a0e4b1bb110c6cd74
-size 1033
+{
+  "json": [
+    {
+      "telpostid": "3949",
+      "telpostnaam": "Bredene Merelstraat nachttrek",
+      "r1": "nvt",
+      "r2": "nvt",
+      "typetelpost": "5",
+      "protocolid": "1"
+    },
+    {
+      "telpostid": "3745",
+      "telpostnaam": "Bufferbekken Bredene",
+      "r1": "ZW",
+      "r2": "NO",
+      "typetelpost": "1",
+      "protocolid": "1"
+    },
+    {
+      "telpostid": "79",
+      "telpostnaam": "Duinbrug",
+      "r1": "ZW",
+      "r2": "NO",
+      "typetelpost": "1",
+      "protocolid": "1"
+    },
+    {
+      "telpostid": "4310",
+      "telpostnaam": "Spanjaardduinen",
+      "r1": "ZW",
+      "r2": "NO",
+      "typetelpost": "1",
+      "protocolid": "1"
+    },
+    {
+      "telpostid": "5177",
+      "telpostnaam": "VoiceTally Testsite",
+      "r1": "ZW",
+      "r2": "NO",
+      "typetelpost": "1",
+      "protocolid": "1"
+    },
+    {
+      "telpostid": "113",
+      "telpostnaam": "Zoutekreek Zandvoorde",
+      "r1": "Z",
+      "r2": "N",
+      "typetelpost": "1",
+      "protocolid": "1"
+    }
+  ]
+}

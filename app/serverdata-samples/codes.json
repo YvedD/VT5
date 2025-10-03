@@ -1,3 +1,1284 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:ca7d6df56d84ba4ebb6850ea4eaa2d45eda1044713943ed1b43844f5df6b1aa6
-size 29727
+{
+  "json": [
+    {
+      "tekstkey": "typetelling_ringen_winter",
+      "taalid": "1",
+      "tekst": "winter",
+      "sortering": "408",
+      "veld": "typetelling_ringen",
+      "waarde": "winter"
+    },
+    {
+      "tekstkey": "typetelling_trek_incomplete",
+      "taalid": "1",
+      "tekst": "incompleet, slechts gedeelte van soorten ingevoerd",
+      "sortering": "373",
+      "veld": "typetelling_trek",
+      "waarde": "incomplete"
+    },
+    {
+      "tekstkey": "typetelling_ringen_migration",
+      "taalid": "1",
+      "tekst": "trek",
+      "sortering": "394",
+      "veld": "typetelling_ringen",
+      "waarde": "migration"
+    },
+    {
+      "tekstkey": "wind_wzw",
+      "taalid": "1",
+      "tekst": "WZW",
+      "sortering": "780",
+      "veld": "wind",
+      "waarde": "wzw"
+    },
+    {
+      "tekstkey": "typetelling_trek_coastalvismig",
+      "taalid": "1",
+      "tekst": "landtrek op kusttelpost",
+      "sortering": "1020",
+      "veld": "typetelling_trek",
+      "waarde": "coastalvismig"
+    },
+    {
+      "tekstkey": "neerslag_motregen",
+      "taalid": "1",
+      "tekst": "motregen",
+      "sortering": "344",
+      "veld": "neerslag",
+      "waarde": "motregen"
+    },
+    {
+      "tekstkey": "typetelling_trek_sea",
+      "taalid": "1",
+      "tekst": "zeetrek",
+      "sortering": "380",
+      "veld": "typetelling_trek",
+      "waarde": "sea"
+    },
+    {
+      "tekstkey": "windoms_zw",
+      "taalid": "1",
+      "tekst": "zuid-west",
+      "sortering": "211",
+      "veld": "windoms",
+      "waarde": "zw"
+    },
+    {
+      "tekstkey": "windoms_wzw",
+      "taalid": "1",
+      "tekst": "west-zuidwest",
+      "sortering": "216",
+      "veld": "windoms",
+      "waarde": "wzw"
+    },
+    {
+      "tekstkey": "windoms_w",
+      "taalid": "1",
+      "tekst": "West",
+      "sortering": "221",
+      "veld": "windoms",
+      "waarde": "w"
+    },
+    {
+      "tekstkey": "windoms_n",
+      "taalid": "1",
+      "tekst": "Noord",
+      "sortering": "161",
+      "veld": "windoms",
+      "waarde": "n"
+    },
+    {
+      "tekstkey": "windoms_nno",
+      "taalid": "1",
+      "tekst": "noord-noordoost",
+      "sortering": "166",
+      "veld": "windoms",
+      "waarde": "nno"
+    },
+    {
+      "tekstkey": "windoms_no",
+      "taalid": "1",
+      "tekst": "noordoost",
+      "sortering": "171",
+      "veld": "windoms",
+      "waarde": "no"
+    },
+    {
+      "tekstkey": "typetelling_trek_raptor",
+      "taalid": "1",
+      "tekst": "Ooievaars en roofvogels",
+      "sortering": "387",
+      "veld": "typetelling_trek",
+      "waarde": "raptor"
+    },
+    {
+      "tekstkey": "typetelling_trek_all",
+      "taalid": "1",
+      "tekst": "alle soorten",
+      "sortering": "373",
+      "veld": "typetelling_trek",
+      "waarde": "all"
+    },
+    {
+      "tekstkey": "windoms_nnw",
+      "taalid": "1",
+      "tekst": "noord-noordwest",
+      "sortering": "236",
+      "veld": "windoms",
+      "waarde": "nnw"
+    },
+    {
+      "tekstkey": "windoms_zo",
+      "taalid": "1",
+      "tekst": "zuidoost",
+      "sortering": "191",
+      "veld": "windoms",
+      "waarde": "zo"
+    },
+    {
+      "tekstkey": "windoms_zzo",
+      "taalid": "1",
+      "tekst": "zuid-zuidoost",
+      "sortering": "196",
+      "veld": "windoms",
+      "waarde": "zzo"
+    },
+    {
+      "tekstkey": "windoms_z",
+      "taalid": "1",
+      "tekst": "Zuid",
+      "sortering": "201",
+      "veld": "windoms",
+      "waarde": "z"
+    },
+    {
+      "tekstkey": "windoms_ozo",
+      "taalid": "1",
+      "tekst": "oost-zuidoost",
+      "sortering": "186",
+      "veld": "windoms",
+      "waarde": "ozo"
+    },
+    {
+      "tekstkey": "windoms_var",
+      "taalid": "1",
+      "tekst": "variabel",
+      "sortering": "1",
+      "veld": "windoms",
+      "waarde": "var"
+    },
+    {
+      "tekstkey": "neerslag_regen",
+      "taalid": "1",
+      "tekst": "regen",
+      "sortering": "337",
+      "veld": "neerslag",
+      "waarde": "regen"
+    },
+    {
+      "tekstkey": "neerslag_mist",
+      "taalid": "1",
+      "tekst": "mist",
+      "sortering": "351",
+      "veld": "neerslag",
+      "waarde": "mist"
+    },
+    {
+      "tekstkey": "wind_wnw",
+      "taalid": "1",
+      "tekst": "WNW",
+      "sortering": "920",
+      "veld": "wind",
+      "waarde": "wnw"
+    },
+    {
+      "tekstkey": "leeftijd_A",
+      "taalid": "1",
+      "tekst": "adult",
+      "sortering": "16",
+      "veld": "leeftijd",
+      "waarde": "A"
+    },
+    {
+      "tekstkey": "leeftijd_J",
+      "taalid": "1",
+      "tekst": "juveniel",
+      "sortering": "21",
+      "veld": "leeftijd",
+      "waarde": "J"
+    },
+    {
+      "tekstkey": "leeftijd_I",
+      "taalid": "1",
+      "tekst": ">1kj",
+      "sortering": "31",
+      "veld": "leeftijd",
+      "waarde": "I"
+    },
+    {
+      "tekstkey": "leeftijd_1",
+      "taalid": "1",
+      "tekst": "1kj",
+      "sortering": "26",
+      "veld": "leeftijd",
+      "waarde": "1"
+    },
+    {
+      "tekstkey": "wind_nw",
+      "taalid": "1",
+      "tekst": "NW",
+      "sortering": "990",
+      "veld": "wind",
+      "waarde": "nw"
+    },
+    {
+      "tekstkey": "wind_nnw",
+      "taalid": "1",
+      "tekst": "NNW",
+      "sortering": "1060",
+      "veld": "wind",
+      "waarde": "nnw"
+    },
+    {
+      "tekstkey": "typetelling_trek_geese",
+      "taalid": "1",
+      "tekst": "Ganzen en Zwanen",
+      "sortering": "1000",
+      "veld": "typetelling_trek",
+      "waarde": "geese"
+    },
+    {
+      "tekstkey": "typetelling_ringen_ces",
+      "taalid": "1",
+      "tekst": "CES",
+      "sortering": "401",
+      "veld": "typetelling_ringen",
+      "waarde": "ces"
+    },
+    {
+      "tekstkey": "typetelling_ringen_ringmus",
+      "taalid": "1",
+      "tekst": "RING-MUS",
+      "sortering": "422",
+      "veld": "typetelling_ringen",
+      "waarde": "ringmus"
+    },
+    {
+      "tekstkey": "neerslag_hagel",
+      "taalid": "1",
+      "tekst": "hagel",
+      "sortering": "358",
+      "veld": "neerslag",
+      "waarde": "hagel"
+    },
+    {
+      "tekstkey": "neerslag_sneeuw",
+      "taalid": "1",
+      "tekst": "sneeuw",
+      "sortering": "365",
+      "veld": "neerslag",
+      "waarde": "sneeuw"
+    },
+    {
+      "tekstkey": "wind_nno",
+      "taalid": "1",
+      "tekst": "NNO",
+      "sortering": "80",
+      "veld": "wind",
+      "waarde": "nno"
+    },
+    {
+      "tekstkey": "windoms_nw",
+      "taalid": "1",
+      "tekst": "noordwest",
+      "sortering": "231",
+      "veld": "windoms",
+      "waarde": "nw"
+    },
+    {
+      "tekstkey": "wind_no",
+      "taalid": "1",
+      "tekst": "NO",
+      "sortering": "150",
+      "veld": "wind",
+      "waarde": "no"
+    },
+    {
+      "tekstkey": "wind_ono",
+      "taalid": "1",
+      "tekst": "ONO",
+      "sortering": "220",
+      "veld": "wind",
+      "waarde": "ono"
+    },
+    {
+      "tekstkey": "typetelling_trek_sound",
+      "taalid": "1",
+      "tekst": "alleen geluid (opname)",
+      "sortering": "1010",
+      "veld": "typetelling_trek",
+      "waarde": "sound"
+    },
+    {
+      "tekstkey": "wind_ozo",
+      "taalid": "1",
+      "tekst": "OZO",
+      "sortering": "360",
+      "veld": "wind",
+      "waarde": "ozo"
+    },
+    {
+      "tekstkey": "verstoring_recreatie_noord",
+      "taalid": "1",
+      "tekst": "Recreatie richting noord",
+      "sortering": "10",
+      "veld": "verstoring",
+      "waarde": "recreatie_noord"
+    },
+    {
+      "tekstkey": "verstoring_beroeps_doorvaart_noord",
+      "taalid": "1",
+      "tekst": "Beroeps doorvaart richting noord",
+      "sortering": "30",
+      "veld": "verstoring",
+      "waarde": "beroeps_doorvaart_noord"
+    },
+    {
+      "tekstkey": "verstoring_beroeps_doorvaart_zuid",
+      "taalid": "1",
+      "tekst": "Beroeps doorvaart richting zuid",
+      "sortering": "40",
+      "veld": "verstoring",
+      "waarde": "beroeps_doorvaart_zuid"
+    },
+    {
+      "tekstkey": "verstoring_recreatie_zuid",
+      "taalid": "1",
+      "tekst": "Recreatie richting zuid",
+      "sortering": "20",
+      "veld": "verstoring",
+      "waarde": "recreatie_zuid"
+    },
+    {
+      "tekstkey": "wind_zo",
+      "taalid": "1",
+      "tekst": "ZO",
+      "sortering": "430",
+      "veld": "wind",
+      "waarde": "zo"
+    },
+    {
+      "tekstkey": "wind_zzo",
+      "taalid": "1",
+      "tekst": "ZZO",
+      "sortering": "500",
+      "veld": "wind",
+      "waarde": "zzo"
+    },
+    {
+      "tekstkey": "wind_zzw",
+      "taalid": "1",
+      "tekst": "ZZW",
+      "sortering": "640",
+      "veld": "wind",
+      "waarde": "zzw"
+    },
+    {
+      "tekstkey": "wind_zw",
+      "taalid": "1",
+      "tekst": "ZW",
+      "sortering": "710",
+      "veld": "wind",
+      "waarde": "zw"
+    },
+    {
+      "tekstkey": "wind_var",
+      "taalid": "1",
+      "tekst": "var",
+      "sortering": "1",
+      "veld": "wind",
+      "waarde": "var"
+    },
+    {
+      "tekstkey": "geslacht_M",
+      "taalid": "1",
+      "tekst": "man",
+      "sortering": "1",
+      "veld": "geslacht",
+      "waarde": "M"
+    },
+    {
+      "tekstkey": "geslacht_F",
+      "taalid": "1",
+      "tekst": "vrouw",
+      "sortering": "6",
+      "veld": "geslacht",
+      "waarde": "F"
+    },
+    {
+      "tekstkey": "leeftijd_2",
+      "taalid": "1",
+      "tekst": "2kj",
+      "sortering": "36",
+      "veld": "leeftijd",
+      "waarde": "2"
+    },
+    {
+      "tekstkey": "leeftijd_3",
+      "taalid": "1",
+      "tekst": "3kj",
+      "sortering": "41",
+      "veld": "leeftijd",
+      "waarde": "3"
+    },
+    {
+      "tekstkey": "leeftijd_4",
+      "taalid": "1",
+      "tekst": "4kj",
+      "sortering": "46",
+      "veld": "leeftijd",
+      "waarde": "4"
+    },
+    {
+      "tekstkey": "verstoring_vliegverkeer_onder_300_zuid",
+      "taalid": "1",
+      "tekst": "Vliegverkeer <300 richting zuid",
+      "sortering": "80",
+      "veld": "verstoring",
+      "waarde": "vliegverkeer_onder_300_zuid"
+    },
+    {
+      "tekstkey": "verstoring_beroeps_vissend_noord",
+      "taalid": "1",
+      "tekst": "Beroeps vissend richting noord",
+      "sortering": "50",
+      "veld": "verstoring",
+      "waarde": "beroeps_vissend_noord"
+    },
+    {
+      "tekstkey": "verstoring_beroeps_vissend_zuid",
+      "taalid": "1",
+      "tekst": "Beroeps vissend richting zuid",
+      "sortering": "60",
+      "veld": "verstoring",
+      "waarde": "beroeps_vissend_zuid"
+    },
+    {
+      "tekstkey": "verstoring_vliegverkeer_onder_300_noord",
+      "taalid": "1",
+      "tekst": "Vliegverkeer <300 richting noord",
+      "sortering": "70",
+      "veld": "verstoring",
+      "waarde": "vliegverkeer_onder_300_noord"
+    },
+    {
+      "tekstkey": "verstoring_handgestuurde_laagvliegerij_noord",
+      "taalid": "1",
+      "tekst": "Handgestuurde laagvliegerij noord",
+      "sortering": "90",
+      "veld": "verstoring",
+      "waarde": "handgestuurde_laagvliegerij_noord"
+    },
+    {
+      "tekstkey": "verstoring_handgestuurde_laagvliegerij_zuid",
+      "taalid": "1",
+      "tekst": "Handgestuurde laagvliegerij zuid",
+      "sortering": "100",
+      "veld": "verstoring",
+      "waarde": "handgestuurde_laagvliegerij_zuid"
+    },
+    {
+      "tekstkey": "verstoring_recreatie_tp",
+      "taalid": "1",
+      "tekst": "Recreatie TP",
+      "sortering": "25",
+      "veld": "verstoring",
+      "waarde": "recreatie_tp"
+    },
+    {
+      "tekstkey": "verstoring_beroeps_tp",
+      "taalid": "1",
+      "tekst": "Beroeps TP",
+      "sortering": "45",
+      "veld": "verstoring",
+      "waarde": "beroeps_tp"
+    },
+    {
+      "tekstkey": "verstoring_beroeps_vissend_tp",
+      "taalid": "1",
+      "tekst": "Beroeps vissend TP",
+      "sortering": "65",
+      "veld": "verstoring",
+      "waarde": "beroeps_vissend_tp"
+    },
+    {
+      "tekstkey": "windoms_zzw",
+      "taalid": "1",
+      "tekst": "zuid-zuidwest",
+      "sortering": "206",
+      "veld": "windoms",
+      "waarde": "zzw"
+    },
+    {
+      "tekstkey": "windoms_wnw",
+      "taalid": "1",
+      "tekst": "west-noordwest",
+      "sortering": "226",
+      "veld": "windoms",
+      "waarde": "wnw"
+    },
+    {
+      "tekstkey": "windoms_ono",
+      "taalid": "1",
+      "tekst": "oost-noordoost",
+      "sortering": "176",
+      "veld": "windoms",
+      "waarde": "ono"
+    },
+    {
+      "tekstkey": "windoms_o",
+      "taalid": "1",
+      "tekst": "Oost",
+      "sortering": "181",
+      "veld": "windoms",
+      "waarde": "o"
+    },
+    {
+      "tekstkey": "leeftijd_Non-Juv",
+      "taalid": "1",
+      "tekst": "niet juveniel",
+      "sortering": "47",
+      "veld": "leeftijd",
+      "waarde": "Non-Juv"
+    },
+    {
+      "tekstkey": "geslacht_FC",
+      "taalid": "1",
+      "tekst": "vrouwkleed",
+      "sortering": "11",
+      "veld": "geslacht",
+      "waarde": "FC"
+    },
+    {
+      "tekstkey": "teltype_S",
+      "taalid": "1",
+      "tekst": "Single count",
+      "sortering": "10",
+      "veld": "teltype",
+      "waarde": "S"
+    },
+    {
+      "tekstkey": "teltype_D",
+      "taalid": "1",
+      "tekst": "Double count",
+      "sortering": "20",
+      "veld": "teltype",
+      "waarde": "D"
+    },
+    {
+      "tekstkey": "trektype_I",
+      "taalid": "1",
+      "tekst": "Gewonde vogel",
+      "sortering": "10",
+      "veld": "trektype",
+      "waarde": "I"
+    },
+    {
+      "tekstkey": "trektype_K",
+      "taalid": "1",
+      "tekst": "Gedode vogel",
+      "sortering": "20",
+      "veld": "trektype",
+      "waarde": "K"
+    },
+    {
+      "tekstkey": "sightingdirection_W",
+      "taalid": "1",
+      "tekst": "West",
+      "sortering": "860",
+      "veld": "sightingdirection",
+      "waarde": "W"
+    },
+    {
+      "tekstkey": "sightingdirection_N",
+      "taalid": "1",
+      "tekst": "North",
+      "sortering": "20",
+      "veld": "sightingdirection",
+      "waarde": "N"
+    },
+    {
+      "tekstkey": "sightingdirection_WSW",
+      "taalid": "1",
+      "tekst": "WSW",
+      "sortering": "790",
+      "veld": "sightingdirection",
+      "waarde": "WSW"
+    },
+    {
+      "tekstkey": "sightingdirection_WNW",
+      "taalid": "1",
+      "tekst": "WNW",
+      "sortering": "930",
+      "veld": "sightingdirection",
+      "waarde": "WNW"
+    },
+    {
+      "tekstkey": "sightingdirection_NW",
+      "taalid": "1",
+      "tekst": "NW",
+      "sortering": "1000",
+      "veld": "sightingdirection",
+      "waarde": "NW"
+    },
+    {
+      "tekstkey": "sightingdirection_NNW",
+      "taalid": "1",
+      "tekst": "NNW",
+      "sortering": "1070",
+      "veld": "sightingdirection",
+      "waarde": "NNW"
+    },
+    {
+      "tekstkey": "sightingdirection_NNE",
+      "taalid": "1",
+      "tekst": "NNE",
+      "sortering": "90",
+      "veld": "sightingdirection",
+      "waarde": "NNE"
+    },
+    {
+      "tekstkey": "sightingdirection_NE",
+      "taalid": "1",
+      "tekst": "NE",
+      "sortering": "160",
+      "veld": "sightingdirection",
+      "waarde": "NE"
+    },
+    {
+      "tekstkey": "sightingdirection_ENE",
+      "taalid": "1",
+      "tekst": "ENE",
+      "sortering": "230",
+      "veld": "sightingdirection",
+      "waarde": "ENE"
+    },
+    {
+      "tekstkey": "sightingdirection_ESE",
+      "taalid": "1",
+      "tekst": "ESE",
+      "sortering": "370",
+      "veld": "sightingdirection",
+      "waarde": "ESE"
+    },
+    {
+      "tekstkey": "sightingdirection_E",
+      "taalid": "1",
+      "tekst": "East",
+      "sortering": "300",
+      "veld": "sightingdirection",
+      "waarde": "E"
+    },
+    {
+      "tekstkey": "sightingdirection_S",
+      "taalid": "1",
+      "tekst": "South",
+      "sortering": "580",
+      "veld": "sightingdirection",
+      "waarde": "S"
+    },
+    {
+      "tekstkey": "sightingdirection_SE",
+      "taalid": "1",
+      "tekst": "SE",
+      "sortering": "440",
+      "veld": "sightingdirection",
+      "waarde": "SE"
+    },
+    {
+      "tekstkey": "sightingdirection_SSE",
+      "taalid": "1",
+      "tekst": "SSE",
+      "sortering": "510",
+      "veld": "sightingdirection",
+      "waarde": "SSE"
+    },
+    {
+      "tekstkey": "sightingdirection_SSW",
+      "taalid": "1",
+      "tekst": "SSW",
+      "sortering": "650",
+      "veld": "sightingdirection",
+      "waarde": "SSW"
+    },
+    {
+      "tekstkey": "sightingdirection_SW",
+      "taalid": "1",
+      "tekst": "SW",
+      "sortering": "720",
+      "veld": "sightingdirection",
+      "waarde": "SW"
+    },
+    {
+      "tekstkey": "kleed_B",
+      "taalid": "1",
+      "tekst": "zomerkleed",
+      "sortering": "10",
+      "veld": "kleed",
+      "waarde": "B"
+    },
+    {
+      "tekstkey": "kleed_W",
+      "taalid": "1",
+      "tekst": "winterkleed",
+      "sortering": "20",
+      "veld": "kleed",
+      "waarde": "W"
+    },
+    {
+      "tekstkey": "kleed_L",
+      "taalid": "1",
+      "tekst": "licht",
+      "sortering": "30",
+      "veld": "kleed",
+      "waarde": "L"
+    },
+    {
+      "tekstkey": "kleed_D",
+      "taalid": "1",
+      "tekst": "donker",
+      "sortering": "40",
+      "veld": "kleed",
+      "waarde": "D"
+    },
+    {
+      "tekstkey": "kleed_E",
+      "taalid": "1",
+      "tekst": "eclips",
+      "sortering": "50",
+      "veld": "kleed",
+      "waarde": "E"
+    },
+    {
+      "tekstkey": "kleed_I",
+      "taalid": "1",
+      "tekst": "intermediar",
+      "sortering": "60",
+      "veld": "kleed",
+      "waarde": "I"
+    },
+    {
+      "tekstkey": "typetelling_trek_onlygrounded",
+      "taalid": "1",
+      "tekst": "Alleen alle ter plaatse vogels",
+      "sortering": "1020",
+      "veld": "typetelling_trek",
+      "waarde": "onlygrounded"
+    },
+    {
+      "tekstkey": "typetelling_sound_flyovers",
+      "taalid": "1",
+      "tekst": "incompleet, slechts gedeelte van soorten ingevoerd",
+      "sortering": "200",
+      "veld": "typetelling_sound",
+      "waarde": "incomplete"
+    },
+    {
+      "tekstkey": "typetelling_sound_flyovers",
+      "taalid": "1",
+      "tekst": "Alleen de overvliegende vogels",
+      "sortering": "120",
+      "veld": "typetelling_sound",
+      "waarde": "flyovers"
+    },
+    {
+      "tekstkey": "typetelling_sound_flyovers",
+      "taalid": "1",
+      "tekst": "Alle overvliegende + incompleet tp vogels",
+      "sortering": "110",
+      "veld": "typetelling_sound",
+      "waarde": "all_incomplete"
+    },
+    {
+      "tekstkey": "typetelling_sound_flyovers",
+      "taalid": "1",
+      "tekst": "Alle overvliegende + alle tp vogels",
+      "sortering": "100",
+      "veld": "typetelling_sound",
+      "waarde": "all"
+    },
+    {
+      "tekstkey": "teltype_sound_M",
+      "taalid": "1",
+      "tekst": "Minimum",
+      "sortering": "20",
+      "veld": "teltype_sound",
+      "waarde": "M"
+    },
+    {
+      "tekstkey": "teltype_sound_E",
+      "taalid": "1",
+      "tekst": "Geschat",
+      "sortering": "30",
+      "veld": "teltype_sound",
+      "waarde": "E"
+    },
+    {
+      "tekstkey": "teltype_sound_U",
+      "taalid": "1",
+      "tekst": "Onbekend",
+      "sortering": "100",
+      "veld": "teltype_sound",
+      "waarde": null
+    },
+    {
+      "tekstkey": "teltype_sound_A",
+      "taalid": "1",
+      "tekst": "Exact",
+      "sortering": "10",
+      "veld": "teltype_sound",
+      "waarde": "A"
+    },
+    {
+      "tekstkey": "equipment_sound_other_stereo",
+      "taalid": "1",
+      "tekst": "Other (stereo)",
+      "sortering": "110",
+      "veld": "equipment_sound",
+      "waarde": "other_stereo"
+    },
+    {
+      "tekstkey": "trektype_sound_M",
+      "taalid": "1",
+      "tekst": "Trek",
+      "sortering": "10",
+      "veld": "trektype_sound",
+      "waarde": "M"
+    },
+    {
+      "tekstkey": "equipment_sound_USB_stereo",
+      "taalid": "1",
+      "tekst": "USB microphone (stereo)",
+      "sortering": "10",
+      "veld": "equipment_sound",
+      "waarde": "USB_stereo"
+    },
+    {
+      "tekstkey": "equipment_sound_USB_mono",
+      "taalid": "1",
+      "tekst": "USB microphone (mono)",
+      "sortering": "20",
+      "veld": "equipment_sound",
+      "waarde": "USB_mono"
+    },
+    {
+      "tekstkey": "equipment_sound_Inbuild_stereo",
+      "taalid": "1",
+      "tekst": "In-built microphone/recorder (stereo)",
+      "sortering": "30",
+      "veld": "equipment_sound",
+      "waarde": "Inbuild_stereo"
+    },
+    {
+      "tekstkey": "equipment_sound_Inbuild_mono",
+      "taalid": "1",
+      "tekst": "In-built microphone/recorder (mono)",
+      "sortering": "40",
+      "veld": "equipment_sound",
+      "waarde": "Inbuild_mono"
+    },
+    {
+      "tekstkey": "equipment_sound_Shotgun_stereo",
+      "taalid": "1",
+      "tekst": "Shot-gun microphones (stereo)",
+      "sortering": "50",
+      "veld": "equipment_sound",
+      "waarde": "Shotgun_stereo"
+    },
+    {
+      "tekstkey": "equipment_sound_Shotgun_mono",
+      "taalid": "1",
+      "tekst": "Shot-gun microphone (mono)",
+      "sortering": "60",
+      "veld": "equipment_sound",
+      "waarde": "Shotgun_mono"
+    },
+    {
+      "tekstkey": "equipment_sound_Omni_stereo",
+      "taalid": "1",
+      "tekst": "Omnidirectional microphones (stereo)",
+      "sortering": "70",
+      "veld": "equipment_sound",
+      "waarde": "Omni_stereo"
+    },
+    {
+      "tekstkey": "equipment_sound_Omni_mono",
+      "taalid": "1",
+      "tekst": "Omnidirectional microphone (mono)",
+      "sortering": "80",
+      "veld": "equipment_sound",
+      "waarde": "Omni_mono"
+    },
+    {
+      "tekstkey": "equipment_sound_Parabol_stereo",
+      "taalid": "1",
+      "tekst": "Parabolic microphone (stereo)",
+      "sortering": "90",
+      "veld": "equipment_sound",
+      "waarde": "Parabol_stereo"
+    },
+    {
+      "tekstkey": "typetelling_ringen_dazzelen",
+      "taalid": "1",
+      "tekst": "Dazzelen (actief)",
+      "sortering": "700",
+      "veld": "typetelling_ringen",
+      "waarde": "dazzelen"
+    },
+    {
+      "tekstkey": "equipment_sound_other_mono",
+      "taalid": "1",
+      "tekst": "Other (mono)",
+      "sortering": "120",
+      "veld": "equipment_sound",
+      "waarde": "other_mono"
+    },
+    {
+      "tekstkey": "equipment_sound_unknown",
+      "taalid": "1",
+      "tekst": "Unknown",
+      "sortering": "0",
+      "veld": "equipment_sound",
+      "waarde": "unknown"
+    },
+    {
+      "tekstkey": "equipment_sound_Wildlife_mono",
+      "taalid": "1",
+      "tekst": "Programmable wildlife sound recorder (mono)",
+      "sortering": "105",
+      "veld": "equipment_sound",
+      "waarde": "Wildlife_mono"
+    },
+    {
+      "tekstkey": "equipment_sound_Wildelife_stereo",
+      "taalid": "1",
+      "tekst": "Programmable wildlife sound recorder (stereo)",
+      "sortering": "106",
+      "veld": "equipment_sound",
+      "waarde": "Wildlife_stereo"
+    },
+    {
+      "tekstkey": "typetelling_ringen_ras",
+      "taalid": "1",
+      "tekst": "RAS",
+      "sortering": "415",
+      "veld": "typetelling_ringen",
+      "waarde": "RAS"
+    },
+    {
+      "tekstkey": "typetelling_ringen_incomplete",
+      "taalid": "1",
+      "tekst": "Incompleet of niet op de baan geringd",
+      "sortering": "999",
+      "veld": "typetelling_ringen",
+      "waarde": "incomplete"
+    },
+    {
+      "tekstkey": "typetelling_ringen_default",
+      "taalid": "1",
+      "tekst": "Gestandaardiseerd ringschema",
+      "sortering": "1",
+      "veld": "typetelling_ringen",
+      "waarde": "standardized"
+    },
+    {
+      "tekstkey": "wind_n",
+      "taalid": "1",
+      "tekst": "Noord",
+      "sortering": "10",
+      "veld": "wind",
+      "waarde": "n"
+    },
+    {
+      "tekstkey": "wind_o",
+      "taalid": "1",
+      "tekst": "Oost",
+      "sortering": "290",
+      "veld": "wind",
+      "waarde": "o"
+    },
+    {
+      "tekstkey": "wind_z",
+      "taalid": "1",
+      "tekst": "Zuid",
+      "sortering": "570",
+      "veld": "wind",
+      "waarde": "z"
+    },
+    {
+      "tekstkey": "wind_w",
+      "taalid": "1",
+      "tekst": "West",
+      "sortering": "850",
+      "veld": "wind",
+      "waarde": "w"
+    },
+    {
+      "tekstkey": "typetelling_grounded_onlygrounded",
+      "taalid": "1",
+      "tekst": "Alleen alle ter plaatse vogels",
+      "sortering": "1020",
+      "veld": "typetelling_grounded",
+      "waarde": "onlygrounded"
+    },
+    {
+      "tekstkey": "typetelling_grounded_incomplete",
+      "taalid": "1",
+      "tekst": "incompleet, slechts gedeelte van soorten ingevoerd",
+      "sortering": "373",
+      "veld": "typetelling_grounded",
+      "waarde": "incomplete"
+    },
+    {
+      "tekstkey": "trektype_sound_L",
+      "taalid": "1",
+      "tekst": "Rondvliegende lokale vogel(s)",
+      "sortering": "20",
+      "veld": "trektype_sound",
+      "waarde": "L"
+    },
+    {
+      "tekstkey": "leeftijd_S",
+      "taalid": "1",
+      "tekst": "SubAd",
+      "sortering": "48",
+      "veld": "leeftijd",
+      "waarde": "S"
+    },
+    {
+      "tekstkey": "trektype_sound_U",
+      "taalid": "1",
+      "tekst": "Onbekend",
+      "sortering": "100",
+      "veld": "trektype_sound",
+      "waarde": null
+    },
+    {
+      "tekstkey": "trektype_R",
+      "taalid": "1",
+      "tekst": "Slaap- of foerageertrek",
+      "sortering": "5",
+      "veld": "trektype",
+      "waarde": "R"
+    },
+    {
+      "tekstkey": "trektype_O",
+      "taalid": "1",
+      "tekst": "Vanuit zee",
+      "sortering": "7",
+      "veld": "trektype",
+      "waarde": "O"
+    },
+    {
+      "tekstkey": "trektype_T",
+      "taalid": "1",
+      "tekst": "De zee op",
+      "sortering": "8",
+      "veld": "trektype",
+      "waarde": "T"
+    },
+    {
+      "tekstkey": "leeftijd_non_adult",
+      "taalid": "1",
+      "tekst": "niet adult",
+      "sortering": "49",
+      "veld": "leeftijd",
+      "waarde": "non_adult"
+    },
+    {
+      "tekstkey": "trektype_ringen_RD",
+      "taalid": "1",
+      "tekst": "Vogel overleden",
+      "sortering": "20",
+      "veld": "trektype_ringen",
+      "waarde": "RD"
+    },
+    {
+      "tekstkey": "trektype_ringen_not_ringed",
+      "taalid": "1",
+      "tekst": "Gevangen, niet geringd",
+      "sortering": "10",
+      "veld": "trektype_ringen",
+      "waarde": "not_ringed"
+    },
+    {
+      "tekstkey": "typetelling_ringen_ducks",
+      "taalid": "1",
+      "tekst": "Eendenkooi",
+      "sortering": "600",
+      "veld": "typetelling_ringen",
+      "waarde": "ducks"
+    },
+    {
+      "tekstkey": "gain_intensity_medium_low",
+      "taalid": "1",
+      "tekst": "low - medium",
+      "sortering": "20",
+      "veld": "gain_intensity",
+      "waarde": "medium_low"
+    },
+    {
+      "tekstkey": "gain_intensity_medium",
+      "taalid": "1",
+      "tekst": "medium",
+      "sortering": "30",
+      "veld": "gain_intensity",
+      "waarde": "medium"
+    },
+    {
+      "tekstkey": "gain_intensity_low",
+      "taalid": "1",
+      "tekst": "low",
+      "sortering": "10",
+      "veld": "gain_intensity",
+      "waarde": "low"
+    },
+    {
+      "tekstkey": "samplingrate_-1",
+      "taalid": "1",
+      "tekst": "anders",
+      "sortering": "100",
+      "veld": "samplingrate",
+      "waarde": "-1"
+    },
+    {
+      "tekstkey": "samplingrate_88.2",
+      "taalid": "1",
+      "tekst": "88.2 KHz (.wav)",
+      "sortering": "45",
+      "veld": "samplingrate",
+      "waarde": "88.2"
+    },
+    {
+      "tekstkey": "gain_intensity_medium_heigh",
+      "taalid": "1",
+      "tekst": "medium - high",
+      "sortering": "40",
+      "veld": "gain_intensity",
+      "waarde": "medium_high"
+    },
+    {
+      "tekstkey": "gain_intensity_heigh",
+      "taalid": "1",
+      "tekst": "high",
+      "sortering": "50",
+      "veld": "gain_intensity",
+      "waarde": "high"
+    },
+    {
+      "tekstkey": "samplingrate_96",
+      "taalid": "1",
+      "tekst": "96 KHz (.wav)",
+      "sortering": "50",
+      "veld": "samplingrate",
+      "waarde": "96"
+    },
+    {
+      "tekstkey": "samplingrate_44.1",
+      "taalid": "1",
+      "tekst": "44.1 KHz (.wav)",
+      "sortering": "30",
+      "veld": "samplingrate",
+      "waarde": "44.1"
+    },
+    {
+      "tekstkey": "samplingrate_24",
+      "taalid": "1",
+      "tekst": "24 KHz (.wav)",
+      "sortering": "10",
+      "veld": "samplingrate",
+      "waarde": "24"
+    },
+    {
+      "tekstkey": "samplingrate_48",
+      "taalid": "1",
+      "tekst": "48 KHz (.wav)",
+      "sortering": "40",
+      "veld": "samplingrate",
+      "waarde": "48"
+    },
+    {
+      "tekstkey": "samplingrate_32",
+      "taalid": "1",
+      "tekst": "32 KHz (.wav)",
+      "sortering": "20",
+      "veld": "samplingrate",
+      "waarde": "32"
+    },
+    {
+      "tekstkey": "samplingrate_mp3_128",
+      "taalid": "1",
+      "tekst": "128 kbps (.mp3)",
+      "sortering": "70",
+      "veld": "samplingrate",
+      "waarde": "mp3_128"
+    },
+    {
+      "tekstkey": "samplingrate_mp3_256",
+      "taalid": "1",
+      "tekst": "256 kbps (.mp3)",
+      "sortering": "80",
+      "veld": "samplingrate",
+      "waarde": "mp3_256"
+    },
+    {
+      "tekstkey": "samplingrate_mp3_320",
+      "taalid": "1",
+      "tekst": "320 kbps (.mp3)",
+      "sortering": "90",
+      "veld": "samplingrate",
+      "waarde": "mp3_320"
+    },
+    {
+      "tekstkey": "equipment_sound_Parabol_mono",
+      "taalid": "1",
+      "tekst": "Parabolic microphone (mono)",
+      "sortering": "100",
+      "veld": "equipment_sound",
+      "waarde": "Parabol_mono"
+    },
+    {
+      "tekstkey": "teltype_C",
+      "taalid": "1",
+      "tekst": "Handteller gebruikt",
+      "sortering": "5",
+      "veld": "teltype",
+      "waarde": "C"
+    },
+    {
+      "tekstkey": "neerslag_onweer",
+      "taalid": "1",
+      "tekst": "onweer",
+      "sortering": "420",
+      "veld": "neerslag",
+      "waarde": "onweer"
+    },
+    {
+      "tekstkey": "neerslag_geen",
+      "taalid": "1",
+      "tekst": "geen",
+      "sortering": "1",
+      "veld": "neerslag",
+      "waarde": "geen"
+    },
+    {
+      "tekstkey": "neerslag_sneeuw_zandstorm",
+      "taalid": "1",
+      "tekst": "sneeuw- of zandstorm",
+      "sortering": "400",
+      "veld": "neerslag",
+      "waarde": "sneeuw_zandstorm"
+    }
+  ]
+}

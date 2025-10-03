@@ -1,3 +1,49 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:5b5f18e5dee2435656a81cf11d8dc12808865f7e612dee885f0e91842cb2d504
-size 818
+{
+  "json": [
+    {
+      "telpostid": "79",
+      "waarde": "branding",
+      "sortering": "15"
+    },
+    {
+      "telpostid": "79",
+      "waarde": "duin",
+      "sortering": "20"
+    },
+    {
+      "telpostid": "79",
+      "waarde": "polders",
+      "sortering": "30"
+    },
+    {
+      "telpostid": "79",
+      "waarde": "zee",
+      "sortering": "10"
+    },
+    {
+      "telpostid": "4310",
+      "waarde": "branding",
+      "sortering": "15"
+    },
+    {
+      "telpostid": "4310",
+      "waarde": "campings",
+      "sortering": "25"
+    },
+    {
+      "telpostid": "4310",
+      "waarde": "duin",
+      "sortering": "20"
+    },
+    {
+      "telpostid": "4310",
+      "waarde": "polders",
+      "sortering": "30"
+    },
+    {
+      "telpostid": "4310",
+      "waarde": "zee",
+      "sortering": "10"
+    }
+  ]
+}
