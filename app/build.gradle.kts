@@ -8,7 +8,7 @@ plugins {
 android {
     namespace = "com.yvesds.vt5"
     compileSdk = 35
-
+    ndkVersion = "28.2.13676358"
     defaultConfig {
         applicationId = "com.yvesds.vt5"
         minSdk = 26
@@ -55,7 +55,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
-    // Material icons (voor het ‘oogje’)
+    // Material icons (oogje)
     implementation("androidx.compose.material:material-icons-extended")
 
     // SAF helper
@@ -64,9 +64,17 @@ dependencies {
     // Versleutelde opslag
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
-    // (Optioneel) JSON
+    // JSON (al aanwezig)
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+
+    // ★ Binaire serialisatie (compact en snel)
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-cbor:1.7.3")
+
+    // HTTP client + coroutines
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 }
+
 
 /** Testtaken uit. */
 tasks.matching {
