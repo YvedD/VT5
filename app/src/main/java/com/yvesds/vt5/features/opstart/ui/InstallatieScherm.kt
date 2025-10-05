@@ -8,10 +8,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -24,6 +22,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -46,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.core.secure.CredentialsStore
+import com.yvesds.vt5.features.alias.AliasIndexWriter
 import com.yvesds.vt5.features.opstart.usecases.ServerJsonDownloader
 import com.yvesds.vt5.features.opstart.usecases.TrektellenAuth
 import com.yvesds.vt5.ui.componenten.AppOutlinedKnop
@@ -54,6 +54,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * VT5 – InstallatieScherm
+ *
+ * Eén scherm dat:
+ *  - SAF map laat kiezen en submappen controleert/aanmaakt
+ *  - Trektellen credentials opslaat en login-check uitvoert
+ *  - Serverdata (.json) downloadt en binaries bijwerkt
+ *  - Aliassen pré-computet uit assets/aliasmapping.csv → filesDir/binaries
+ *
+ * NB: we hebben eSpeak-NG volledig verwijderd (geen dependency/knop/progress meer).
+ */
 @Composable
 fun InstallatieScherm(
     onKlaar: () -> Unit
@@ -69,19 +80,21 @@ fun InstallatieScherm(
 
     var username by remember { mutableStateOf(creds.getUsername().orEmpty()) }
     var password by remember { mutableStateOf(creds.getPassword().orEmpty()) }
-
     var showPassword by remember { mutableStateOf(false) }
 
-    // pop-up voorkeur en queue (LET OP: removeAt i.p.v. removeFirst)
+    // Pop-up queue (batched resultaten)
     val uiPrefs = remember { UiPrefs(context) }
-    var showAuthPopupPref by remember { mutableStateOf(uiPrefs.getShowAuthPopup()) }
     var showDialog by remember { mutableStateOf(false) }
     val dialogQueue = remember { mutableStateListOf<String>() }
     var dialogText by remember { mutableStateOf("") }
 
+    // Loading states
     var loadingAuth by remember { mutableStateOf(false) }
     var loadingDownloads by remember { mutableStateOf(false) }
+    var loadingAliases by remember { mutableStateOf(false) }
+    var aliasProgressMsg by remember { mutableStateOf("Pré-computen van aliassen…") }
 
+    // SAF folder chooser
     val treeLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
@@ -281,6 +294,44 @@ fun InstallatieScherm(
                 }
             )
 
+            // Pré-compute aliassen (assets → binaries) met voortgang-popup
+            AppOutlinedKnop(
+                tekst = if (loadingAliases) "Aliassen pré-computen…" else "Pré-compute aliassen (assets → binaries)",
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    if (loadingAliases) return@AppOutlinedKnop
+                    loadingAliases = true
+                    aliasProgressMsg = "Zoeken naar assets/aliasmapping.csv en pré-computen…"
+                    scope.launch {
+                        val resultMsg = withContext(Dispatchers.Default) {
+                            runCatching {
+                                val (jsonGz, cborGz) = AliasIndexWriter.ensureComputed(
+                                    context = context,
+                                    saf = saf,   // <-- zodat hij eerst naar Documents/VT5/assets/... kijkt
+                                    q = 3,
+                                    minhashK = 64
+                                )
+                                aliasProgressMsg = "Pré-compute gelukt. Index laden…"
+                                val index = AliasIndexWriter.loadIndexFromBinaries(context)
+                                val cnt = index?.json?.size ?: 0
+                                "Aliassen pré-computed en geladen.\n" +
+                                        "- Records: $cnt\n" +
+                                        "- JSON.gz: $jsonGz\n" +
+                                        "- CBOR.gz: $cborGz"
+                            }.getOrElse { e ->
+                                "Pré-compute aliassen — fout:\n${e.message ?: e.toString()}"
+                            }
+                        }
+                        loadingAliases = false
+                        dialogQueue.add(resultMsg)
+                        if (!showDialog) {
+                            dialogText = dialogQueue.removeAt(0)
+                            showDialog = true
+                        }
+                    }
+                }
+            )
+
             AppPrimaireKnop(
                 tekst = "Klaar",
                 modifier = Modifier.fillMaxWidth(),
@@ -289,7 +340,7 @@ fun InstallatieScherm(
         }
     }
 
-    // Pop-up queue
+    // Pop-up queue (batched resultaten)
     if (showDialog) {
         var disableNext by remember { mutableStateOf(false) }
         AlertDialog(
@@ -315,12 +366,31 @@ fun InstallatieScherm(
                     if (disableNext) uiPrefs.setShowAuthPopup(false)
                     if (dialogQueue.isNotEmpty()) {
                         dialogText = dialogQueue.removeAt(0)
-                        // showDialog blijft true
                     } else {
                         showDialog = false
                     }
-                }) { Text("OK") }
+                }) {
+                    Text("OK")
+                }
             }
+        )
+    }
+
+    // Blokkerende voortgang-popup tijdens aliasberekening
+    if (loadingAliases) {
+        AlertDialog(
+            onDismissRequest = { /* niet cancelbaar tijdens compute */ },
+            title = { Text("Bezig…") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(aliasProgressMsg)
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = { }
         )
     }
 }

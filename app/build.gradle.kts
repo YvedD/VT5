@@ -11,7 +11,7 @@ android {
     ndkVersion = "28.2.13676358"
     defaultConfig {
         applicationId = "com.yvesds.vt5"
-        minSdk = 26
+        minSdk = 33
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
@@ -69,6 +69,10 @@ dependencies {
 
     // ★ Binaire serialisatie (compact en snel)
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-cbor:1.7.3")
+    // DoubleMetaphone, ColognePhonetic
+    implementation("commons-codec:commons-codec:1.17.1")
+    // LevenshteinDistance, JaroWinkler etc.
+    implementation("org.apache.commons:commons-text:1.12.0")
 
     // HTTP client + coroutines
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
