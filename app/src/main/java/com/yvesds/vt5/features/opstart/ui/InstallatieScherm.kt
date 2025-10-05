@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -22,13 +23,13 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -45,7 +46,6 @@ import androidx.compose.ui.unit.dp
 import androidx.documentfile.provider.DocumentFile
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.core.secure.CredentialsStore
-import com.yvesds.vt5.features.alias.AliasIndexWriter
 import com.yvesds.vt5.features.opstart.usecases.ServerJsonDownloader
 import com.yvesds.vt5.features.opstart.usecases.TrektellenAuth
 import com.yvesds.vt5.ui.componenten.AppOutlinedKnop
@@ -54,17 +54,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/**
- * VT5 – InstallatieScherm
- *
- * Eén scherm dat:
- *  - SAF map laat kiezen en submappen controleert/aanmaakt
- *  - Trektellen credentials opslaat en login-check uitvoert
- *  - Serverdata (.json) downloadt en binaries bijwerkt
- *  - Aliassen pré-computet uit assets/aliasmapping.csv → filesDir/binaries
- *
- * NB: we hebben eSpeak-NG volledig verwijderd (geen dependency/knop/progress meer).
- */
 @Composable
 fun InstallatieScherm(
     onKlaar: () -> Unit
@@ -74,45 +63,63 @@ fun InstallatieScherm(
     val creds = remember { CredentialsStore(context) }
     val scope = rememberCoroutineScope()
 
-    var gekozenUri by remember { mutableStateOf<Uri?>(saf.getRootUri()) }
-    var foldersOk by remember { mutableStateOf(saf.foldersExist()) }
-    var status by remember { mutableStateOf(makeStatusText(gekozenUri, foldersOk)) }
+    // --- STATES ---
+    var gekozenUri by remember { mutableStateOf<Uri?>(null) }
+    var foldersOk by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf("Bezig…") }
 
     var username by remember { mutableStateOf(creds.getUsername().orEmpty()) }
     var password by remember { mutableStateOf(creds.getPassword().orEmpty()) }
     var showPassword by remember { mutableStateOf(false) }
 
-    // Pop-up queue (batched resultaten)
+    // pop-up voorkeur en queue
     val uiPrefs = remember { UiPrefs(context) }
     var showDialog by remember { mutableStateOf(false) }
     val dialogQueue = remember { mutableStateListOf<String>() }
     var dialogText by remember { mutableStateOf("") }
 
-    // Loading states
     var loadingAuth by remember { mutableStateOf(false) }
     var loadingDownloads by remember { mutableStateOf(false) }
-    var loadingAliases by remember { mutableStateOf(false) }
-    var aliasProgressMsg by remember { mutableStateOf("Pré-computen van aliassen…") }
+    var loadingFolders by remember { mutableStateOf(false) }
 
-    // SAF folder chooser
+    // Init: haal SAF-root en check folders OFF-MAIN
+    LaunchedEffect(Unit) {
+        val (uri, ok) = withContext(Dispatchers.IO) {
+            val u = saf.getRootUri()
+            val fOk = if (u != null) saf.foldersExist() else false
+            u to fOk
+        }
+        gekozenUri = uri
+        foldersOk = ok
+        status = makeStatusText(gekozenUri, foldersOk)
+    }
+
     val treeLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
         if (uri != null) {
+            // dit mag kort op main, maar folder-scan doen we hierna in IO
             saf.takePersistablePermission(uri)
             saf.saveRootUri(uri)
             gekozenUri = uri
-            foldersOk = saf.foldersExist() || saf.ensureFolders()
-            status = makeStatusText(gekozenUri, foldersOk)
+            loadingFolders = true
+            scope.launch {
+                val ok = withContext(Dispatchers.IO) {
+                    saf.foldersExist() || saf.ensureFolders()
+                }
+                foldersOk = ok
+                status = makeStatusText(gekozenUri, foldersOk)
+                loadingFolders = false
+            }
         } else {
-            status = "Geen map gekozen. Kies 'Documents' en bevestig 'Deze map gebruiken'."
+            status = "Geen map gekozen.\nKies 'Documents' en bevestig 'Deze map gebruiken'."
         }
     }
 
     val uitlegTekst =
         "Deze toepassing moet kunnen bestanden inlezen, wegschrijven en bewerken.\n" +
                 "Bevestig hierna het gebruik van de map 'Documents'. Kies de optie [Deze map gebruiken] om verder te gaan. " +
-                "Alle mappen en bestanden worden voor u aangemaakt indien deze nog niet bestaan. " +
+                "Alle mappen en bestanden worden voor u aangemaakt indien deze nog niet bestaan.\n" +
                 "Bij een herinstallatie worden er geen bestanden overschreven!"
 
     Surface(
@@ -127,6 +134,7 @@ fun InstallatieScherm(
             verticalArrangement = Arrangement.spacedBy(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+
             Text("VT5 (Her)Installatie", style = MaterialTheme.typography.titleLarge)
 
             OutlinedTextField(
@@ -145,19 +153,29 @@ fun InstallatieScherm(
             )
 
             AppOutlinedKnop(
-                tekst = "Submappen controleren/aanmaken",
+                tekst = if (loadingFolders) "Controleren…" else "Submappen controleren/aanmaken",
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
                     if (gekozenUri == null) {
-                        status = "SAF niet ingesteld. Kies eerst 'Documents' en bevestig 'Deze map gebruiken'."
-                    } else {
-                        foldersOk = saf.foldersExist() || saf.ensureFolders()
-                        status = makeStatusText(gekozenUri, foldersOk)
+                        status = "SAF niet ingesteld.\nKies eerst 'Documents' en bevestig 'Deze map gebruiken'."
+                    } else if (!loadingFolders) {
+                        loadingFolders = true
+                        scope.launch {
+                            val ok = withContext(Dispatchers.IO) {
+                                saf.foldersExist() || saf.ensureFolders()
+                            }
+                            foldersOk = ok
+                            status = makeStatusText(gekozenUri, foldersOk)
+                            loadingFolders = false
+                        }
                     }
                 }
             )
 
-            Text(text = status, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.90f))
+            Text(
+                text = status,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.90f)
+            )
 
             Text("Trektellen-gegevens", style = MaterialTheme.typography.titleMedium)
 
@@ -202,6 +220,7 @@ fun InstallatieScherm(
                         Toast.makeText(context, "Credentials gewist", Toast.LENGTH_SHORT).show()
                     }
                 )
+
                 AppPrimaireKnop(
                     tekst = "Bewaar",
                     onClick = {
@@ -211,7 +230,7 @@ fun InstallatieScherm(
                 )
             }
 
-            // Login testen (Basic Auth)
+            // Login testen (Basic Auth) — gebruikt Result<String> + schrijft exact popup-tekst weg als checkuser.json
             AppOutlinedKnop(
                 tekst = if (loadingAuth) "Bezig…" else "Login testen (Basic Auth)",
                 modifier = Modifier.fillMaxWidth(),
@@ -223,7 +242,7 @@ fun InstallatieScherm(
                     }
                     loadingAuth = true
                     scope.launch {
-                        val res = withContext(Dispatchers.IO) {
+                        val result: Result<String> = withContext(Dispatchers.IO) {
                             TrektellenAuth.checkUser(
                                 username = username.trim(),
                                 password = password,
@@ -232,15 +251,21 @@ fun InstallatieScherm(
                             )
                         }
                         loadingAuth = false
-                        res.onSuccess { txt ->
+
+                        result.onSuccess { responseText ->
+                            // 1) popup tonen
                             if (uiPrefs.getShowAuthPopup()) {
-                                dialogQueue.add("checkuser\n\n$txt")
+                                dialogQueue.add("checkuser\n\n$responseText")
                                 if (!showDialog) {
                                     dialogText = dialogQueue.removeAt(0)
                                     showDialog = true
                                 }
                             } else {
-                                Toast.makeText(context, "Login OK (popup uitgeschakeld)", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Login uitgevoerd (popup uitgeschakeld)", Toast.LENGTH_SHORT).show()
+                            }
+                            // 2) exact dezelfde tekst wegschrijven naar Documents/VT5/serverdata/checkuser.json
+                            scope.launch(Dispatchers.IO) {
+                                writeCheckuserJsonExact(context, responseText)
                             }
                         }.onFailure { e ->
                             dialogQueue.add("checkuser — fout\n\n${e.message ?: e.toString()}")
@@ -253,7 +278,7 @@ fun InstallatieScherm(
                 }
             )
 
-            // Alle server-JSONs downloaden (per bestand pop-up)
+            // Alle server-JSONs downloaden (zonder checkuser)
             AppPrimaireKnop(
                 tekst = if (loadingDownloads) "Downloaden…" else "Serverdata (.json) downloaden",
                 modifier = Modifier.fillMaxWidth(),
@@ -265,7 +290,7 @@ fun InstallatieScherm(
                     }
                     val vt5Dir: DocumentFile? = saf.getVt5DirIfExists()
                     if (vt5Dir == null) {
-                        Toast.makeText(context, "VT5 map ontbreekt. Kies eerst 'Documents' en maak submappen.", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "VT5 map ontbreekt.\nKies eerst 'Documents' en maak submappen.", Toast.LENGTH_LONG).show()
                         return@AppPrimaireKnop
                     }
                     val serverdata = vt5Dir.findFile("serverdata")?.takeIf { it.isDirectory }
@@ -275,7 +300,7 @@ fun InstallatieScherm(
 
                     loadingDownloads = true
                     scope.launch {
-                        val msgs = ServerJsonDownloader.downloadAll(
+                        val msgs: List<String> = ServerJsonDownloader.downloadAll(
                             context = context,
                             serverdataDir = serverdata,
                             binariesDir = binaries,
@@ -294,53 +319,17 @@ fun InstallatieScherm(
                 }
             )
 
-            // Pré-compute aliassen (assets → binaries) met voortgang-popup
-            AppOutlinedKnop(
-                tekst = if (loadingAliases) "Aliassen pré-computen…" else "Pré-compute aliassen (assets → binaries)",
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    if (loadingAliases) return@AppOutlinedKnop
-                    loadingAliases = true
-                    aliasProgressMsg = "Zoeken naar assets/aliasmapping.csv en pré-computen…"
-                    scope.launch {
-                        val resultMsg = withContext(Dispatchers.Default) {
-                            runCatching {
-                                val (jsonGz, cborGz) = AliasIndexWriter.ensureComputed(
-                                    context = context,
-                                    saf = saf,   // <-- zodat hij eerst naar Documents/VT5/assets/... kijkt
-                                    q = 3,
-                                    minhashK = 64
-                                )
-                                aliasProgressMsg = "Pré-compute gelukt. Index laden…"
-                                val index = AliasIndexWriter.loadIndexFromBinaries(context)
-                                val cnt = index?.json?.size ?: 0
-                                "Aliassen pré-computed en geladen.\n" +
-                                        "- Records: $cnt\n" +
-                                        "- JSON.gz: $jsonGz\n" +
-                                        "- CBOR.gz: $cborGz"
-                            }.getOrElse { e ->
-                                "Pré-compute aliassen — fout:\n${e.message ?: e.toString()}"
-                            }
-                        }
-                        loadingAliases = false
-                        dialogQueue.add(resultMsg)
-                        if (!showDialog) {
-                            dialogText = dialogQueue.removeAt(0)
-                            showDialog = true
-                        }
-                    }
-                }
-            )
-
             AppPrimaireKnop(
                 tekst = "Klaar",
                 modifier = Modifier.fillMaxWidth(),
                 onClick = { onKlaar() }
             )
+
+            Spacer(modifier = Modifier.padding(bottom = 8.dp))
         }
     }
 
-    // Pop-up queue (batched resultaten)
+    // Resultaat-popup met “popups uitzetten”-checkbox
     if (showDialog) {
         var disableNext by remember { mutableStateOf(false) }
         AlertDialog(
@@ -356,7 +345,10 @@ fun InstallatieScherm(
                             .verticalScroll(rememberScrollState())
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = disableNext, onCheckedChange = { disableNext = it })
+                        Checkbox(
+                            checked = disableNext,
+                            onCheckedChange = { checked -> disableNext = checked }
+                        )
                         Text("Pop-ups uitzetten (alleen voor login-check)")
                     }
                 }
@@ -369,40 +361,19 @@ fun InstallatieScherm(
                     } else {
                         showDialog = false
                     }
-                }) {
-                    Text("OK")
-                }
+                }) { Text("OK") }
             }
-        )
-    }
-
-    // Blokkerende voortgang-popup tijdens aliasberekening
-    if (loadingAliases) {
-        AlertDialog(
-            onDismissRequest = { /* niet cancelbaar tijdens compute */ },
-            title = { Text("Bezig…") },
-            text = {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(aliasProgressMsg)
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
-            },
-            confirmButton = { }
         )
     }
 }
 
 /* ---------- helpers ---------- */
 
-private fun makeStatusText(uri: Uri?, foldersOk: Boolean): String =
-    when {
-        uri == null -> "SAF niet ingesteld. Kies 'Documents' en bevestig 'Deze map gebruiken'."
-        foldersOk -> "SAF ingesteld ✔ — alle VT5-submappen aanwezig."
-        else -> "SAF ingesteld, maar submappen ontbreken nog. Druk op 'Submappen controleren/aanmaken'."
-    }
+private fun makeStatusText(uri: Uri?, foldersOk: Boolean): String = when {
+    uri == null -> "SAF niet ingesteld.\nKies 'Documents' en bevestig 'Deze map gebruiken'."
+    foldersOk -> "SAF ingesteld ✔ — alle VT5-submappen aanwezig."
+    else -> "SAF ingesteld, maar submappen ontbreken nog.\nDruk op 'Submappen controleren/aanmaken'."
+}
 
 private class UiPrefs(ctx: Context) {
     private val p = ctx.getSharedPreferences("vt5_ui_prefs", Context.MODE_PRIVATE)
@@ -410,3 +381,32 @@ private class UiPrefs(ctx: Context) {
     fun setShowAuthPopup(v: Boolean) { p.edit().putBoolean(KEY, v).apply() }
     companion object { private const val KEY = "show_auth_popup" }
 }
+
+/**
+ * Schrijft de *exacte* popup-tekst (serverresponse) weg als:
+ * Documents/VT5/serverdata/checkuser.json
+ *
+ * - Geen transformaties, precies wat je zag.
+ * - Maakt de map 'serverdata' aan indien nodig.
+ */
+private fun writeCheckuserJsonExact(context: Context, rawText: String): Boolean {
+    return try {
+        val saf = SaFStorageHelper(context)
+        val vt5 = saf.getVt5DirIfExists() ?: return false
+        val serverdata = vt5.findFile("serverdata")?.takeIf { it.isDirectory }
+            ?: vt5.createDirectory("serverdata")
+            ?: return false
+        serverdata.findFile("checkuser.json")?.delete()
+        val f = serverdata.createFile("application/json", "checkuser.json") ?: return false
+        context.contentResolver.openOutputStream(f.uri, "w")!!.use { out ->
+            out.write(rawText.toByteArray(Charsets.UTF_8))
+            out.flush()
+        }
+        true
+    } catch (_: Throwable) {
+        false
+    }
+}
+
+private fun DocumentFile.findFile(name: String): DocumentFile? =
+    listFiles().firstOrNull { it.name == name }
