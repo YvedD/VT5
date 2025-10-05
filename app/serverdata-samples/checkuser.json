@@ -1,7 +1,10 @@
 {
   "json": [
     {
-      "message": "NOK"
+      "message": "OK",
+      "userid": "3533",
+      "fullname": "Yves De Saedeleer",
+      "password": "$2a$06$QlweGbedBwaglA9zZoRrG.YAD7vHgKPKi7gwp6lRy4mJ40FumjWb2"
     }
   ]
 }
