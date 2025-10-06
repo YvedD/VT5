@@ -1,24 +1,17 @@
+@file:OptIn(kotlinx.serialization.InternalSerializationApi::class)
+
 package com.yvesds.vt5.features.serverdata.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-/**
- * === VT5 – Serverdata modellen + DataSnapshot ===
- *
- * Opmerking top-level JSON: de voorbeelden hanteren { "json": [ ... ] }.
- * We modelleren dat expliciet met WrappedJson<T>. De loader kan ook omgaan
- * met payloads die rechtstreeks een array bevatten (List<T>) of een enkel object,
- * en normaliseert dat intern waar nodig.
- */
-
-/* ------------ Generieke wrapper: { "json": [ ... ] } ------------ */
+/* ---------------- Wrapper { "json": [ ... ] } ---------------- */
 @Serializable
 data class WrappedJson<T>(
     @SerialName("json") val json: List<T> = emptyList()
 )
 
-/* ------------ checkuser.json ------------ */
+/* ---------------- checkuser.json ---------------- */
 @Serializable
 data class CheckUserItem(
     val message: String? = null,
@@ -27,7 +20,7 @@ data class CheckUserItem(
     val password: String? = null
 )
 
-/* ------------ species.json ------------ */
+/* ---------------- species.json ---------------- */
 @Serializable
 data class SpeciesItem(
     val soortid: String,
@@ -37,7 +30,7 @@ data class SpeciesItem(
     val sortering: String
 )
 
-/* ------------ protocolinfo.json ------------ */
+/* ---------------- protocolinfo.json ---------------- */
 @Serializable
 data class ProtocolInfoItem(
     val id: String,
@@ -48,7 +41,7 @@ data class ProtocolInfoItem(
     val sortering: String? = null
 )
 
-/* ------------ protocolspecies.json ------------ */
+/* ---------------- protocolspecies.json ---------------- */
 @Serializable
 data class ProtocolSpeciesItem(
     val id: String,
@@ -59,7 +52,7 @@ data class ProtocolSpeciesItem(
     val kleed: String? = null
 )
 
-/* ------------ sites.json ------------ */
+/* ---------------- sites.json ---------------- */
 @Serializable
 data class SiteItem(
     val telpostid: String,
@@ -70,7 +63,7 @@ data class SiteItem(
     val protocolid: String? = null
 )
 
-/* ------------ site_locations.json & site_heights.json ------------ */
+/* ---------------- site_locations.json / site_heights.json ---------------- */
 @Serializable
 data class SiteValueItem(
     val telpostid: String,
@@ -78,29 +71,32 @@ data class SiteValueItem(
     val sortering: String? = null
 )
 
-/* ------------ site_species.json ------------ */
+/* ---------------- site_species.json ---------------- */
 @Serializable
 data class SiteSpeciesItem(
     val telpostid: String,
     val soortid: String
 )
 
-/* ------------ codes.json ------------
- * Generiek model; wordt aangescherpt zodra het definitieve schema vastligt.
+/* ---------------- codes.json ----------------
+ * Mapt exact de NL-sleutels naar Kotlin velden.
+ * - JSON "veld"       -> category
+ * - JSON "tekstkey"   -> key
+ * - JSON "waarde"     -> value
+ * - JSON "tekst"      -> tekst
+ * - JSON "sortering"  -> sortering
  */
 @Serializable
 data class CodeItem(
-    val category: String? = null,
-    val id: String? = null,
-    val key: String? = null,
-    val value: String? = null,
-    val tekst: String? = null,
-    val sortering: String? = null
+    @SerialName("veld")      val category: String? = null,
+    @SerialName("id")        val id: String? = null,
+    @SerialName("tekstkey")  val key: String? = null,
+    @SerialName("waarde")    val value: String? = null,
+    @SerialName("tekst")     val tekst: String? = null,
+    @SerialName("sortering") val sortering: String? = null
 )
 
-/* ------------ DataSnapshot ------------
- * Immutable snapshot gepubliceerd via StateFlow in de repository.
- */
+/* ---------------- DataSnapshot ---------------- */
 @Serializable
 data class DataSnapshot(
     // User
@@ -108,25 +104,21 @@ data class DataSnapshot(
 
     // Species
     val speciesById: Map<String, SpeciesItem> = emptyMap(),
-    /** canonical(lower + diacritics-vrij) -> soortid */
     val speciesByCanonical: Map<String, String> = emptyMap(),
 
     // Sites
     val sitesById: Map<String, SiteItem> = emptyMap(),
-    /** door backend/rights gefilterde set; voorlopig leeg tot veld beschikbaar is */
     val assignedSites: List<String> = emptyList(),
 
     // Site helpers
     val siteLocationsBySite: Map<String, List<SiteValueItem>> = emptyMap(),
     val siteHeightsBySite: Map<String, List<SiteValueItem>> = emptyMap(),
-
-    // Site-species relaties (optioneel te tonen in UI)
     val siteSpeciesBySite: Map<String, List<SiteSpeciesItem>> = emptyMap(),
 
     // Protocol
     val protocolsInfo: List<ProtocolInfoItem> = emptyList(),
     val protocolSpeciesByProtocol: Map<String, List<ProtocolSpeciesItem>> = emptyMap(),
 
-    // Codes (generiek; verfijnbaar)
+    // Codes – reeds gegroepeerd op category = JSON "veld"
     val codesByCategory: Map<String, List<CodeItem>> = emptyMap()
 )

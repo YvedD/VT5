@@ -6,7 +6,7 @@ import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import com.yvesds.vt5.core.app.AppShutdown
 import com.yvesds.vt5.databinding.SchermHoofdBinding
-import com.yvesds.vt5.features.metadata.ui.Metadatascherm
+import com.yvesds.vt5.features.metadata.ui.MetadataScherm
 import com.yvesds.vt5.features.opstart.ui.InstallatieScherm
 
 class HoofdActiviteit : AppCompatActivity() {
@@ -23,7 +23,7 @@ class HoofdActiviteit : AppCompatActivity() {
         }
 
         binding.btnVerder.setOnClickListener {
-            startActivity(Intent(this, Metadatascherm::class.java))
+            startActivity(Intent(this, MetadataScherm::class.java))
         }
 
         binding.btnAfsluiten.setOnClickListener {
