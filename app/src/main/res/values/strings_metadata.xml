@@ -1,0 +1,25 @@
+<resources>
+    <string name="meta_titel_basis">Basisgegevens telling</string>
+    <string name="meta_datum">Datum</string>
+    <string name="meta_tijd">Tijd</string>
+    <string name="meta_telpost">Telpost</string>
+    <string name="meta_tellers">Teller(s)</string>
+
+    <string name="meta_weer_titel">Weer :</string>
+    <string name="meta_weer_opm">Opmerking weer</string>
+
+    <string name="meta_windrichting">Windrichting</string>
+    <string name="meta_temperatuur">Temperatuur (°C)</string>
+    <string name="meta_bewolking">Bewolking (achtsten)</string>
+    <string name="meta_zicht">Zicht (m)</string>
+
+    <string name="meta_windkracht">Windkracht (Bft)</string>
+    <string name="meta_neerslag">Neerslag</string>
+    <string name="meta_luchtdruk">Luchtdruk (hPa)</string>
+
+    <string name="meta_typetelling">Type telling</string>
+    <string name="meta_opmerkingen">Opmerkingen</string>
+
+    <string name="annuleer">Annuleer</string>
+    <string name="verder">Verder</string>
+</resources>

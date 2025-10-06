@@ -1,0 +1,9 @@
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <!-- Pressed = volledig lichtblauw voor duidelijk contrast -->
+    <solid android:color="@color/vt5_light_blue" />
+    <corners android:radius="@dimen/vt5_btn_corner" />
+    <stroke
+        android:width="@dimen/vt5_btn_stroke"
+        android:color="@color/vt5_light_gray" />
+    <padding android:left="12dp" android:right="12dp" android:top="8dp" android:bottom="8dp" />
+</shape>

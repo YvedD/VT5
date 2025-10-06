@@ -394,6 +394,38 @@ class ServerDataRepository(
             ignoreUnknownKeys = true
         }
     }
+    suspend fun loadForMetadata(): DataSnapshot = withContext(Dispatchers.IO) {
+        val saf = com.yvesds.vt5.core.opslag.SaFStorageHelper(context)
+        val vt5Root = saf.getVt5DirIfExists() ?: return@withContext DataSnapshot()
+        val serverdata = vt5Root.findChildByName("serverdata")?.takeIf { it.isDirectory }
+            ?: return@withContext DataSnapshot()
+
+        val userObj = readOne<CheckUserItem>(serverdata, baseName = "checkuser", expectedKind = VT5Bin.Kind.CHECK_USER)
+        val sites = readList<SiteItem>(serverdata, baseName = "sites", expectedKind = VT5Bin.Kind.SITES)
+        val codes = runCatching {
+            readList<CodeItem>(serverdata, baseName = "codes", expectedKind = VT5Bin.Kind.CODES)
+        }.getOrElse { emptyList() }
+
+        val sitesById = sites.associateBy { it.telpostid }
+        val codesByCategory = codes.groupBy { it.category ?: "uncategorized" }
+
+        val snap = DataSnapshot(
+            currentUser = userObj,
+            speciesById = emptyMap(),
+            speciesByCanonical = emptyMap(),
+            sitesById = sitesById,
+            assignedSites = emptyList(),
+            siteLocationsBySite = emptyMap(),
+            siteHeightsBySite = emptyMap(),
+            siteSpeciesBySite = emptyMap(),
+            protocolsInfo = emptyList(),
+            protocolSpeciesByProtocol = emptyMap(),
+            codesByCategory = codesByCategory
+        )
+        snapshotState.value = snap
+        snap
+    }
+
 }
 
 /* ================================================================
@@ -489,6 +521,8 @@ private data class VT5Header(
         }
     }
 }
+
+
 
 /* -------------------- DocumentFile helper -------------------- */
 private fun DocumentFile.findChildByName(name: String): DocumentFile? {

@@ -1,412 +1,266 @@
 package com.yvesds.vt5.features.opstart.ui
 
-import android.content.Context
+import android.app.Activity
+import android.content.Intent
 import android.net.Uri
+import android.os.Bundle
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.unit.dp
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
 import androidx.documentfile.provider.DocumentFile
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.core.secure.CredentialsStore
+import com.yvesds.vt5.databinding.SchermInstallatieBinding
+import com.yvesds.vt5.features.alias.AliasIndexWriter
 import com.yvesds.vt5.features.opstart.usecases.ServerJsonDownloader
 import com.yvesds.vt5.features.opstart.usecases.TrektellenAuth
-import com.yvesds.vt5.ui.componenten.AppOutlinedKnop
-import com.yvesds.vt5.ui.componenten.AppPrimaireKnop
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@Composable
-fun InstallatieScherm(
-    onKlaar: () -> Unit
-) {
-    val context = LocalContext.current
-    val saf = remember { SaFStorageHelper(context) }
-    val creds = remember { CredentialsStore(context) }
-    val scope = rememberCoroutineScope()
-
-    // --- STATES ---
-    var gekozenUri by remember { mutableStateOf<Uri?>(null) }
-    var foldersOk by remember { mutableStateOf(false) }
-    var status by remember { mutableStateOf("Bezig…") }
-
-    var username by remember { mutableStateOf(creds.getUsername().orEmpty()) }
-    var password by remember { mutableStateOf(creds.getPassword().orEmpty()) }
-    var showPassword by remember { mutableStateOf(false) }
-
-    // pop-up voorkeur en queue
-    val uiPrefs = remember { UiPrefs(context) }
-    var showDialog by remember { mutableStateOf(false) }
-    val dialogQueue = remember { mutableStateListOf<String>() }
-    var dialogText by remember { mutableStateOf("") }
-
-    var loadingAuth by remember { mutableStateOf(false) }
-    var loadingDownloads by remember { mutableStateOf(false) }
-    var loadingFolders by remember { mutableStateOf(false) }
-
-    // Init: haal SAF-root en check folders OFF-MAIN
-    LaunchedEffect(Unit) {
-        val (uri, ok) = withContext(Dispatchers.IO) {
-            val u = saf.getRootUri()
-            val fOk = if (u != null) saf.foldersExist() else false
-            u to fOk
-        }
-        gekozenUri = uri
-        foldersOk = ok
-        status = makeStatusText(gekozenUri, foldersOk)
-    }
-
-    val treeLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocumentTree()
-    ) { uri ->
-        if (uri != null) {
-            // dit mag kort op main, maar folder-scan doen we hierna in IO
-            saf.takePersistablePermission(uri)
-            saf.saveRootUri(uri)
-            gekozenUri = uri
-            loadingFolders = true
-            scope.launch {
-                val ok = withContext(Dispatchers.IO) {
-                    saf.foldersExist() || saf.ensureFolders()
-                }
-                foldersOk = ok
-                status = makeStatusText(gekozenUri, foldersOk)
-                loadingFolders = false
-            }
-        } else {
-            status = "Geen map gekozen.\nKies 'Documents' en bevestig 'Deze map gebruiken'."
-        }
-    }
-
-    val uitlegTekst =
-        "Deze toepassing moet kunnen bestanden inlezen, wegschrijven en bewerken.\n" +
-                "Bevestig hierna het gebruik van de map 'Documents'. Kies de optie [Deze map gebruiken] om verder te gaan. " +
-                "Alle mappen en bestanden worden voor u aangemaakt indien deze nog niet bestaan.\n" +
-                "Bij een herinstallatie worden er geen bestanden overschreven!"
-
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.surface
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(24.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-
-            Text("VT5 (Her)Installatie", style = MaterialTheme.typography.titleLarge)
-
-            OutlinedTextField(
-                value = uitlegTekst,
-                onValueChange = { /* read-only */ },
-                modifier = Modifier.fillMaxWidth(),
-                readOnly = true,
-                label = { Text("Belangrijke uitleg") },
-                supportingText = { Text("Bevestig het gebruik van de map 'Documents' in de volgende stap.") }
-            )
-
-            AppPrimaireKnop(
-                tekst = "Map 'Documents' kiezen",
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { treeLauncher.launch(null) }
-            )
-
-            AppOutlinedKnop(
-                tekst = if (loadingFolders) "Controleren…" else "Submappen controleren/aanmaken",
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    if (gekozenUri == null) {
-                        status = "SAF niet ingesteld.\nKies eerst 'Documents' en bevestig 'Deze map gebruiken'."
-                    } else if (!loadingFolders) {
-                        loadingFolders = true
-                        scope.launch {
-                            val ok = withContext(Dispatchers.IO) {
-                                saf.foldersExist() || saf.ensureFolders()
-                            }
-                            foldersOk = ok
-                            status = makeStatusText(gekozenUri, foldersOk)
-                            loadingFolders = false
-                        }
-                    }
-                }
-            )
-
-            Text(
-                text = status,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.90f)
-            )
-
-            Text("Trektellen-gegevens", style = MaterialTheme.typography.titleMedium)
-
-            OutlinedTextField(
-                value = username,
-                onValueChange = { username = it },
-                label = { Text("Loginnaam") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
-            )
-
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
-                label = { Text("Paswoord") },
-                singleLine = true,
-                visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                trailingIcon = {
-                    IconButton(onClick = { showPassword = !showPassword }) {
-                        if (showPassword) {
-                            Icon(imageVector = Icons.Filled.VisibilityOff, contentDescription = "Verberg wachtwoord")
-                        } else {
-                            Icon(imageVector = Icons.Filled.Visibility, contentDescription = "Toon wachtwoord")
-                        }
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End)
-            ) {
-                AppOutlinedKnop(
-                    tekst = "Wis",
-                    onClick = {
-                        CredentialsStore(context).clear()
-                        username = ""
-                        password = ""
-                        Toast.makeText(context, "Credentials gewist", Toast.LENGTH_SHORT).show()
-                    }
-                )
-
-                AppPrimaireKnop(
-                    tekst = "Bewaar",
-                    onClick = {
-                        CredentialsStore(context).save(username.trim(), password)
-                        Toast.makeText(context, "Credentials opgeslagen", Toast.LENGTH_SHORT).show()
-                    }
-                )
-            }
-
-            // Login testen (Basic Auth) — gebruikt Result<String> + schrijft exact popup-tekst weg als checkuser.json
-            AppOutlinedKnop(
-                tekst = if (loadingAuth) "Bezig…" else "Login testen (Basic Auth)",
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    if (loadingAuth) return@AppOutlinedKnop
-                    if (username.isBlank() || password.isBlank()) {
-                        Toast.makeText(context, "Vul eerst login en paswoord in.", Toast.LENGTH_LONG).show()
-                        return@AppOutlinedKnop
-                    }
-                    loadingAuth = true
-                    scope.launch {
-                        val result: Result<String> = withContext(Dispatchers.IO) {
-                            TrektellenAuth.checkUser(
-                                username = username.trim(),
-                                password = password,
-                                language = "dutch",
-                                versie = "1845"
-                            )
-                        }
-                        loadingAuth = false
-
-                        result.onSuccess { responseText ->
-                            // 1) popup tonen
-                            if (uiPrefs.getShowAuthPopup()) {
-                                dialogQueue.add("checkuser\n\n$responseText")
-                                if (!showDialog) {
-                                    dialogText = dialogQueue.removeAt(0)
-                                    showDialog = true
-                                }
-                            } else {
-                                Toast.makeText(context, "Login uitgevoerd (popup uitgeschakeld)", Toast.LENGTH_SHORT).show()
-                            }
-                            // 2) exact dezelfde tekst wegschrijven naar Documents/VT5/serverdata/checkuser.json
-                            scope.launch(Dispatchers.IO) {
-                                writeCheckuserJsonExact(context, responseText)
-                            }
-                        }.onFailure { e ->
-                            dialogQueue.add("checkuser — fout\n\n${e.message ?: e.toString()}")
-                            if (!showDialog) {
-                                dialogText = dialogQueue.removeAt(0)
-                                showDialog = true
-                            }
-                        }
-                    }
-                }
-            )
-
-            // Alle server-JSONs downloaden (zonder checkuser)
-            AppPrimaireKnop(
-                tekst = if (loadingDownloads) "Downloaden…" else "Serverdata (.json) downloaden",
-                modifier = Modifier.fillMaxWidth(),
-                onClick = {
-                    if (loadingDownloads) return@AppPrimaireKnop
-                    if (username.isBlank() || password.isBlank()) {
-                        Toast.makeText(context, "Vul eerst login en paswoord in.", Toast.LENGTH_LONG).show()
-                        return@AppPrimaireKnop
-                    }
-                    val vt5Dir: DocumentFile? = saf.getVt5DirIfExists()
-                    if (vt5Dir == null) {
-                        Toast.makeText(context, "VT5 map ontbreekt.\nKies eerst 'Documents' en maak submappen.", Toast.LENGTH_LONG).show()
-                        return@AppPrimaireKnop
-                    }
-                    val serverdata = vt5Dir.findFile("serverdata")?.takeIf { it.isDirectory }
-                        ?: vt5Dir.createDirectory("serverdata")
-                    val binaries = vt5Dir.findFile("binaries")?.takeIf { it.isDirectory }
-                        ?: vt5Dir.createDirectory("binaries")
-
-                    loadingDownloads = true
-                    scope.launch {
-                        val msgs: List<String> = ServerJsonDownloader.downloadAll(
-                            context = context,
-                            serverdataDir = serverdata,
-                            binariesDir = binaries,
-                            username = username.trim(),
-                            password = password,
-                            language = "dutch",
-                            versie = "1845"
-                        )
-                        loadingDownloads = false
-                        dialogQueue.addAll(msgs)
-                        if (dialogQueue.isNotEmpty() && !showDialog) {
-                            dialogText = dialogQueue.removeAt(0)
-                            showDialog = true
-                        }
-                    }
-                }
-            )
-
-            AppPrimaireKnop(
-                tekst = "Klaar",
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { onKlaar() }
-            )
-
-            Spacer(modifier = Modifier.padding(bottom = 8.dp))
-        }
-    }
-
-    // Resultaat-popup met “popups uitzetten”-checkbox
-    if (showDialog) {
-        var disableNext by remember { mutableStateOf(false) }
-        AlertDialog(
-            onDismissRequest = { /* via OK */ },
-            title = { Text("Resultaat") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        dialogText,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 0.dp, max = 360.dp)
-                            .verticalScroll(rememberScrollState())
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = disableNext,
-                            onCheckedChange = { checked -> disableNext = checked }
-                        )
-                        Text("Pop-ups uitzetten (alleen voor login-check)")
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    if (disableNext) uiPrefs.setShowAuthPopup(false)
-                    if (dialogQueue.isNotEmpty()) {
-                        dialogText = dialogQueue.removeAt(0)
-                    } else {
-                        showDialog = false
-                    }
-                }) { Text("OK") }
-            }
-        )
-    }
-}
-
-/* ---------- helpers ---------- */
-
-private fun makeStatusText(uri: Uri?, foldersOk: Boolean): String = when {
-    uri == null -> "SAF niet ingesteld.\nKies 'Documents' en bevestig 'Deze map gebruiken'."
-    foldersOk -> "SAF ingesteld ✔ — alle VT5-submappen aanwezig."
-    else -> "SAF ingesteld, maar submappen ontbreken nog.\nDruk op 'Submappen controleren/aanmaken'."
-}
-
-private class UiPrefs(ctx: Context) {
-    private val p = ctx.getSharedPreferences("vt5_ui_prefs", Context.MODE_PRIVATE)
-    fun getShowAuthPopup(): Boolean = p.getBoolean(KEY, true)
-    fun setShowAuthPopup(v: Boolean) { p.edit().putBoolean(KEY, v).apply() }
-    companion object { private const val KEY = "show_auth_popup" }
-}
-
 /**
- * Schrijft de *exacte* popup-tekst (serverresponse) weg als:
- * Documents/VT5/serverdata/checkuser.json
- *
- * - Geen transformaties, precies wat je zag.
- * - Maakt de map 'serverdata' aan indien nodig.
+ * XML Installatie-scherm (AppCompat + ViewBinding).
+ * - SAF-map kiezen en submappen aanmaken
+ * - Credentials bewaren/wissen
+ * - Login testen (Basic Auth) -> popup + checkuser.json wegschrijven
+ * - Serverdata downloaden (.json + .bin)
+ * - Aliassen pré-computen (assets -> binaries)
+ * Alles off-main.
  */
-private fun writeCheckuserJsonExact(context: Context, rawText: String): Boolean {
-    return try {
-        val saf = SaFStorageHelper(context)
-        val vt5 = saf.getVt5DirIfExists() ?: return false
-        val serverdata = vt5.findFile("serverdata")?.takeIf { it.isDirectory }
-            ?: vt5.createDirectory("serverdata")
-            ?: return false
+class InstallatieScherm : AppCompatActivity() {
+
+    private lateinit var binding: SchermInstallatieBinding
+    private lateinit var saf: SaFStorageHelper
+    private lateinit var creds: CredentialsStore
+
+    private val uiScope = CoroutineScope(Job() + Dispatchers.Main)
+
+    private val treePicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+        if (uri == null) {
+            binding.tvStatus.text = getString(com.yvesds.vt5.R.string.status_saf_niet_ingesteld)
+            return@registerForActivityResult
+        }
+        saf.takePersistablePermission(uri)
+        saf.saveRootUri(uri)
+        val ok = saf.foldersExist() || saf.ensureFolders()
+        binding.tvStatus.text = if (ok) {
+            getString(com.yvesds.vt5.R.string.status_saf_ok)
+        } else {
+            getString(com.yvesds.vt5.R.string.status_saf_missing)
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = SchermInstallatieBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        saf = SaFStorageHelper(this)
+        creds = CredentialsStore(this)
+
+        initUi()
+        wireClicks()
+    }
+
+    private fun initUi() {
+        binding.etUitleg.setText(getString(com.yvesds.vt5.R.string.install_uitleg))
+        restoreCreds()
+        refreshSafStatus()
+    }
+
+    private fun wireClicks() = with(binding) {
+        btnKiesDocuments.setOnClickListener { treePicker.launch(null) }
+
+        btnCheckFolders.setOnClickListener {
+            val ok = saf.foldersExist() || saf.ensureFolders()
+            tvStatus.text = if (ok) {
+                getString(com.yvesds.vt5.R.string.status_saf_ok)
+            } else {
+                getString(com.yvesds.vt5.R.string.status_saf_missing)
+            }
+        }
+
+        btnWis.setOnClickListener {
+            creds.clear()
+            etLogin.setText("")
+            etPass.setText("")
+            Toast.makeText(this@InstallatieScherm, getString(com.yvesds.vt5.R.string.msg_credentials_gewist), Toast.LENGTH_SHORT).show()
+        }
+
+        btnBewaar.setOnClickListener {
+            val u = etLogin.text?.toString().orEmpty().trim()
+            val p = etPass.text?.toString().orEmpty()
+            creds.save(u, p)
+            Toast.makeText(this@InstallatieScherm, getString(com.yvesds.vt5.R.string.msg_credentials_opgeslagen), Toast.LENGTH_SHORT).show()
+        }
+
+        btnLoginTest.setOnClickListener {
+            val u = etLogin.text?.toString().orEmpty().trim()
+            val p = etPass.text?.toString().orEmpty()
+            if (u.isBlank() || p.isBlank()) {
+                Toast.makeText(this@InstallatieScherm, getString(com.yvesds.vt5.R.string.msg_vul_login_eerst), Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            doLoginTestAndPersist(u, p)
+        }
+
+        btnDownloadJsons.setOnClickListener {
+            val u = etLogin.text?.toString().orEmpty().trim()
+            val p = etPass.text?.toString().orEmpty()
+            if (u.isBlank() || p.isBlank()) {
+                Toast.makeText(this@InstallatieScherm, getString(com.yvesds.vt5.R.string.msg_vul_login_eerst), Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+            doDownloadServerData(u, p)
+        }
+
+        btnAliasPrecompute.setOnClickListener { doAliasPrecompute() }
+
+        btnKlaar.setOnClickListener {
+            setResult(Activity.RESULT_OK, Intent())
+            finish()
+        }
+    }
+
+    /* -------------------- Actions -------------------- */
+
+    private fun restoreCreds() {
+        binding.etLogin.setText(creds.getUsername().orEmpty())
+        binding.etPass.setText(creds.getPassword().orEmpty())
+    }
+
+    private fun refreshSafStatus() {
+        val uri = saf.getRootUri()
+        val ok = uri != null && saf.foldersExist()
+        binding.tvStatus.text = when {
+            uri == null -> getString(com.yvesds.vt5.R.string.status_saf_niet_ingesteld)
+            ok -> getString(com.yvesds.vt5.R.string.status_saf_ok)
+            else -> getString(com.yvesds.vt5.R.string.status_saf_missing)
+        }
+    }
+
+    private fun doLoginTestAndPersist(username: String, password: String) {
+        val dlg = progressDialog(
+            title = getString(com.yvesds.vt5.R.string.dlg_busy_titel),
+            msg = "Login testen…"
+        )
+        dlg.show()
+        uiScope.launch {
+            val res = withContext(Dispatchers.IO) {
+                TrektellenAuth.checkUser(
+                    username = username,
+                    password = password,
+                    language = "dutch",
+                    versie = "1845"
+                )
+            }
+            dlg.dismiss()
+            res.onSuccess { pretty ->
+                showInfoDialog(getString(com.yvesds.vt5.R.string.dlg_titel_result), pretty)
+                saveCheckUserJson(pretty)
+            }.onFailure { e ->
+                showInfoDialog("checkuser — fout", e.message ?: e.toString())
+            }
+        }
+    }
+
+    private fun doDownloadServerData(username: String, password: String) {
+        val vt5Dir: DocumentFile? = saf.getVt5DirIfExists()
+        if (vt5Dir == null) {
+            Toast.makeText(this, getString(com.yvesds.vt5.R.string.msg_kies_documents_eerst), Toast.LENGTH_LONG).show()
+            return
+        }
+        val serverdata = vt5Dir.findFile("serverdata")?.takeIf { it.isDirectory } ?: vt5Dir.createDirectory("serverdata")
+        val binaries = vt5Dir.findFile("binaries")?.takeIf { it.isDirectory } ?: vt5Dir.createDirectory("binaries")
+
+        val dlg = progressDialog(
+            title = getString(com.yvesds.vt5.R.string.dlg_busy_titel),
+            msg = "JSONs downloaden…"
+        )
+        dlg.show()
+        uiScope.launch {
+            val msgs = withContext(Dispatchers.IO) {
+                ServerJsonDownloader.downloadAll(
+                    context = this@InstallatieScherm,
+                    serverdataDir = serverdata,
+                    binariesDir = binaries,
+                    username = username,
+                    password = password,
+                    language = "dutch",
+                    versie = "1845"
+                )
+            }
+            dlg.dismiss()
+            showInfoDialog(getString(com.yvesds.vt5.R.string.dlg_titel_result), msgs.joinToString("\n"))
+        }
+    }
+
+    private fun doAliasPrecompute() {
+        val dlg = progressDialog(
+            title = getString(com.yvesds.vt5.R.string.dlg_busy_titel),
+            msg = "Pré-computen van aliassen…"
+        )
+        dlg.show()
+        uiScope.launch {
+            val msg = withContext(Dispatchers.Default) {
+                runCatching {
+                    val (jsonGz, cborGz) = AliasIndexWriter.ensureComputed(
+                        context = this@InstallatieScherm,
+                        saf = saf,
+                        q = 3,
+                        minhashK = 64
+                    )
+                    val index = AliasIndexWriter.loadIndexFromBinaries(this@InstallatieScherm)
+                    val cnt = index?.json?.size ?: 0
+                    "Aliassen pré-computed en geladen.\n" +
+                            "- Records: $cnt\n" +
+                            "- JSON.gz: $jsonGz\n" +
+                            "- CBOR.gz: $cborGz"
+                }.getOrElse { e ->
+                    "Pré-compute aliassen — fout:\n${e.message ?: e.toString()}"
+                }
+            }
+            dlg.dismiss()
+            showInfoDialog(getString(com.yvesds.vt5.R.string.dlg_titel_result), msg)
+        }
+    }
+
+    /* -------------------- Helpers -------------------- */
+
+    private fun saveCheckUserJson(prettyText: String) {
+        val vt5Dir = saf.getVt5DirIfExists() ?: return
+
+        val serverdata = vt5Dir.findFile("serverdata")?.takeIf { it.isDirectory }
+            ?: vt5Dir.createDirectory("serverdata")
+            ?: return  // kon map niet maken
+
+        // Overschrijf bestaand bestand netjes
         serverdata.findFile("checkuser.json")?.delete()
-        val f = serverdata.createFile("application/json", "checkuser.json") ?: return false
-        context.contentResolver.openOutputStream(f.uri, "w")!!.use { out ->
-            out.write(rawText.toByteArray(Charsets.UTF_8))
+
+        val f = serverdata.createFile("application/json", "checkuser.json") ?: return
+
+        contentResolver.openOutputStream(f.uri, "w")?.use { out ->
+            out.write(prettyText.toByteArray(Charsets.UTF_8))
             out.flush()
         }
-        true
-    } catch (_: Throwable) {
-        false
+    }
+
+    private fun showInfoDialog(title: String, msg: String) {
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(msg)
+            .setPositiveButton(getString(com.yvesds.vt5.R.string.dlg_ok)) { d, _ -> d.dismiss() }
+            .show()
+    }
+
+    private fun progressDialog(title: String, msg: String): AlertDialog {
+        return AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(msg)
+            .setCancelable(false)
+            .create()
     }
 }
-
-private fun DocumentFile.findFile(name: String): DocumentFile? =
-    listFiles().firstOrNull { it.name == name }

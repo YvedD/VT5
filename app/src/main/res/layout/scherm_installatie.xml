@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/rootScroll"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/vt5_black"
+    android:fillViewport="true"
+    android:padding="20dp">
+
+    <LinearLayout
+        android:id="@+id/rootContent"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- Titel -->
+        <TextView
+            android:id="@+id/tvTitel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/titel_install"
+            android:textColor="@color/vt5_on_surface"
+            android:textSize="20sp"
+            android:paddingBottom="12dp" />
+
+        <!-- Uitleg -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etUitleg"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textMultiLine"
+                android:enabled="false"
+                android:text="@string/install_uitleg"
+                android:textColor="@color/vt5_on_surface"
+                android:minLines="3" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- SAF -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnKiesDocuments"
+            style="@style/Widget.VT5.Button.Outlined"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_kies_documents"
+            android:layout_marginTop="12dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCheckFolders"
+            style="@style/Widget.VT5.Button.Outlined"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/btn_check_folders"
+            android:layout_marginTop="8dp" />
+
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/vt5_on_surface"
+            android:text="@string/status_saf_niet_ingesteld"
+            android:layout_marginTop="8dp" />
+
+        <!-- Trektellen sectie -->
+        <TextView
+            android:id="@+id/tvSectTrektellen"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/sect_trektellen"
+            android:textColor="@color/vt5_on_surface"
+            android:textSize="18sp"
+            android:layout_marginTop="16dp" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/tilLogin"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/hint_login">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etLogin"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textEmailAddress" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/tilPass"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/hint_password"
+            app:endIconMode="password_toggle">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etPass"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textPassword" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Creds knoppen op één rij -->
+        <LinearLayout
+            android:id="@+id/rowCreds"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:weightSum="2"
+            android:layout_marginTop="8dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnWis"
+                style="@style/Widget.VT5.Button.Outlined"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/btn_wis" />
+
+            <Space
+                android:layout_width="12dp"
+                android:layout_height="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnBewaar"
+                style="@style/Widget.VT5.Button.Outlined"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/btn_bewaar" />
+        </LinearLayout>
+
+        <!-- Login testen & Download JSONs NAAST elkaar -->
+        <LinearLayout
+            android:id="@+id/rowAuthDownload"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:weightSum="2"
+            android:layout_marginTop="12dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnLoginTest"
+                style="@style/Widget.VT5.Button.Outlined"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/btn_login_test" />
+
+            <Space
+                android:layout_width="12dp"
+                android:layout_height="1dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnDownloadJsons"
+                style="@style/Widget.VT5.Button.Outlined"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/btn_download_jsons" />
+        </LinearLayout>
+
+        <!-- Alias precompute & Klaar NAAST elkaar (Klaar = 1/3) -->
+        <LinearLayout
+            android:id="@+id/rowAliasKlaar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:weightSum="3"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="8dp">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAliasPrecompute"
+                style="@style/Widget.VT5.Button.Outlined"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="2"
+                android:text="@string/btn_alias_precompute" />
+
+            <Space
+                android:layout_width="12dp"
+                android:layout_height="1dp" />
+
+            <!-- KLAAR: 1/3 breedte, andere achtergrond (filled lichtblauw) -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnKlaar"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:background="@drawable/vt5_btn_confirm_selector"
+                android:textColor="@color/vt5_white"
+                android:text="@string/btn_klaar" />
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>

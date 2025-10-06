@@ -1,5 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.VT5" parent="android:Theme.Material.Light.NoActionBar" />
+    <!-- Globaal: donker, Material3, géén action bar, géén splash -->
+    <style name="Theme.VT5.Dark" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@color/vt5_black</item>
+
+        <!-- Kleuren -->
+        <item name="colorSurface">@color/vt5_black</item>
+        <item name="colorOnSurface">@color/vt5_on_surface</item>
+        <item name="colorPrimary">@color/vt5_light_blue</item>
+        <item name="colorOnPrimary">@color/vt5_white</item>
+        <item name="colorOutline">@color/vt5_outline</item>
+
+        <!-- Knoppen algemeen -->
+        <item name="materialButtonStyle">@style/Widget.VT5.Button.Outlined</item>
+        <item name="android:buttonStyle">@style/Widget.VT5.Button.Outlined</item>
+    </style>
+
 </resources>

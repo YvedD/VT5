@@ -1,4 +1,46 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">VT5</string>
+
+    <!-- Hoofdscherm -->
+    <string name="titel_hoofd">VoiceTally - 5.0</string>
+    <string name="btn_install_start">((Her)Installatie starten</string>
+    <string name="btn_verder_metadata">Invullen telpostgegevens</string>
+    <string name="btn_afsluiten">Afsluiten</string>
+
+    <!-- Installatie -->
+    <string name="titel_install">VT5 (Her)Installatie</string>
+    <string name="install_uitleg">
+        Deze toepassing moet bestanden kunnen inlezen en wegschrijven.\n
+        Bevestig het gebruik van de map ‘Documents’ in de volgende stap (kies ‘Deze map gebruiken’).\n
+        Alle mappen/bestanden worden aangemaakt indien nodig. Bij herinstallatie wordt niets overschreven.
+    </string>
+
+    <string name="btn_kies_documents">Map ‘Documents’ kiezen</string>
+    <string name="btn_check_folders">Submappen controleren/aanmaken</string>
+    <string name="status_saf_niet_ingesteld">SAF niet ingesteld.\nKies ‘Documents’ en bevestig ‘Deze map gebruiken’.</string>
+    <string name="status_saf_ok">SAF ingesteld ✔ — alle VT5-submappen aanwezig.</string>
+    <string name="status_saf_missing">SAF ingesteld, maar submappen ontbreken nog.\nDruk op ‘Submappen controleren/aanmaken’.</string>
+
+    <string name="sect_trektellen">Trektellen-gegevens</string>
+    <string name="hint_login">Loginnaam</string>
+    <string name="hint_password">Paswoord</string>
+    <string name="btn_wis">Wis</string>
+    <string name="btn_bewaar">Bewaar</string>
+
+    <string name="btn_login_test">Login test</string>
+    <string name="msg_vul_login_eerst">Vul eerst login en paswoord in.</string>
+    <string name="msg_credentials_gewist">Credentials gewist</string>
+    <string name="msg_credentials_opgeslagen">Credentials opgeslagen</string>
+    <string name="dlg_titel_result">Resultaat</string>
+    <string name="dlg_ok">OK</string>
+    <string name="dlg_disable_next">Pop-ups uitzetten (alleen voor login-check)</string>
+
+    <string name="btn_download_jsons">Serverdata ophalen</string>
+    <string name="msg_kies_documents_eerst">Kies eerst ‘Documents’ en maak submappen.</string>
+
+    <string name="btn_alias_precompute">Pré-compute aliassen</string>
+    <string name="dlg_busy_titel">Bezig…</string>
+
+    <string name="btn_klaar">Klaar</string>
 </resources>

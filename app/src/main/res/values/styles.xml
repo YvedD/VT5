@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Onze standaard knop: afgerond, lichtblauwe rand, donkere bg, witte tekst -->
+    <style name="Widget.VT5.Button.Outlined" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:background">@drawable/vt5_btn_selector</item>
+        <item name="backgroundTint">@null</item>
+        <item name="strokeColor">@color/vt5_light_blue</item>
+        <item name="strokeWidth">@dimen/vt5_btn_stroke</item>
+        <item name="android:textColor">@color/vt5_white</item>
+        <item name="cornerRadius">@dimen/vt5_btn_corner</item>
+        <item name="android:insetLeft">0dp</item>
+        <item name="android:insetRight">0dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <!-- Zorg dat ripple zichtbaar is op donker -->
+        <item name="rippleColor">@color/vt5_light_blue</item>
+    </style>
+
+</resources>

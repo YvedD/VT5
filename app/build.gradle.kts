@@ -1,7 +1,7 @@
+// app/build.gradle.kts
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21"
     id("org.jetbrains.kotlin.plugin.serialization") version "2.0.21"
 }
 
@@ -9,6 +9,7 @@ android {
     namespace = "com.yvesds.vt5"
     compileSdk = 35
     ndkVersion = "28.2.13676358"
+
     defaultConfig {
         applicationId = "com.yvesds.vt5"
         minSdk = 33
@@ -26,12 +27,22 @@ android {
                 "proguard-rules.pro"
             )
         }
-        debug { isMinifyEnabled = false }
+        debug {
+            isMinifyEnabled = false
+        }
     }
 
-    buildFeatures { compose = true }
+    // Compose UIT — ViewBinding AAN
+    buildFeatures {
+        viewBinding = true
+        compose = false
+    }
 
-    packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -41,22 +52,14 @@ android {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.09.02")
-    implementation(composeBom)
-    androidTestImplementation(composeBom)
-
     implementation("androidx.core:core-ktx:1.13.1")
-    implementation("androidx.activity:activity-compose:1.9.2")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+
+    // Material Components (XML)
+    implementation("com.google.android.material:material:1.12.0")
+
+    // Lifecycle (optioneel handig)
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
-
-    // Compose UI + Material3
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    debugImplementation("androidx.compose.ui:ui-tooling")
-
-    // Material icons (oogje)
-    implementation("androidx.compose.material:material-icons-extended")
 
     // SAF helper
     implementation("androidx.documentfile:documentfile:1.0.1")
@@ -64,23 +67,22 @@ dependencies {
     // Versleutelde opslag
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
-    // JSON (al aanwezig)
+    // Serialization
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
-
-    // ★ Binaire serialisatie (compact en snel)
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-cbor:1.7.3")
-    // DoubleMetaphone, ColognePhonetic
+
+    // Fuzzy & phonetic
     implementation("commons-codec:commons-codec:1.17.1")
-    // LevenshteinDistance, JaroWinkler etc.
     implementation("org.apache.commons:commons-text:1.12.0")
 
-    // HTTP client + coroutines
+    // HTTP + coroutines
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 }
 
-
-/** Testtaken uit. */
+// Tests uit, zoals bij jou
 tasks.matching {
     it.name.startsWith("test", ignoreCase = true) || it.name.startsWith("connectedAndroidTest", ignoreCase = true)
-}.configureEach { this.enabled = false }
+}.configureEach {
+    this.enabled = false
+}

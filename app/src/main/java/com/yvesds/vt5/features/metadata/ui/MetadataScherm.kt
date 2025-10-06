@@ -1,463 +1,384 @@
-@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 
 package com.yvesds.vt5.features.metadata.ui
 
 import android.app.DatePickerDialog
-import android.app.TimePickerDialog
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material3.Card
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.unit.dp
-import com.yvesds.vt5.features.metadata.model.MetadataHeader
+import android.content.DialogInterface
+import android.os.Bundle
+import android.text.InputType
+import android.view.Gravity
+import android.view.ViewGroup
+import android.widget.ArrayAdapter
+import android.widget.LinearLayout
+import android.widget.NumberPicker
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import com.yvesds.vt5.databinding.SchermMetadataBinding
 import com.yvesds.vt5.features.serverdata.model.DataSnapshot
-import com.yvesds.vt5.ui.componenten.AppOutlinedKnop
-import com.yvesds.vt5.ui.componenten.AppPrimaireKnop
-import java.time.LocalDate
-import java.time.LocalTime
-import java.time.format.DateTimeFormatter
+import com.yvesds.vt5.features.serverdata.model.ServerDataRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Locale
 
-@Composable
-fun MetadataScherm(
-    snapshot: DataSnapshot,
-    modifier: Modifier = Modifier,
-    onAnnuleer: () -> Unit,
-    onVerder: (MetadataHeader) -> Unit,
-) {
-    // Defaults: vandaag / huidig uur
-    var datum by remember { mutableStateOf(LocalDate.now().format(DateTimeFormatter.ISO_DATE)) }
-    var tijd by remember {
-        mutableStateOf(LocalTime.now().withSecond(0).withNano(0).format(DateTimeFormatter.ofPattern("HH:mm")))
+class Metadatascherm : AppCompatActivity() {
+
+    private lateinit var binding: SchermMetadataBinding
+
+    /** Huidige serverdata (geladen off-main) */
+    private var snapshot: DataSnapshot = DataSnapshot()
+
+    // Interne gekozen waarden (UI → payload)
+    private var gekozenBewolking: String? = null   // "0".."8"
+    private var gekozenWindkracht: String? = null  // "0".."12"
+    private var gekozenWindrichtingLabel: String? = null
+    private var gekozenNeerslagLabel: String? = null
+    private var gekozenTypeTellingLabel: String? = null
+
+    // Telpost-keuze + gekoppelde info uit 'sites'
+    private var gekozenTelpostId: String? = null        // "5177"
+    private var gekozenTelpostNaam: String? = null      // "VoiceTally Testsite"
+    private var gekozenRichtingNajaar: String? = null   // r1 (bv. "ZW")
+    private var gekozenRichtingVoorjaar: String? = null // r2 (bv. "NO")
+    private var gekozenTypeTelpost: String? = "1"       // app-breed default
+    private var gekozenProtocolId: String? = null       // bv. "1"
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = SchermMetadataBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        // Geen soft keyboard voor tapbare datum/tijd velden
+        binding.etDatum.inputType = InputType.TYPE_NULL
+        binding.etTijd.inputType = InputType.TYPE_NULL
+
+        // Pickers + defaults
+        initDateTimePickers()
+        prefillCurrentDateTime()
+
+        // Off-main: snapshot laden en dan UI binden
+        lifecycleScope.launch {
+            val repo = ServerDataRepository(this@Metadatascherm)
+            snapshot = withContext(Dispatchers.IO) { repo.loadAllFromSaf() }
+            withContext(Dispatchers.Main) {
+                bindDropdownsFromCodes()
+                bindTelpostFromSites()
+            }
+        }
+
+        // Acties
+        binding.btnVerder.setOnClickListener {
+            val payload = buildMetadataHeader()
+            Toast.makeText(this, "OK: $payload", Toast.LENGTH_SHORT).show()
+            // TODO: hier kan je valideren / navigeren
+        }
+        binding.btnAnnuleer.setOnClickListener { finish() }
     }
 
-    // Telposten
-    val siteList: List<Pair<String, String>> = remember(snapshot.sitesById) {
-        snapshot.sitesById.values
-            .sortedBy { it.telpostnaam.lowercase(Locale.ROOT) }
-            .map { it.telpostid to it.telpostnaam }
+    /* =========================================================
+     * Datum & tijd
+     * ========================================================= */
+
+    private fun initDateTimePickers() {
+        binding.etDatum.setOnClickListener { openDatePicker() }
+        binding.etTijd.setOnClickListener { openTimeSpinnerDialog() }
     }
-    var telpostNaam by remember { mutableStateOf(siteList.firstOrNull()?.second ?: "") }
-    var telpostId by remember { mutableStateOf(siteList.firstOrNull()?.first ?: "") }
 
-    // Overige velden
-    var tellers by remember { mutableStateOf("") }
-    var weerOpmerking by remember { mutableStateOf("") }
+    private fun prefillCurrentDateTime() {
+        val cal = Calendar.getInstance()
+        val dateFmt = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault())
+        binding.etDatum.setText(dateFmt.format(cal.time))
+        binding.etTijd.setText(timeFmt.format(cal.time))
+    }
 
-    val windrichtingOpt: List<String> = remember(snapshot.codesByCategory) { snapshot.optionsFor("windrichting") }
-    val windkrachtOpt: List<String>   = remember(snapshot.codesByCategory) { snapshot.optionsFor("windkracht") }
-    val bewolkingOpt: List<String>    = remember(snapshot.codesByCategory) { snapshot.optionsFor("bewolking") }
-    val neerslagOpt: List<String>     = remember(snapshot.codesByCategory) { snapshot.optionsFor("neerslag") }
-    val typeTellingOpt: List<String>  = remember(snapshot.codesByCategory) { snapshot.optionsFor("typetelling") }
+    private fun openDatePicker() {
+        val cal = Calendar.getInstance()
+        runCatching {
+            val parts = binding.etDatum.text?.toString()?.split("-") ?: emptyList()
+            if (parts.size == 3) {
+                cal.set(Calendar.YEAR, parts[0].toInt())
+                cal.set(Calendar.MONTH, parts[1].toInt() - 1)
+                cal.set(Calendar.DAY_OF_MONTH, parts[2].toInt())
+            }
+        }
 
-    var windrichting by remember { mutableStateOf(windrichtingOpt.firstOrNull() ?: "") }
-    var windkracht by remember { mutableStateOf(windkrachtOpt.firstOrNull() ?: "") }
-    var bewolking by remember { mutableStateOf(bewolkingOpt.firstOrNull() ?: "") }
-    var neerslag by remember { mutableStateOf(neerslagOpt.firstOrNull() ?: "") }
-    var typeTelling by remember { mutableStateOf(typeTellingOpt.firstOrNull() ?: "") }
-
-    var temperatuur by remember { mutableStateOf("") }
-    var zicht by remember { mutableStateOf("") }
-    var luchtdruk by remember { mutableStateOf("") }
-    var opmerkingen by remember { mutableStateOf("") }
-
-    val context = LocalContext.current
-
-    fun openDatePicker() {
-        val init = runCatching { LocalDate.parse(datum) }.getOrDefault(LocalDate.now())
         DatePickerDialog(
-            context,
-            { _, y, m, d -> datum = "%04d-%02d-%02d".format(y, m + 1, d) },
-            init.year, init.monthValue - 1, init.dayOfMonth
+            this,
+            { _, y, m, d ->
+                val mm = (m + 1).toString().padStart(2, '0')
+                val dd = d.toString().padStart(2, '0')
+                binding.etDatum.setText("$y-$mm-$dd")
+            },
+            cal.get(Calendar.YEAR),
+            cal.get(Calendar.MONTH),
+            cal.get(Calendar.DAY_OF_MONTH)
         ).show()
     }
 
-    fun openTimePicker() {
-        val fmt = DateTimeFormatter.ofPattern("HH:mm")
-        val init = runCatching { LocalTime.parse(tijd, fmt) }
-            .getOrDefault(LocalTime.now().withSecond(0).withNano(0))
-        TimePickerDialog(
-            context,
-            { _, h, min -> tijd = "%02d:%02d".format(h, min) },
-            init.hour, init.minute, true
-        ).show()
-    }
+    /**
+     * Custom tijd-chooser met 2 NumberPickers (uur + min), met rollover:
+     * 59 → 00 ⇒ uur+1  (mod 24)
+     * 00 → 59 ⇒ uur-1  (mod 24)
+     */
+    private fun openTimeSpinnerDialog() {
+        // huidige waarden uit het veld (of now)
+        val cal = Calendar.getInstance()
+        var uur = cal.get(Calendar.HOUR_OF_DAY)
+        var min = cal.get(Calendar.MINUTE)
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp)
-    ) {
-        Card(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp)
-            ) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ReadonlyPickField(
-                        value = datum,
-                        onClick = { openDatePicker() },
-                        label = "Datum",
-                        modifier = Modifier.weight(1f)
-                    )
-                    ReadonlyPickField(
-                        value = tijd,
-                        onClick = { openTimePicker() },
-                        label = "Tijd",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                ExposedDropdownSimple(
-                    label = "Telpost",
-                    selectedText = telpostNaam,
-                    options = siteList.map { it.second },
-                    onOptionClick = { idx ->
-                        val (id, naam) = siteList[idx]
-                        telpostId = id
-                        telpostNaam = naam
-                    }
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                LabeledTextField(
-                    value = tellers,
-                    onValueChange = { tellers = it },
-                    label = "Teller(s)",
-                    singleLine = true
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Weer :",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
-                    LabeledTextField(
-                        value = weerOpmerking,
-                        onValueChange = { weerOpmerking = it },
-                        label = "Opmerking weer",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Column(Modifier.weight(1f)) {
-                        ExposedDropdownSimple(
-                            label = "Windrichting",
-                            selectedText = windrichting,
-                            options = windrichtingOpt,
-                            onOptionClick = { idx -> windrichting = windrichtingOpt.getOrNull(idx) ?: windrichting }
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        LabeledNumberField(
-                            value = temperatuur,
-                            onValueChange = { temperatuur = it.filterNumSignedDecimal(maxLen = 6) },
-                            label = "Temperatuur (°C)"
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        ExposedDropdownSimple(
-                            label = "Bewolking (achtsten)",
-                            selectedText = bewolking,
-                            options = bewolkingOpt,
-                            onOptionClick = { idx -> bewolking = bewolkingOpt.getOrNull(idx) ?: bewolking }
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        LabeledNumberField(
-                            value = zicht,
-                            onValueChange = { zicht = it.filterNumUnsigned(maxLen = 6) },
-                            label = "Zicht (m)"
-                        )
-                    }
-
-                    Column(Modifier.weight(1f)) {
-                        ExposedDropdownSimple(
-                            label = "Windkracht (Bft)",
-                            selectedText = windkracht,
-                            options = windkrachtOpt,
-                            onOptionClick = { idx -> windkracht = windkrachtOpt.getOrNull(idx) ?: windkracht }
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        ExposedDropdownSimple(
-                            label = "Neerslag",
-                            selectedText = neerslag,
-                            options = neerslagOpt,
-                            onOptionClick = { idx -> neerslag = neerslagOpt.getOrNull(idx) ?: neerslag }
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        LabeledNumberField(
-                            value = luchtdruk,
-                            onValueChange = { luchtdruk = it.filterNumSignedDecimal(maxLen = 6) },
-                            label = "Luchtdruk (hPa)"
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(8.dp))
-
-                ExposedDropdownSimple(
-                    label = "Type telling",
-                    selectedText = typeTelling,
-                    options = typeTellingOpt,
-                    onOptionClick = { idx -> typeTelling = typeTellingOpt.getOrNull(idx) ?: typeTelling }
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                LabeledTextField(
-                    value = opmerkingen,
-                    onValueChange = { opmerkingen = it },
-                    label = "Opmerkingen",
-                    singleLine = false,
-                    minLines = 3
-                )
+        runCatching {
+            val parts = binding.etTijd.text?.toString()?.split(":") ?: emptyList()
+            if (parts.size == 2) {
+                uur = parts[0].toInt()
+                min = parts[1].toInt()
             }
         }
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            AppOutlinedKnop(
-                tekst = "Annuleer",
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 36.dp),
-                onClick = onAnnuleer
-            )
-            Spacer(Modifier.width(8.dp))
-            AppPrimaireKnop(
-                tekst = "Verder",
-                modifier = Modifier
-                    .weight(1f)
-                    .heightIn(min = 36.dp),
-                onClick = {
-                    val header = MetadataHeader(
-                        datum = datum,
-                        tijd = tijd,
-                        telpostId = telpostId,
-                        telpostNaam = telpostNaam,
-                        tellers = tellers,
-                        weerOpmerking = weerOpmerking,
-                        windrichting = windrichting,
-                        windkracht = windkracht,
-                        temperatuur = temperatuur,
-                        bewolking = bewolking,
-                        zicht = zicht,
-                        neerslag = neerslag,
-                        luchtdruk = luchtdruk,
-                        typeTelling = typeTelling,
-                        opmerkingen = opmerkingen
-                    )
-                    onVerder(header)
-                }
+        // Layout met 2 pickers
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(32, 16, 32, 0)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
             )
         }
+
+        val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+            setMargins(8, 0, 8, 0)
+        }
+
+        val hourPicker = NumberPicker(this).apply {
+            minValue = 0
+            maxValue = 23
+            value = uur
+            setFormatter { v -> v.toString().padStart(2, '0') }
+            layoutParams = lp
+        }
+
+        val minutePicker = NumberPicker(this).apply {
+            minValue = 0
+            maxValue = 59
+            value = min
+            setFormatter { v -> v.toString().padStart(2, '0') }
+            layoutParams = lp
+        }
+
+        container.addView(hourPicker)
+        container.addView(minutePicker)
+
+        // Rollover logic
+        var vorigeMin = min
+        minutePicker.setOnValueChangedListener { _, oldVal, newVal ->
+            // Detecteer wrap: 59 -> 00 (vooruit) of 00 -> 59 (achteruit)
+            if (oldVal == 59 && newVal == 0) {
+                hourPicker.value = (hourPicker.value + 1) % 24
+            } else if (oldVal == 0 && newVal == 59) {
+                hourPicker.value = (hourPicker.value + 23) % 24 // -1 mod 24
+            }
+            vorigeMin = newVal
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Kies tijd")
+            .setView(container)
+            .setPositiveButton("OK") { _: DialogInterface, _: Int ->
+                val hh = hourPicker.value.toString().padStart(2, '0')
+                val mm = minutePicker.value.toString().padStart(2, '0')
+                binding.etTijd.setText("$hh:$mm")
+            }
+            .setNegativeButton("Annuleren", null)
+            .show()
     }
-}
 
-/* ============== UI helpers ============== */
+    /* =========================================================
+     * Dropdowns uit codes
+     * ========================================================= */
 
-@Composable
-private fun ExposedDropdownSimple(
-    label: String,
-    selectedText: String,
-    options: List<String>,
-    onOptionClick: (Int) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = !expanded },
-        modifier = modifier.fillMaxWidth()
-    ) {
-        @Suppress("DEPRECATION")
-        OutlinedTextField(
-            value = selectedText,
-            onValueChange = {},
-            label = { Text(label) },
-            readOnly = true,
-            modifier = Modifier
-                .menuAnchor()
-                .fillMaxWidth(),
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) }
-        )
-
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false }
-        ) {
-            options.forEachIndexed { index, opt ->
-                DropdownMenuItem(
-                    text = { Text(opt) },
-                    onClick = {
-                        onOptionClick(index)
-                        expanded = false
-                    },
-                    trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null) }
+    private fun bindDropdownsFromCodes() {
+        fun labelsFor(category: String): List<String> {
+            val items = snapshot.codesByCategory[category].orEmpty()
+            return items
+                .sortedWith(
+                    compareBy(
+                        { it.sortering?.toIntOrNull() ?: Int.MAX_VALUE },
+                        { it.tekst?.lowercase(Locale.getDefault()) ?: "" }
+                    )
                 )
+                .mapNotNull { it.tekst }
+        }
+
+        // Zelfde als labelsFor, maar met blokkade op bepaalde tekstkey-patronen
+        fun filteredLabelsFor(category: String): List<String> {
+            val blockedSubstrings = listOf("_sound", "_ringen", "samplingrate_", "gain_", "verstoring_")
+            val items = snapshot.codesByCategory[category].orEmpty()
+                .filter { item ->
+                    val key = item.tekstkey?.lowercase(Locale.getDefault()) ?: return@filter true
+                    blockedSubstrings.none { key.contains(it) }
+                }
+            return items
+                .sortedWith(
+                    compareBy(
+                        { it.sortering?.toIntOrNull() ?: Int.MAX_VALUE },
+                        { it.tekst?.lowercase(Locale.getDefault()) ?: "" }
+                    )
+                )
+                .mapNotNull { it.tekst }
+        }
+
+        // Windrichting (categorie "wind")
+        labelsFor("wind").also { windLabels ->
+            if (windLabels.isNotEmpty()) {
+                binding.acWindrichting.setAdapter(
+                    ArrayAdapter(this, android.R.layout.simple_list_item_1, windLabels)
+                )
+                binding.acWindrichting.setOnItemClickListener { parent, _, pos, _ ->
+                    gekozenWindrichtingLabel = parent.getItemAtPosition(pos)?.toString()
+                }
             }
         }
-    }
-}
 
-@Composable
-private fun LabeledTextField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-    singleLine: Boolean = true,
-    minLines: Int = 1,
-    modifier: Modifier = Modifier
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(label) },
-        singleLine = singleLine,
-        minLines = minLines,
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp)
-    )
-}
+        // Neerslag (categorie "neerslag")
+        labelsFor("neerslag").also { rainLabels ->
+            if (rainLabels.isNotEmpty()) {
+                binding.acNeerslag.setAdapter(
+                    ArrayAdapter(this, android.R.layout.simple_list_item_1, rainLabels)
+                )
+                binding.acNeerslag.setOnItemClickListener { parent, _, pos, _ ->
+                    gekozenNeerslagLabel = parent.getItemAtPosition(pos)?.toString()
+                }
+            }
+        }
 
-@Composable
-private fun LabeledNumberField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    label: String,
-    modifier: Modifier = Modifier
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onValueChange,
-        label = { Text(label) },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(
-            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
-            imeAction = androidx.compose.ui.text.input.ImeAction.Next
-        ),
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp)
-    )
-}
+        // Type telling (categorie "typetelling_trek") met filtering op tekstkey
+        filteredLabelsFor("typetelling_trek").also { typeLabels ->
+            if (typeLabels.isNotEmpty()) {
+                binding.acTypeTelling.setAdapter(
+                    ArrayAdapter(this, android.R.layout.simple_list_item_1, typeLabels)
+                )
+                binding.acTypeTelling.setOnItemClickListener { parent, _, pos, _ ->
+                    gekozenTypeTellingLabel = parent.getItemAtPosition(pos)?.toString()
+                }
+            }
+        }
 
-/**
- * Read-only veld met **overlay-click** zodat taps ALTIJD een dialog openen,
- * los van TextField-focus of input-modus.
- */
-@Composable
-private fun ReadonlyPickField(
-    value: String,
-    onClick: () -> Unit,
-    label: String,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp)
-    ) {
-        OutlinedTextField(
-            value = value,
-            onValueChange = { /* read-only */ },
-            label = { Text(label) },
-            readOnly = true,
-            modifier = Modifier
-                .fillMaxSize()
+        // Bewolking 0/8..8/8 → intern "0".."8"
+        val cloudDisplays = (0..8).map { "$it/8" }
+        val cloudValues = (0..8).map { it.toString() }
+        binding.acBewolking.setAdapter(
+            ArrayAdapter(this, android.R.layout.simple_list_item_1, cloudDisplays)
         )
-        // overlay die de volledige box klikbaar maakt
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clickable { onClick() }
+        binding.acBewolking.setOnItemClickListener { _, _, pos, _ ->
+            gekozenBewolking = cloudValues[pos]
+        }
+
+        // Windkracht "<1bf", "1bf".. "12bf" → intern "0".."12"
+        val windForceDisplays = buildList {
+            add("<1bf")
+            addAll((1..12).map { "${it}bf" })
+        }
+        val windForceValues = buildList {
+            add("0")
+            addAll((1..12).map { it.toString() })
+        }
+        binding.acWindkracht.setAdapter(
+            ArrayAdapter(this, android.R.layout.simple_list_item_1, windForceDisplays)
         )
-    }
-}
-
-/* ============== String helpers ============== */
-
-private fun String.filterNumUnsigned(maxLen: Int): String {
-    val f = this.filter { it.isDigit() }
-    return if (f.length > maxLen) f.take(maxLen) else f
-}
-
-private fun String.filterNumSignedDecimal(maxLen: Int): String {
-    val b = StringBuilder()
-    var hasDot = false
-    this.forEachIndexed { idx, c ->
-        when {
-            c.isDigit() -> b.append(c)
-            c == '-' && idx == 0 -> b.append(c)
-            c == '.' && !hasDot -> { b.append(c); hasDot = true }
+        binding.acWindkracht.setOnItemClickListener { _, _, pos, _ ->
+            gekozenWindkracht = windForceValues[pos]
         }
     }
-    val out = b.toString()
-    return if (out.length > maxLen) out.take(maxLen) else out
-}
 
-/* ============== Snapshot → opties ============== */
+    /* =========================================================
+     * Telpost uit 'sites'
+     * ========================================================= */
 
-private fun DataSnapshot.optionsFor(categoryKey: String): List<String> {
-    val raw = codesByCategory[categoryKey] ?: return emptyList()
-    return raw.mapNotNull { item ->
-        item.value?.takeIf { it.isNotBlank() }
-            ?: item.key?.takeIf { it.isNotBlank() }
-            ?: item.id?.takeIf { it.isNotBlank() }
-            ?: item.tekst?.takeIf { it.isNotBlank() }
+    private fun bindTelpostFromSites() {
+        val sites = snapshot.sitesById.values.toList()
+        if (sites.isEmpty()) return
+
+        data class Row(
+            val id: String,
+            val naam: String,
+            val r1: String?,
+            val r2: String?,
+            val typetelpost: String?,
+            val protocolid: String?
+        )
+
+        val rows: List<Row> = sites.map { s ->
+            Row(
+                id = (s.telpostid ?: "").toString(),
+                naam = s.telpostnaam?.takeIf { it.isNotBlank() } ?: (s.telpostid ?: "").toString(),
+                r1 = s.r1,
+                r2 = s.r2,
+                typetelpost = s.typetelpost ?: "1",
+                protocolid = s.protocolid
+            )
+        }.sortedBy { it.naam.lowercase(Locale.getDefault()) }
+
+        val labels = rows.map { it.naam }
+
+        binding.acTelpost.setAdapter(
+            ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
+        )
+
+        binding.acTelpost.setOnItemClickListener { _, _, pos, _ ->
+            val row = rows.getOrNull(pos) ?: return@setOnItemClickListener
+            gekozenTelpostId = row.id
+            gekozenTelpostNaam = row.naam
+            gekozenRichtingNajaar = row.r1
+            gekozenRichtingVoorjaar = row.r2
+            gekozenTypeTelpost = row.typetelpost // default blijft "1"
+            gekozenProtocolId = row.protocolid
+        }
+
+        // (optioneel) Set default eerste item:
+        // rows.firstOrNull()?.let { first ->
+        //     binding.acTelpost.setText(first.naam, false)
+        //     gekozenTelpostId = first.id
+        //     gekozenTelpostNaam = first.naam
+        //     gekozenRichtingNajaar = first.r1
+        //     gekozenRichtingVoorjaar = first.r2
+        //     gekozenTypeTelpost = first.typetelpost
+        //     gekozenProtocolId = first.protocolid
+        // }
     }
+
+    /* =========================================================
+     * Payload
+     * ========================================================= */
+
+    private fun buildMetadataHeader(): Map<String, String?> = mapOf(
+        "datum" to binding.etDatum.text?.toString(),
+        "tijd" to binding.etTijd.text?.toString(),
+
+        // Telpost
+        "telpost_id" to gekozenTelpostId,
+        "telpost_naam" to gekozenTelpostNaam,
+        "r1_najaar" to gekozenRichtingNajaar,
+        "r2_voorjaar" to gekozenRichtingVoorjaar,
+        "typetelpost" to gekozenTypeTelpost,     // praktisch "1"
+        "protocolid" to gekozenProtocolId,
+
+        // Weer
+        "windrichting_label" to gekozenWindrichtingLabel,
+        "windkracht_bft" to gekozenWindkracht,
+        "bewolking_achtsten" to gekozenBewolking,
+        "neerslag_label" to gekozenNeerslagLabel,
+        "weer_opmerking" to binding.etWeerOpmerking.text?.toString(),
+        "temperatuur_c" to binding.etTemperatuur.text?.toString(),
+        "zicht_m" to binding.etZicht.text?.toString(),
+        "luchtdruk_hpa" to binding.etLuchtdruk.text?.toString(),
+
+        // Overige
+        "typetelling_label" to gekozenTypeTellingLabel,
+        "tellers" to binding.etTellers.text?.toString()
+    )
 }
