@@ -2,26 +2,34 @@
 
 package com.yvesds.vt5.features.metadata.ui
 
+import android.Manifest
 import android.app.DatePickerDialog
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.text.InputType
 import android.widget.ArrayAdapter
 import android.widget.LinearLayout
 import android.widget.NumberPicker
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.yvesds.vt5.databinding.SchermMetadataBinding
 import com.yvesds.vt5.features.serverdata.model.CodeItem
 import com.yvesds.vt5.features.serverdata.model.DataSnapshot
 import com.yvesds.vt5.features.serverdata.model.ServerDataRepository
+import com.yvesds.vt5.utils.weather.WeatherManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import android.content.res.ColorStateList
+import android.graphics.Color
+import kotlin.math.roundToInt
 
 class MetadataScherm : AppCompatActivity() {
 
@@ -32,42 +40,132 @@ class MetadataScherm : AppCompatActivity() {
     private var gekozenTelpostId: String? = null
     private var gekozenBewolking: String? = null        // "0".."8"
     private var gekozenWindkracht: String? = null       // "0".."12"
-    private var gekozenWindrichtingCode: String? = null // codes.value
-    private var gekozenNeerslagCode: String? = null     // codes.value
-    private var gekozenTypeTellingCode: String? = null  // codes.value
+    private var gekozenWindrichtingCode: String? = null // codes.waarde
+    private var gekozenNeerslagCode: String? = null     // codes.waarde
+    private var gekozenTypeTellingCode: String? = null  // codes.waarde
+
+    private val requestLocationPerms = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        val granted = result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (granted) onWeerAutoClicked()
+        else Toast.makeText(this, "Locatierechten geweigerd.", Toast.LENGTH_SHORT).show()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = SchermMetadataBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // geen soft keyboard op datum/tijd
+        // geen keyboard voor datum/tijd
         binding.etDatum.inputType = InputType.TYPE_NULL
         binding.etTijd.inputType = InputType.TYPE_NULL
 
+        // pickers + defaults
         initDateTimePickers()
         prefillCurrentDateTime()
 
-        // Off-main alles laden
+        // Off-main: snapshot laden en dropdowns binden
         lifecycleScope.launch {
             val repo = ServerDataRepository(this@MetadataScherm)
             snapshot = withContext(Dispatchers.IO) { repo.loadAllFromSaf() }
             bindTelpostDropdown()
-            bindWeatherAndTypeDropdowns()
+            bindWeatherDropdowns()
         }
 
+        // Acties
         binding.btnVerder.setOnClickListener {
             val payload = buildMetadataHeader()
             Toast.makeText(this, "OK: $payload", Toast.LENGTH_SHORT).show()
         }
         binding.btnAnnuleer.setOnClickListener { finish() }
+        binding.btnWeerAuto.setOnClickListener { ensureLocationPermissionThenFetch() }
+    }
+
+    /* ---------- Permissie → weer auto ---------- */
+
+    private fun ensureLocationPermissionThenFetch() {
+        val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (fine || coarse) onWeerAutoClicked()
+        else requestLocationPerms.launch(arrayOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        ))
+    }
+
+    private fun onWeerAutoClicked() {
+        lifecycleScope.launch {
+            // Locatie
+            val loc = withContext(Dispatchers.IO) { WeatherManager.getLastKnownLocation(this@MetadataScherm) }
+            if (loc == null) {
+                Toast.makeText(this@MetadataScherm, "Geen locatie beschikbaar.", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+
+            // Weer
+            val cur = withContext(Dispatchers.IO) { WeatherManager.fetchCurrent(loc.latitude, loc.longitude) }
+            if (cur == null) {
+                Toast.makeText(this@MetadataScherm, "Kon weer niet ophalen.", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+
+            // Mapping naar UI-waarden
+            // Windrichting: degrees -> 16-sect label -> zoek waarde in codes("wind")
+            val label = WeatherManager.degTo16WindLabel(cur.wind_direction_10m)
+            val windCodes = snapshot.codesByCategory["wind"].orEmpty()
+            val valueByLabel = windCodes.associateBy(
+                { it.tekst?.uppercase(Locale.getDefault()) ?: "" },
+                { it.value ?: "" }
+            )
+            val foundCode = valueByLabel[label] ?: valueByLabel["N"] ?: "n"
+            gekozenWindrichtingCode = foundCode
+            binding.acWindrichting.setText(label, false)
+
+            // Windkracht (Beaufort): "<1bf" = 0, anders "1bf".. "12bf"
+            val bft = WeatherManager.msToBeaufort(cur.wind_speed_10m)
+            gekozenWindkracht = bft.toString()
+            val windForceDisplay = if (bft == 0) "<1bf" else "${bft}bf"
+            binding.acWindkracht.setText(windForceDisplay, false)
+
+            // Bewolking: %
+            val achtsten = WeatherManager.cloudPercentToAchtsten(cur.cloud_cover)
+            gekozenBewolking = achtsten
+            binding.acBewolking.setText("$achtsten/8", false)
+
+            // Neerslag: eenvoudige mapping
+            val rainCode = WeatherManager.precipitationToCode(cur.precipitation)
+            gekozenNeerslagCode = rainCode
+            // label zoeken voor code (tekst) in codes("neerslag")
+            val rainCodes = snapshot.codesByCategory["neerslag"].orEmpty()
+            val labelByValue = rainCodes.associateBy(
+                { it.value ?: "" },
+                { it.tekst ?: (it.value ?: "") }
+            )
+            val rainLabel = labelByValue[rainCode] ?: rainCode
+            binding.acNeerslag.setText(rainLabel, false)
+
+            // Temperatuur, Zicht, Luchtdruk
+            cur.temperature_2m?.let { binding.etTemperatuur.setText(it.roundToInt().toString()) }
+            cur.visibility?.let { binding.etZicht.setText(it.toString()) }
+            cur.pressure_msl?.let { binding.etLuchtdruk.setText(it.roundToInt().toString()) }
+
+            // Knop markeren: nu definitief blauw + disabled
+            markWeatherAutoApplied()
+        }
+    }
+
+    private fun markWeatherAutoApplied() {
+        binding.btnWeerAuto.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#117CAF"))
+        binding.btnWeerAuto.isEnabled = false
     }
 
     /* ---------------- Datum & Tijd ---------------- */
 
     private fun initDateTimePickers() {
         binding.etDatum.setOnClickListener { openDatePicker() }
-        binding.etTijd.setOnClickListener { openTimeSpinnerDialog() } // twee NumberPickers
+        binding.etTijd.setOnClickListener { openTimeSpinnerDialog() } // 2x NumberPicker
     }
 
     private fun prefillCurrentDateTime() {
@@ -102,7 +200,7 @@ class MetadataScherm : AppCompatActivity() {
         ).show()
     }
 
-    /** Tijdkiezer met 2 NumberPickers + overflow/underflow (59→00 = uur+1, 00→59 = uur-1). */
+    /** Custom tijdkiezer met 2 NumberPickers (uur + minuut) en overflow/underflow. */
     private fun openTimeSpinnerDialog() {
         val cal = Calendar.getInstance()
         runCatching {
@@ -121,16 +219,10 @@ class MetadataScherm : AppCompatActivity() {
         }
 
         val hourPicker = NumberPicker(this).apply {
-            minValue = 0
-            maxValue = 23
-            value = startHour
-            wrapSelectorWheel = true
+            minValue = 0; maxValue = 23; value = startHour; wrapSelectorWheel = true
         }
         val minutePicker = NumberPicker(this).apply {
-            minValue = 0
-            maxValue = 59
-            value = startMinute
-            wrapSelectorWheel = true
+            minValue = 0; maxValue = 59; value = startMinute; wrapSelectorWheel = true
             setFormatter { v -> v.toString().padStart(2, '0') }
         }
 
@@ -176,28 +268,21 @@ class MetadataScherm : AppCompatActivity() {
         }
     }
 
-    private fun bindWeatherAndTypeDropdowns() {
-        // WINDRICHTING (veld == "wind") – direct uit codesByCategory
-        snapshot.codesByCategory["wind"]?.let { codes ->
-            val sorted = codes.sortedWith(
-                compareBy(
-                    { it.sortering?.toIntOrNull() ?: Int.MAX_VALUE },
-                    { it.tekst?.lowercase(Locale.getDefault()) ?: "" }
-                )
+    private fun bindWeatherDropdowns() {
+        // WINDRICHTING (veld == "wind")
+        runCatching {
+            val windCodes = getCodesForField("wind")
+            val labels = windCodes.mapNotNull { it.tekst }
+            val values = windCodes.map { it.value ?: "" }
+            binding.acWindrichting.setAdapter(
+                ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
             )
-            val labels = sorted.mapNotNull { it.tekst }
-            val values = sorted.map { it.value }
-            if (labels.isNotEmpty()) {
-                binding.acWindrichting.setAdapter(
-                    ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
-                )
-                binding.acWindrichting.setOnItemClickListener { _, _, pos, _ ->
-                    gekozenWindrichtingCode = values[pos]
-                }
+            binding.acWindrichting.setOnItemClickListener { _, _, pos, _ ->
+                gekozenWindrichtingCode = values[pos]
             }
         }
 
-        // BEWOLKING 0/8..8/8 -> intern "0".."8"
+        // BEWOLKING 0/8..8/8 -> "0".."8"
         val cloudDisplays = (0..8).map { "$it/8" }
         val cloudValues   = (0..8).map { it.toString() }
         binding.acBewolking.setAdapter(
@@ -208,14 +293,8 @@ class MetadataScherm : AppCompatActivity() {
         }
 
         // WINDKRACHT <1bf, 1..12bf -> "0".."12"
-        val windForceDisplays = buildList {
-            add("<1bf")
-            addAll((1..12).map { "${it}bf" })
-        }
-        val windForceValues = buildList {
-            add("0")
-            addAll((1..12).map { it.toString() })
-        }
+        val windForceDisplays = buildList { add("<1bf"); addAll((1..12).map { "${it}bf" }) }
+        val windForceValues   = buildList { add("0"); addAll((1..12).map { it.toString() }) }
         binding.acWindkracht.setAdapter(
             ArrayAdapter(this, android.R.layout.simple_list_item_1, windForceDisplays)
         )
@@ -224,27 +303,21 @@ class MetadataScherm : AppCompatActivity() {
         }
 
         // NEERSLAG (veld == "neerslag")
-        snapshot.codesByCategory["neerslag"]?.let { codes ->
-            val sorted = codes.sortedWith(
-                compareBy(
-                    { it.sortering?.toIntOrNull() ?: Int.MAX_VALUE },
-                    { it.tekst?.lowercase(Locale.getDefault()) ?: "" }
-                )
+        runCatching {
+            val rainCodes = getCodesForField("neerslag")
+            val labels = rainCodes.mapNotNull { it.tekst }
+            val values = rainCodes.map { it.value ?: "" }
+            binding.acNeerslag.setAdapter(
+                ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
             )
-            val labels = sorted.mapNotNull { it.tekst }
-            val values = sorted.map { it.value }
-            if (labels.isNotEmpty()) {
-                binding.acNeerslag.setAdapter(
-                    ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
-                )
-                binding.acNeerslag.setOnItemClickListener { _, _, pos, _ ->
-                    gekozenNeerslagCode = values[pos]
-                }
+            binding.acNeerslag.setOnItemClickListener { _, _, pos, _ ->
+                gekozenNeerslagCode = values[pos]
             }
         }
 
-        // TYPE TELLING (veld == "typetelling_trek") + filters op tekstkey
-        snapshot.codesByCategory["typetelling_trek"]?.let { all ->
+        // TYPE TELLING (veld == "typetelling_trek") met filters op tekstkey
+        runCatching {
+            val all = getCodesForField("typetelling_trek")
             val filtered = all.filterNot { c ->
                 val key = c.key ?: ""
                 key.contains("_sound") ||
@@ -253,25 +326,28 @@ class MetadataScherm : AppCompatActivity() {
                         key.startsWith("gain_") ||
                         key.startsWith("verstoring_")
             }
-            val sorted = filtered.sortedWith(
-                compareBy(
-                    { it.sortering?.toIntOrNull() ?: Int.MAX_VALUE },
-                    { it.tekst?.lowercase(Locale.getDefault()) ?: "" }
-                )
+            val labels = filtered.mapNotNull { it.tekst }
+            val values = filtered.map { it.value ?: "" }
+            binding.acTypeTelling.setAdapter(
+                ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
             )
-            val labels = sorted.mapNotNull { it.tekst }
-            val values = sorted.map { it.value }
-            if (labels.isNotEmpty()) {
-                binding.acTypeTelling.setAdapter(
-                    ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
-                )
-                binding.acTypeTelling.setOnItemClickListener { _, _, pos, _ ->
-                    gekozenTypeTellingCode = values[pos]
-                }
+            binding.acTypeTelling.setOnItemClickListener { _, _, pos, _ ->
+                gekozenTypeTellingCode = values[pos]
             }
         }
 
         Toast.makeText(this, "Metadata geladen.", Toast.LENGTH_SHORT).show()
+    }
+
+    /** Haal codes per veld uit snapshot en sorteer op sortering (numeriek) + tekst. */
+    private fun getCodesForField(field: String): List<CodeItem> {
+        val items = snapshot.codesByCategory[field].orEmpty()
+        return items.sortedWith(
+            compareBy(
+                { it.sortering?.toIntOrNull() ?: Int.MAX_VALUE },
+                { it.tekst?.lowercase(Locale.getDefault()) ?: "" }
+            )
+        )
     }
 
     /* ---------------- Payload ---------------- */

@@ -145,7 +145,7 @@
                     app:boxBackgroundMode="outline">
 
                     <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/tilWeerOpmerking"
+                        android:id="@+id/etWeerOpmerking"
                         android:layout_width="match_parent"
                         android:layout_height="50dp"
                         android:layout_marginLeft="8dp"
@@ -313,7 +313,23 @@
                                 android:textSize="11sp" />
                         </com.google.android.material.textfield.TextInputLayout>
 
-                        <!-- Optioneel: later 'Auto' weerknop/icoon -->
+                        <!-- Weer automatisch invullen -->
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnWeerAuto"
+                            android:layout_width="match_parent"
+                            android:layout_height="50dp"
+                            android:layout_marginTop="5dp"
+                            android:layout_marginRight="8dp"
+                            android:backgroundTint="#000000"
+                            android:text="@string/meta_weer_auto"
+                            android:textAllCaps="false"
+                            android:textColor="@android:color/white"
+                            app:cornerRadius="16dp"
+                            app:icon="@drawable/ic_weather"
+                            app:iconPadding="8dp"
+                            app:iconSize="20dp"
+                            app:iconTint="@android:color/white" />
+
                     </LinearLayout>
                 </LinearLayout>
 
