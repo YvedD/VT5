@@ -9,15 +9,19 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.util.Locale
-import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.roundToInt
 
+/**
+ * Weer-helper: last known location, fetchen van huidige weerdata (Open-Meteo),
+ * en conversies voor UI (bewolking in achtsten, zicht in meters, enz.).
+ *
+ * Verwacht WeatherResponse.kt met data classes WeatherResponse en Current.
+ */
 object WeatherManager {
 
     private val client by lazy { OkHttpClient() }
-    private val json by lazy { Json { ignoreUnknownKeys = true; isLenient = true } }
+    private val json by lazy { Json { ignoreUnknownKeys = true; isLenient = true; coerceInputValues = true } }
 
     /** Probeer snel een lastKnownLocation te pakken (NETWORK dan GPS). */
     @SuppressLint("MissingPermission")
@@ -32,48 +36,59 @@ object WeatherManager {
         best
     }
 
-    /** Haal de 'current' set op bij Open-Meteo (geen API key nodig). */
+    /** Haal 'current' set op bij Open-Meteo (m/s voor wind). */
     suspend fun fetchCurrent(lat: Double, lon: Double): Current? = withContext(Dispatchers.IO) {
         val url = "https://api.open-meteo.com/v1/forecast" +
-                "?latitude=${lat}&longitude=${lon}" +
+                "?latitude=$lat&longitude=$lon" +
                 "&current=temperature_2m,wind_speed_10m,wind_direction_10m,cloud_cover,pressure_msl,visibility,precipitation" +
+                "&windspeed_unit=ms" +              // 👈 m/s expliciet
                 "&timezone=auto"
         val req = Request.Builder().url(url).get().build()
         client.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) return@use null
             val body = resp.body?.string() ?: return@use null
-            val om = json.decodeFromString(OpenMeteoResponse.serializer(), body)
-            om.current
+            val wr = json.decodeFromString(WeatherResponse.serializer(), body)
+            wr.current
         }
     }
 
-    /** Converteer m/s naar Beaufort 0..12 (klasieke tabel). */
+    /** Converteer m/s naar Beaufort 0..12 (klassieke tabel). */
     fun msToBeaufort(ms: Double?): Int {
         val v = ms ?: return 0
-        // grenzen in m/s (inclusief bovengrens)
-        val thresholds = listOf(
-            0.2, 1.5, 3.3, 5.4, 7.9, 10.7, 13.8, 17.1, 20.7, 24.4, 28.4, 32.6
-        )
+        // m/s bovengrenzen per Beaufort
+        val thresholds = listOf(0.2, 1.5, 3.3, 5.4, 7.9, 10.7, 13.8, 17.1, 20.7, 24.4, 28.4, 32.6)
         for ((i, t) in thresholds.withIndex()) if (v <= t) return i
         return 12
     }
 
-    /** Converteer graden naar 16-windroos label ("N","NNO","NO","ONO","O","OZO","ZO","ZZO","Z","ZZW","ZW","WZW","W","WNW","NW","NNW"). */
+    /** Converteer graden naar 16-windroos label. */
     fun degTo16WindLabel(deg: Double?): String {
         if (deg == null) return "N"
-        val labels = arrayOf(
-            "N","NNO","NO","ONO","O","OZO","ZO","ZZO","Z","ZZW","ZW","WZW","W","WNW","NW","NNW"
-        )
-        // sectorbreedte 22.5°, offset zodat 0° → "N"
-        val idx = floor(((deg + 11.25) % 360) / 22.5).toInt()
+        val labels = arrayOf("N","NNO","NO","ONO","O","OZO","ZO","ZZO","Z","ZZW","ZW","WZW","W","WNW","NW","NNW")
+        val idx = floor(((deg + 11.25) % 360.0) / 22.5).toInt()
         return labels[idx.coerceIn(0, labels.lastIndex)]
     }
 
     /** Converteer cloud cover (%) → achtsten ("0".."8"). */
-    fun cloudPercentToAchtsten(pct: Int?): String {
-        val p = (pct ?: 0).coerceIn(0, 100)
+    fun cloudPercentToAchtsten(pct: Double?): String {
+        val p = ((pct ?: 0.0).coerceIn(0.0, 100.0))
         val achtsten = ((p / 100.0) * 8.0).roundToInt().coerceIn(0, 8)
         return achtsten.toString()
+    }
+
+    /**
+     * Normaliseer zichtbaarheid naar METERS (Int, geen decimalen).
+     * Heuristiek:
+     *  - < 1000 -> interpreteer als kilometers (bv. 14.6) → ×1000 en afronden.
+     *  - anders -> interpreteer als meters (bv. 14600.0) → afronden.
+     */
+    fun toVisibilityMeters(value: Double?): Int? {
+        value ?: return null
+        return if (value < 1000.0) {
+            (value * 1000.0).roundToInt()
+        } else {
+            value.roundToInt()
+        }
     }
 
     /** Simple logic voor neerslag-type o.b.v. intensiteit; fallback "geen". */

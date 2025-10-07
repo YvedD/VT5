@@ -97,61 +97,64 @@ class MetadataScherm : AppCompatActivity() {
 
     private fun onWeerAutoClicked() {
         lifecycleScope.launch {
-            // Locatie
+            // 1) Locatie ophalen (off-main)
             val loc = withContext(Dispatchers.IO) { WeatherManager.getLastKnownLocation(this@MetadataScherm) }
             if (loc == null) {
                 Toast.makeText(this@MetadataScherm, "Geen locatie beschikbaar.", Toast.LENGTH_SHORT).show()
                 return@launch
             }
 
-            // Weer
+            // 2) Huidig weer ophalen (off-main)
             val cur = withContext(Dispatchers.IO) { WeatherManager.fetchCurrent(loc.latitude, loc.longitude) }
             if (cur == null) {
                 Toast.makeText(this@MetadataScherm, "Kon weer niet ophalen.", Toast.LENGTH_SHORT).show()
                 return@launch
             }
 
-            // Mapping naar UI-waarden
-            // Windrichting: degrees -> 16-sect label -> zoek waarde in codes("wind")
-            val label = WeatherManager.degTo16WindLabel(cur.wind_direction_10m)
+            // 3) Mapping naar UI
+
+            // Windrichting: graden → 16-sectie label → code via codes("wind")
+            val windLabel = WeatherManager.degTo16WindLabel(cur.windDirection10m)
             val windCodes = snapshot.codesByCategory["wind"].orEmpty()
             val valueByLabel = windCodes.associateBy(
-                { it.tekst?.uppercase(Locale.getDefault()) ?: "" },
+                { (it.tekst ?: "").uppercase(Locale.getDefault()) },
                 { it.value ?: "" }
             )
-            val foundCode = valueByLabel[label] ?: valueByLabel["N"] ?: "n"
-            gekozenWindrichtingCode = foundCode
-            binding.acWindrichting.setText(label, false)
+            val foundWindCode = valueByLabel[windLabel] ?: valueByLabel["N"] ?: "n"
+            gekozenWindrichtingCode = foundWindCode
+            binding.acWindrichting.setText(windLabel, false)
 
-            // Windkracht (Beaufort): "<1bf" = 0, anders "1bf".. "12bf"
-            val bft = WeatherManager.msToBeaufort(cur.wind_speed_10m)
+            // Windkracht (Beaufort uit m/s): "<1bf" = 0, anders "1bf".. "12bf"
+            val bft = WeatherManager.msToBeaufort(cur.windSpeed10m)
             gekozenWindkracht = bft.toString()
             val windForceDisplay = if (bft == 0) "<1bf" else "${bft}bf"
             binding.acWindkracht.setText(windForceDisplay, false)
 
-            // Bewolking: %
-            val achtsten = WeatherManager.cloudPercentToAchtsten(cur.cloud_cover)
+            // Bewolking: % → achtsten ("0".."8")
+            val achtsten = WeatherManager.cloudPercentToAchtsten(cur.cloudCover)
             gekozenBewolking = achtsten
             binding.acBewolking.setText("$achtsten/8", false)
 
-            // Neerslag: eenvoudige mapping
+            // Neerslag: intensiteit → code; toon bijbehorend NL-label uit codes("neerslag")
             val rainCode = WeatherManager.precipitationToCode(cur.precipitation)
             gekozenNeerslagCode = rainCode
-            // label zoeken voor code (tekst) in codes("neerslag")
             val rainCodes = snapshot.codesByCategory["neerslag"].orEmpty()
-            val labelByValue = rainCodes.associateBy(
+            val rainLabelByValue = rainCodes.associateBy(
                 { it.value ?: "" },
                 { it.tekst ?: (it.value ?: "") }
             )
-            val rainLabel = labelByValue[rainCode] ?: rainCode
+            val rainLabel = rainLabelByValue[rainCode] ?: rainCode
             binding.acNeerslag.setText(rainLabel, false)
 
-            // Temperatuur, Zicht, Luchtdruk
-            cur.temperature_2m?.let { binding.etTemperatuur.setText(it.roundToInt().toString()) }
-            cur.visibility?.let { binding.etZicht.setText(it.toString()) }
-            cur.pressure_msl?.let { binding.etLuchtdruk.setText(it.roundToInt().toString()) }
+            // Temperatuur (°C, int), Zicht (meters, int), Luchtdruk (hPa, int)
+            cur.temperature2m?.let { binding.etTemperatuur.setText(it.roundToInt().toString()) }
 
-            // Knop markeren: nu definitief blauw + disabled
+            val visMeters = WeatherManager.toVisibilityMeters(cur.visibility)
+            visMeters?.let { binding.etZicht.setText(it.toString()) }
+
+            cur.pressureMsl?.let { binding.etLuchtdruk.setText(it.roundToInt().toString()) }
+
+            // 4) Knop markeren: definitief blauw + disabled
             markWeatherAutoApplied()
         }
     }

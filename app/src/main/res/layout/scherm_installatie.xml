@@ -15,14 +15,6 @@
         android:orientation="vertical">
 
         <!-- Titel -->
-        <TextView
-            android:id="@+id/tvTitel"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/titel_install"
-            android:textColor="@color/vt5_on_surface"
-            android:textSize="20sp"
-            android:paddingBottom="12dp" />
 
         <!-- Uitleg -->
         <com.google.android.material.textfield.TextInputLayout
@@ -191,8 +183,9 @@
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:background="@drawable/vt5_btn_confirm_selector"
+                android:text="@string/btn_klaar"
                 android:textColor="@color/vt5_white"
-                android:text="@string/btn_klaar" />
+                app:backgroundTint="@color/vt5_outline" />
         </LinearLayout>
 
     </LinearLayout>

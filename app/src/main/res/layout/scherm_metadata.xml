@@ -319,16 +319,18 @@
                             android:layout_width="match_parent"
                             android:layout_height="50dp"
                             android:layout_marginTop="5dp"
-                            android:layout_marginRight="8dp"
-                            android:backgroundTint="#000000"
+                            android:layout_marginEnd="8dp"
                             android:text="@string/meta_weer_auto"
                             android:textAllCaps="false"
                             android:textColor="@android:color/white"
-                            app:cornerRadius="16dp"
+                            app:backgroundTint="@color/vt5_outline"
+                            app:cornerRadius="6dp"
                             app:icon="@drawable/ic_weather"
                             app:iconPadding="8dp"
                             app:iconSize="20dp"
-                            app:iconTint="@android:color/white" />
+                            app:iconTint="@android:color/white"
+                            app:strokeColor="@color/vt5_outline"
+                            app:strokeWidth="1dp" />
 
                     </LinearLayout>
                 </LinearLayout>
