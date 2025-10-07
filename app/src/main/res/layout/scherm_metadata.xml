@@ -4,10 +4,8 @@
     android:id="@+id/rootCard"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:layout_marginTop="30dp"
-    android:layout_marginBottom="30dp"
-    android:padding="16dp"
-    app:cardUseCompatPadding="true"
+    android:layout_marginBottom="2dp"
+    app:cardUseCompatPadding="false"
     app:strokeWidth="1dp">
 
     <androidx.constraintlayout.widget.ConstraintLayout
@@ -21,16 +19,16 @@
             android:layout_width="0dp"
             android:layout_height="0dp"
             android:fillViewport="true"
-            app:layout_constraintTop_toTopOf="parent"
             app:layout_constraintBottom_toTopOf="@+id/bottomBar"
+            app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintEnd_toEndOf="parent">
+            app:layout_constraintTop_toTopOf="parent">
 
             <LinearLayout
                 android:id="@+id/content"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_margin="5dp"
+                android:layout_marginTop="0dp"
                 android:orientation="vertical"
                 android:padding="0dp">
 
@@ -51,13 +49,13 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
-                    android:paddingBottom="4dp">
+                    android:paddingBottom="0dp">
 
                     <!-- Datum (tap = datepicker) -->
                     <com.google.android.material.textfield.TextInputLayout
                         android:id="@+id/tilDatum"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
                         android:layout_weight="1"
                         android:hint="@string/meta_datum"
                         app:boxBackgroundMode="outline">
@@ -67,22 +65,19 @@
                             android:layout_width="match_parent"
                             android:layout_height="50dp"
                             android:layout_marginLeft="8dp"
+                            android:layout_marginRight="4dp"
                             android:clickable="true"
                             android:focusable="false"
                             android:inputType="none"
                             android:paddingStart="10dp"
-                            android:textSize="9sp" />
+                            android:textSize="11sp" />
                     </com.google.android.material.textfield.TextInputLayout>
-
-                    <Space
-                        android:layout_width="8dp"
-                        android:layout_height="1dp" />
 
                     <!-- Tijd (tap = timepicker) -->
                     <com.google.android.material.textfield.TextInputLayout
                         android:id="@+id/tilTijd"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
+                        android:layout_height="match_parent"
                         android:layout_weight="1"
                         android:hint="@string/meta_tijd"
                         app:boxBackgroundMode="outline">
@@ -91,12 +86,13 @@
                             android:id="@+id/etTijd"
                             android:layout_width="match_parent"
                             android:layout_height="50dp"
+                            android:layout_marginLeft="4dp"
                             android:layout_marginRight="8dp"
                             android:clickable="true"
                             android:focusable="false"
                             android:inputType="none"
                             android:paddingStart="10dp"
-                            android:textSize="9sp" />
+                            android:textSize="11sp" />
                     </com.google.android.material.textfield.TextInputLayout>
                 </LinearLayout>
 
@@ -112,12 +108,12 @@
                     <com.google.android.material.textfield.MaterialAutoCompleteTextView
                         android:id="@+id/acTelpost"
                         android:layout_width="match_parent"
-                        android:layout_height="45dp"
+                        android:layout_height="50dp"
                         android:layout_marginLeft="8dp"
                         android:layout_marginRight="8dp"
                         android:inputType="none"
                         android:paddingStart="10dp"
-                        android:textSize="9sp" />
+                        android:textSize="11sp" />
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <!-- Tellers -->
@@ -131,53 +127,36 @@
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/etTellers"
                         android:layout_width="match_parent"
-                        android:layout_height="55dp"
+                        android:layout_height="50dp"
                         android:layout_marginLeft="8dp"
                         android:layout_marginRight="8dp"
                         android:inputType="textPersonName"
                         android:maxLines="1"
                         android:paddingStart="10dp"
-                        android:textSize="9sp" />
+                        android:textSize="11sp" />
                 </com.google.android.material.textfield.TextInputLayout>
 
-                <!-- Kop 'Weergegevens' + vrije opmerking -->
-                <LinearLayout
+                <!-- Tellers -->
+                <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/weerHeaderRow"
                     android:layout_width="match_parent"
-                    android:layout_height="50dp"
-                    android:orientation="horizontal"
-                    android:paddingTop="4dp"
-                    android:paddingBottom="2dp">
+                    android:layout_height="wrap_content"
+                    android:hint="@string/meta_weer_opm"
+                    app:boxBackgroundMode="outline">
 
-                    <com.google.android.material.textview.MaterialTextView
-                        android:id="@+id/tvWeergegevensTitel"
-                        android:layout_width="wrap_content"
-                        android:layout_height="30dp"
-                        android:layout_gravity="center_vertical"
-                        android:layout_marginLeft="8dp"
-                        android:padding="4dp"
-                        android:text="@string/meta_weer_titel"
-                        android:textAppearance="@style/TextAppearance.Material3.BodySmall"
-                        android:textSize="9sp" />
-
-                    <com.google.android.material.textfield.TextInputLayout
+                    <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/tilWeerOpmerking"
-                        android:layout_width="0dp"
-                        android:layout_height="40dp"
-                        android:layout_weight="1"
-                        android:hint="@string/meta_weer_opm"
-                        app:boxBackgroundMode="outline">
+                        android:layout_width="match_parent"
+                        android:layout_height="50dp"
+                        android:layout_marginLeft="8dp"
+                        android:layout_marginRight="8dp"
+                        android:inputType="textPersonName"
+                        android:maxLines="1"
+                        android:paddingStart="10dp"
+                        android:textSize="11sp" />
+                </com.google.android.material.textfield.TextInputLayout>
 
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/etWeerOpmerking"
-                            android:layout_width="match_parent"
-                            android:layout_height="match_parent"
-                            android:layout_marginRight="8dp"
-                            android:inputType="text"
-                            android:paddingStart="10dp"
-                            android:textSize="9sp" />
-                    </com.google.android.material.textfield.TextInputLayout>
-                </LinearLayout>
+
 
                 <!-- Weervelden: 2 kolommen -->
                 <LinearLayout
@@ -206,11 +185,11 @@
                             <com.google.android.material.textfield.MaterialAutoCompleteTextView
                                 android:id="@+id/acWindrichting"
                                 android:layout_width="match_parent"
-                                android:layout_height="45dp"
+                                android:layout_height="50dp"
                                 android:layout_marginLeft="8dp"
                                 android:inputType="none"
                                 android:paddingStart="10dp"
-                                android:textSize="9sp" />
+                                android:textSize="11sp" />
                         </com.google.android.material.textfield.TextInputLayout>
 
                         <!-- Temperatuur -->
@@ -224,11 +203,11 @@
                             <com.google.android.material.textfield.TextInputEditText
                                 android:id="@+id/etTemperatuur"
                                 android:layout_width="match_parent"
-                                android:layout_height="45dp"
+                                android:layout_height="50dp"
                                 android:layout_marginLeft="8dp"
                                 android:inputType="number"
                                 android:paddingStart="10dp"
-                                android:textSize="9sp" />
+                                android:textSize="11sp" />
                         </com.google.android.material.textfield.TextInputLayout>
 
                         <!-- Bewolking -->
@@ -243,11 +222,11 @@
                             <com.google.android.material.textfield.MaterialAutoCompleteTextView
                                 android:id="@+id/acBewolking"
                                 android:layout_width="match_parent"
-                                android:layout_height="45dp"
+                                android:layout_height="50dp"
                                 android:layout_marginLeft="8dp"
                                 android:inputType="none"
                                 android:paddingStart="10dp"
-                                android:textSize="9sp" />
+                                android:textSize="11sp" />
                         </com.google.android.material.textfield.TextInputLayout>
 
                         <!-- Zicht (meters) -->
@@ -261,11 +240,11 @@
                             <com.google.android.material.textfield.TextInputEditText
                                 android:id="@+id/etZicht"
                                 android:layout_width="match_parent"
-                                android:layout_height="45dp"
+                                android:layout_height="50dp"
                                 android:layout_marginLeft="8dp"
                                 android:inputType="number"
                                 android:paddingStart="10dp"
-                                android:textSize="9sp" />
+                                android:textSize="11sp" />
                         </com.google.android.material.textfield.TextInputLayout>
                     </LinearLayout>
 
@@ -290,11 +269,11 @@
                             <com.google.android.material.textfield.MaterialAutoCompleteTextView
                                 android:id="@+id/acWindkracht"
                                 android:layout_width="match_parent"
-                                android:layout_height="45dp"
+                                android:layout_height="50dp"
                                 android:layout_marginRight="8dp"
                                 android:inputType="none"
                                 android:paddingStart="10dp"
-                                android:textSize="9sp" />
+                                android:textSize="11sp" />
                         </com.google.android.material.textfield.TextInputLayout>
 
                         <!-- Neerslag -->
@@ -309,11 +288,11 @@
                             <com.google.android.material.textfield.MaterialAutoCompleteTextView
                                 android:id="@+id/acNeerslag"
                                 android:layout_width="match_parent"
-                                android:layout_height="45dp"
+                                android:layout_height="50dp"
                                 android:layout_marginRight="8dp"
                                 android:inputType="none"
                                 android:paddingStart="10dp"
-                                android:textSize="9sp" />
+                                android:textSize="11sp" />
                         </com.google.android.material.textfield.TextInputLayout>
 
                         <!-- Luchtdruk -->
@@ -327,11 +306,11 @@
                             <com.google.android.material.textfield.TextInputEditText
                                 android:id="@+id/etLuchtdruk"
                                 android:layout_width="match_parent"
-                                android:layout_height="45dp"
+                                android:layout_height="50dp"
                                 android:layout_marginRight="8dp"
                                 android:inputType="numberDecimal"
                                 android:paddingStart="10dp"
-                                android:textSize="9sp" />
+                                android:textSize="11sp" />
                         </com.google.android.material.textfield.TextInputLayout>
 
                         <!-- Optioneel: later 'Auto' weerknop/icoon -->
@@ -350,12 +329,12 @@
                     <com.google.android.material.textfield.MaterialAutoCompleteTextView
                         android:id="@+id/acTypeTelling"
                         android:layout_width="match_parent"
-                        android:layout_height="45dp"
+                        android:layout_height="50dp"
                         android:layout_marginLeft="8dp"
                         android:layout_marginRight="8dp"
                         android:inputType="none"
                         android:paddingStart="10dp"
-                        android:textSize="9sp" />
+                        android:textSize="11sp" />
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <!-- Opmerkingen -->
@@ -369,14 +348,14 @@
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/etOpmerkingen"
                         android:layout_width="match_parent"
-                        android:layout_height="75dp"
+                        android:layout_height="50dp"
                         android:layout_marginLeft="8dp"
                         android:layout_marginRight="8dp"
                         android:gravity="top"
                         android:inputType="textMultiLine"
                         android:minLines="2"
                         android:paddingStart="10dp"
-                        android:textSize="9sp" />
+                        android:textSize="11sp" />
                 </com.google.android.material.textfield.TextInputLayout>
 
             </LinearLayout>
@@ -386,12 +365,14 @@
         <LinearLayout
             android:id="@+id/bottomBar"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
+            android:layout_height="125dp"
             android:orientation="horizontal"
             android:paddingTop="1dp"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toStartOf="parent">
+            app:layout_constraintHorizontal_bias="0.0"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/rootScroll">
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnAnnuleer"
