@@ -21,6 +21,8 @@ import com.yvesds.vt5.features.serverdata.model.CodeItem
 import com.yvesds.vt5.features.serverdata.model.DataSnapshot
 import com.yvesds.vt5.features.serverdata.model.ServerDataRepository
 import com.yvesds.vt5.utils.weather.WeatherManager
+import com.yvesds.vt5.net.StartTellingApi
+import com.yvesds.vt5.net.TrektellenApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -30,11 +32,14 @@ import java.util.Locale
 import android.content.res.ColorStateList
 import android.graphics.Color
 import kotlin.math.roundToInt
+import kotlinx.coroutines.async
+
 
 class MetadataScherm : AppCompatActivity() {
 
     private lateinit var binding: SchermMetadataBinding
     private var snapshot: DataSnapshot = DataSnapshot()
+    private var startEpochSec: Long = 0L
 
     // Gekozen waarden
     private var gekozenTelpostId: String? = null
@@ -65,19 +70,110 @@ class MetadataScherm : AppCompatActivity() {
         // pickers + defaults
         initDateTimePickers()
         prefillCurrentDateTime()
+        startEpochSec = System.currentTimeMillis() / 1000L
 
         // Off-main: snapshot laden en dropdowns binden
         lifecycleScope.launch {
-            val repo = ServerDataRepository(this@MetadataScherm)
-            snapshot = withContext(Dispatchers.IO) { repo.loadAllFromSaf() }
+            val repo = ServerDataRepository.getInstance(applicationContext)
+
+            // parallelle, gerichte loads (IO)
+            val sitesDeferred = async(Dispatchers.IO) { repo.loadSites() } // leest alleen sites.json (streaming)
+            val windDeferred  = async(Dispatchers.IO) { repo.loadCodesFor("wind") }
+            val rainDeferred  = async(Dispatchers.IO) { repo.loadCodesFor("neerslag") }
+            val typeDeferred  = async(Dispatchers.IO) { repo.loadCodesFor("typetelling_trek") }
+
+            // wacht per stuk en bind UI zodra beschikbaar (niet alles blokkeren)
+            snapshot = snapshot.copy(
+                sitesById = sitesDeferred.await(),
+                codesByCategory = mapOf(
+                    "wind" to windDeferred.await(),
+                    "neerslag" to rainDeferred.await(),
+                    "typetelling_trek" to typeDeferred.await()
+                )
+            )
+
             bindTelpostDropdown()
             bindWeatherDropdowns()
         }
-
-        // Acties
+// Acties
         binding.btnVerder.setOnClickListener {
-            val payload = buildMetadataHeader()
-            Toast.makeText(this, "OK: $payload", Toast.LENGTH_SHORT).show()
+            // 1) Validatie basis
+            val telpostId = gekozenTelpostId
+            if (telpostId.isNullOrBlank()) {
+                Toast.makeText(this, "Kies eerst een telpost.", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            // 2) UI-waarden ophalen (strings!):
+            val windrichtingLabel = binding.acWindrichting.text?.toString()?.trim().orEmpty()
+            val windkrachtOnly    = (gekozenWindkracht ?: "").trim()          // "0".."12"
+            val temperatuurC      = binding.etTemperatuur.text?.toString()?.trim().orEmpty() // server verwacht String
+            val bewolkingOnly     = (gekozenBewolking ?: "").trim()           // "0".."8"
+            val neerslagCode      = (gekozenNeerslagCode ?: "").trim()        // bv. "regen"
+            val zichtMeters       = binding.etZicht.text?.toString()?.trim().orEmpty()       // geen decimalen
+            val typetellingCode   = (gekozenTypeTellingCode ?: "all").trim()  // default "all"
+            val telers            = binding.etTellers.text?.toString()?.trim().orEmpty()
+            val weerOpmerking     = binding.etWeerOpmerking.text?.toString()?.trim().orEmpty()
+            val opmerkingen       = binding.etOpmerkingen.text?.toString()?.trim().orEmpty()
+            val luchtdrukRaw      = binding.etLuchtdruk.text?.toString()?.trim().orEmpty()    // we sturen String door
+
+            // 3) Telling-id & eindtijd
+            val tellingId = com.yvesds.vt5.VT5App.nextTellingId()
+            val eindEpochSec = System.currentTimeMillis() / 1000L
+
+            // 4) Envelope bouwen (metadata + lege data-array)
+            val envelope = StartTellingApi.buildEnvelopeFromUi(
+                tellingId = tellingId.toLong(),
+                telpostId = telpostId,
+                begintijdEpochSec = startEpochSec,   // bestaand veld in jouw klasse
+                eindtijdEpochSec = eindEpochSec,
+                windrichtingLabel = windrichtingLabel,
+                windkrachtBftOnly = windkrachtOnly,
+                temperatuurC = temperatuurC,
+                bewolkingAchtstenOnly = bewolkingOnly,
+                neerslagCode = neerslagCode,
+                zichtMeters = zichtMeters,
+                typetellingCode = typetellingCode,
+                telers = telers,
+                weerOpmerking = weerOpmerking,
+                opmerkingen = opmerkingen,
+                luchtdrukHpaRaw = luchtdrukRaw
+            )
+
+            // 5) Credentials (zoals jouw json-download flow: Basic Auth)
+            val username = snapshot.currentUser?.userid
+            val password = snapshot.currentUser?.password ?: ""
+            if (username.isNullOrBlank()) {
+                Toast.makeText(this, "Geen user (check login).", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            // 6) Upload off-main
+            binding.btnVerder.isEnabled = false
+            lifecycleScope.launch {
+                try {
+                    val (ok, body) = com.yvesds.vt5.net.TrektellenApi.postCountsSave(
+                        baseUrl = "https://trektellen.nl",
+                        language = "dutch",         // server verwacht dit zo
+                        versie = "1845",            // volgens jouw voorbeeld-URL
+                        username = username,
+                        password = password,
+                        envelope = envelope         // List<ServerTellingEnvelope>
+                    )
+
+                    // Toon ALTIJD het volledige serverantwoord (voor debug & om onlineid te zien)
+                    showFullServerResponseToast("TrektellenUpload", body)
+
+                    if (ok) {
+                        Toast.makeText(this@MetadataScherm, "Telling gestart (upload OK).", Toast.LENGTH_SHORT).show()
+                        // TODO (optioneel): parse 'onlineid' uit 'body' en bewaren (prefs/DB) gekoppeld aan 'tellingId'
+                    } else {
+                        Toast.makeText(this@MetadataScherm, "Start mislukt.", Toast.LENGTH_SHORT).show()
+                    }
+                } finally {
+                    binding.btnVerder.isEnabled = true
+                }
+            }
         }
         binding.btnAnnuleer.setOnClickListener { finish() }
         binding.btnWeerAuto.setOnClickListener { ensureLocationPermissionThenFetch() }
@@ -351,6 +447,24 @@ class MetadataScherm : AppCompatActivity() {
                 { it.tekst?.lowercase(Locale.getDefault()) ?: "" }
             )
         )
+    }
+    private fun showFullServerResponseToast(tag: String, response: String) {
+        // Log alles voor debug
+        android.util.Log.d(tag, "Server response:\n$response")
+
+        // Toasts snijden te lange teksten af; we knippen in stukken van max ~3500 chars
+        val chunkSize = 3500
+        if (response.length <= chunkSize) {
+            Toast.makeText(this, response, Toast.LENGTH_LONG).show()
+        } else {
+            var i = 0
+            while (i < response.length) {
+                val end = (i + chunkSize).coerceAtMost(response.length)
+                val part = response.substring(i, end)
+                Toast.makeText(this, part, Toast.LENGTH_LONG).show()
+                i = end
+            }
+        }
     }
 
     /* ---------------- Payload ---------------- */

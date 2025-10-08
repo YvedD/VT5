@@ -5,7 +5,7 @@
     <style name="Theme.VT5.Dark" parent="Theme.Material3.Dark.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@color/vt5_black</item>
-
+        <item name="android:windowBackground">@color/vt5_black</item>
         <!-- Kleuren -->
         <item name="colorSurface">@color/vt5_black</item>
         <item name="colorOnSurface">@color/vt5_on_surface</item>

@@ -6,53 +6,124 @@ import android.content.Context
 import androidx.documentfile.provider.DocumentFile
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.cbor.Cbor
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.serializer
+import kotlinx.serialization.json.decodeFromStream
 import java.io.BufferedInputStream
 import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicReference
 import java.util.zip.CRC32
 import java.util.zip.GZIPInputStream
 
-class ServerDataRepository(
+class ServerDataRepository private constructor(
     private val context: Context,
     private val json: Json = defaultJson,
     private val cbor: Cbor = defaultCbor
 ) {
+    companion object {
+        @Volatile private var INSTANCE: ServerDataRepository? = null
 
-    private val snapshotState = MutableStateFlow(DataSnapshot())
-    val snapshot: StateFlow<DataSnapshot> = snapshotState
+        fun getInstance(ctx: Context): ServerDataRepository =
+            INSTANCE ?: synchronized(this) {
+                INSTANCE ?: ServerDataRepository(ctx.applicationContext).also { INSTANCE = it }
+            }
+
+        val defaultJson = Json { ignoreUnknownKeys = true; isLenient = true; explicitNulls = false }
+        val defaultCbor = Cbor { ignoreUnknownKeys = true }
+    }
+
+    // ---------- eenvoudige in-memory caches (per app-run) ----------
+    private val cacheSites = AtomicReference<Map<String, SiteItem>?>(null)
+    private val cacheCodesByField = ConcurrentHashMap<String, List<CodeItem>>() // b.v. "wind" → lijst
+
+    private val saf by lazy { SaFStorageHelper(context) }
+
+    // =====================================================================
+    //  Snelle, gerichte loaders (ad-hoc) — gebruikt door MetadataScherm
+    // =====================================================================
+
+    /** Laad enkel `sites.json` / `sites.bin` (streaming) en cache in-memory. */
+    suspend fun loadSites(): Map<String, SiteItem> = withContext(Dispatchers.IO) {
+        cacheSites.get()?.let { return@withContext it }
+
+        val vt5Root = saf.getVt5DirIfExists() ?: return@withContext emptyMap()
+        val serverdata = vt5Root.findChildByName("serverdata")?.takeIf { it.isDirectory }
+            ?: return@withContext emptyMap()
+
+        // Probeer eerst .bin → dan .json (streaming)
+        val list = readListStreamingOrBin<SiteItem>(serverdata, "sites", VT5Bin.Kind.SITES)
+        val map = list.associateBy { it.telpostid }
+        cacheSites.set(map)
+        map
+    }
+
+    /**
+     * Laad alleen de codes voor een bepaald veld (b.v. "wind", "neerslag", "typetelling_trek")
+     * uit `codes.json`/`codes.bin`, filter en sorteer. Resultaat wordt gecached per `field`.
+     */
+    suspend fun loadCodesFor(field: String): List<CodeItem> = withContext(Dispatchers.IO) {
+        cacheCodesByField[field]?.let { return@withContext it }
+
+        val vt5Root = saf.getVt5DirIfExists() ?: return@withContext emptyList()
+        val serverdata = vt5Root.findChildByName("serverdata")?.takeIf { it.isDirectory }
+            ?: return@withContext emptyList()
+
+        val all = readListStreamingOrBin<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES)
+
+        // Herkenning van 'veld' (jouw dump gebruikt NL-keys: tekstkey/tekst/sortering/veld/waarde)
+        val filtered = all.asSequence()
+            .filter { item ->
+                // primaire match op 'category' of 'veld'
+                when {
+                    item.category?.equals(field, ignoreCase = true) == true -> true
+                    else -> false
+                } || run {
+                    val head = (item.key ?: item.id ?: "")
+                        .substringBefore('_') // b.v. "neerslag_regen" ⇒ "neerslag"
+                    head.equals(field, ignoreCase = true)
+                }
+            }
+            .sortedWith(
+                compareBy(
+                    { it.sortering?.toIntOrNull() ?: Int.MAX_VALUE },
+                    { it.tekst?.lowercase(Locale.getDefault()) ?: "" }
+                )
+            )
+            .toList()
+
+        cacheCodesByField[field] = filtered
+        filtered
+    }
+
+    // =====================================================================
+    //  Volledige snapshot (legacy) — blijft bruikbaar waar nodig
+    // =====================================================================
 
     suspend fun loadAllFromSaf(): DataSnapshot = withContext(Dispatchers.IO) {
-        val saf = SaFStorageHelper(context)
         val vt5Root = saf.getVt5DirIfExists() ?: return@withContext DataSnapshot()
         val serverdata = vt5Root.findChildByName("serverdata")?.takeIf { it.isDirectory }
             ?: return@withContext DataSnapshot()
 
-        // 1) Lees alle datasets (bin -> json fallback)
-        val userObj = readOne<CheckUserItem>(serverdata, "checkuser", VT5Bin.Kind.CHECK_USER)
+        val userObj = readOneStreamingOrBin<CheckUserItem>(serverdata, "checkuser", VT5Bin.Kind.CHECK_USER)
 
-        val speciesList = readList<SpeciesItem>(serverdata, "species", VT5Bin.Kind.SPECIES)
-        val protocolInfo = readList<ProtocolInfoItem>(serverdata, "protocolinfo", VT5Bin.Kind.PROTOCOL_INFO)
-        val protocolSpecies = readList<ProtocolSpeciesItem>(serverdata, "protocolspecies", VT5Bin.Kind.PROTOCOL_SPECIES)
-        val sites = readList<SiteItem>(serverdata, "sites", VT5Bin.Kind.SITES)
-        val siteLocations = readList<SiteValueItem>(serverdata, "site_locations", VT5Bin.Kind.SITE_LOCATIONS)
-        val siteHeights = readList<SiteValueItem>(serverdata, "site_heights", VT5Bin.Kind.SITE_HEIGHTS)
-        val siteSpecies = readList<SiteSpeciesItem>(serverdata, "site_species", VT5Bin.Kind.SITE_SPECIES)
-        val codes = runCatching { readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES) }.getOrElse { emptyList() }
+        val speciesList = readListStreamingOrBin<SpeciesItem>(serverdata, "species", VT5Bin.Kind.SPECIES)
+        val protocolInfo = readListStreamingOrBin<ProtocolInfoItem>(serverdata, "protocolinfo", VT5Bin.Kind.PROTOCOL_INFO)
+        val protocolSpecies = readListStreamingOrBin<ProtocolSpeciesItem>(serverdata, "protocolspecies", VT5Bin.Kind.PROTOCOL_SPECIES)
+        val sites = readListStreamingOrBin<SiteItem>(serverdata, "sites", VT5Bin.Kind.SITES)
+        val siteLocations = readListStreamingOrBin<SiteValueItem>(serverdata, "site_locations", VT5Bin.Kind.SITE_LOCATIONS)
+        val siteHeights = readListStreamingOrBin<SiteValueItem>(serverdata, "site_heights", VT5Bin.Kind.SITE_HEIGHTS)
+        val siteSpecies = readListStreamingOrBin<SiteSpeciesItem>(serverdata, "site_species", VT5Bin.Kind.SITE_SPECIES)
+        val codes = readListStreamingOrBin<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES)
 
-        // 2) Mappings
         val speciesById = speciesList.associateBy { it.soortid }
-        val speciesByCanonical = speciesList.associate { sp ->
-            normalizeCanonical(sp.soortnaam) to sp.soortid
-        }
+        val speciesByCanonical = speciesList.associate { sp -> normalizeCanonical(sp.soortnaam) to sp.soortid }
 
         val sitesById = sites.associateBy { it.telpostid }
         val siteLocationsBySite = siteLocations.groupBy { it.telpostid }
@@ -60,19 +131,16 @@ class ServerDataRepository(
         val siteSpeciesBySite = siteSpecies.groupBy { it.telpostid }
         val protocolSpeciesByProtocol = protocolSpecies.groupBy { it.protocolid }
 
-        // ★ codes gegroepeerd op category = JSON "veld"
         val codesByCategory = codes
             .filter { it.category != null }
             .groupBy { it.category!! }
 
-        val assignedSites = emptyList<String>()
-
-        val snap = DataSnapshot(
+        DataSnapshot(
             currentUser = userObj,
             speciesById = speciesById,
             speciesByCanonical = speciesByCanonical,
             sitesById = sitesById,
-            assignedSites = assignedSites,
+            assignedSites = emptyList(),
             siteLocationsBySite = siteLocationsBySite,
             siteHeightsBySite = siteHeightsBySite,
             siteSpeciesBySite = siteSpeciesBySite,
@@ -80,84 +148,80 @@ class ServerDataRepository(
             protocolSpeciesByProtocol = protocolSpeciesByProtocol,
             codesByCategory = codesByCategory
         )
-
-        snapshotState.value = snap
-        snap
     }
 
-    /* ============ Binaries-first readers (SAF) ============ */
+    // =====================================================================
+    //  Streaming JSON + BIN readers (binaries-first, json fallback)
+    // =====================================================================
 
-    private sealed class Decoded<out T> {
-        data class AsList<T>(val list: List<T>) : Decoded<T>()
-        data class AsWrapped<T>(val wrapped: WrappedJson<T>) : Decoded<T>()
-        data class AsSingle<T>(val value: T) : Decoded<T>()
-    }
-
-    private inline fun <reified T> readList(dir: DocumentFile, baseName: String, expectedKind: UShort): List<T> {
+    private inline fun <reified T> readListStreamingOrBin(
+        dir: DocumentFile,
+        baseName: String,
+        expectedKind: UShort
+    ): List<T> {
+        // 1) Probeer BIN (snel & compact)
         dir.findChildByName("$baseName.bin")?.let { bin ->
             vt5ReadDecoded<T>(bin, expectedKind)?.let { decoded ->
                 return when (decoded) {
-                    is Decoded.AsList<T> -> decoded.list
-                    is Decoded.AsWrapped<T> -> decoded.wrapped.json
+                    is Decoded.AsList<T>   -> decoded.list
+                    is Decoded.AsWrapped<T>-> decoded.wrapped.json
                     is Decoded.AsSingle<T> -> listOf(decoded.value)
                 }
             }
         }
+        // 2) JSON streaming
         dir.findChildByName("$baseName.json")?.let { jf ->
             context.contentResolver.openInputStream(jf.uri)?.use { input ->
-                val text = input.readBytes().decodeToString()
-                runCatching {
-                    json.decodeFromString(
-                        WrappedJson.serializer(json.serializersModule.serializer<T>()),
-                        text
-                    ).json
+                input.mark(1 shl 20)
+                return runCatching {
+                    json.decodeFromStream<WrappedJson<T>>(input).json
                 }.getOrElse {
+                    input.resetSafely()
                     runCatching {
-                        json.decodeFromString(
-                            json.serializersModule.serializer<List<T>>(),
-                            text
-                        )
-                    }.getOrElse {
-                        listOf(
-                            json.decodeFromString(
-                                json.serializersModule.serializer<T>(),
-                                text
-                            )
-                        )
-                    }
-                }.let { return it }
+                        json.decodeFromStream<List<T>>(input)
+                    }.getOrElse { emptyList() }
+                }
             }
         }
         return emptyList()
     }
 
-    private inline fun <reified T> readOne(dir: DocumentFile, baseName: String, expectedKind: UShort): T? {
+    private inline fun <reified T> readOneStreamingOrBin(
+        dir: DocumentFile,
+        baseName: String,
+        expectedKind: UShort
+    ): T? {
+        // 1) BIN
         dir.findChildByName("$baseName.bin")?.let { bin ->
             vt5ReadDecoded<T>(bin, expectedKind)?.let { decoded ->
                 return when (decoded) {
                     is Decoded.AsWrapped<T> -> decoded.wrapped.json.firstOrNull()
-                    is Decoded.AsList<T> -> decoded.list.firstOrNull()
-                    is Decoded.AsSingle<T> -> decoded.value
+                    is Decoded.AsList<T>    -> decoded.list.firstOrNull()
+                    is Decoded.AsSingle<T>  -> decoded.value
                 }
             }
         }
+        // 2) JSON streaming
         dir.findChildByName("$baseName.json")?.let { jf ->
             context.contentResolver.openInputStream(jf.uri)?.use { input ->
-                val text = input.readBytes().decodeToString()
+                input.mark(1 shl 20)
                 return runCatching {
-                    json.decodeFromString(
-                        WrappedJson.serializer(json.serializersModule.serializer<T>()),
-                        text
-                    ).json.firstOrNull()
+                    json.decodeFromStream<WrappedJson<T>>(input).json.firstOrNull()
                 }.getOrElse {
-                    json.decodeFromString(
-                        json.serializersModule.serializer<T>(),
-                        text
-                    )
+                    input.resetSafely()
+                    runCatching {
+                        json.decodeFromStream<T>(input)
+                    }.getOrNull()
                 }
             }
         }
         return null
+    }
+
+    private sealed class Decoded<out T> {
+        data class AsList<T>(val list: List<T>) : Decoded<T>()
+        data class AsWrapped<T>(val wrapped: WrappedJson<T>) : Decoded<T>()
+        data class AsSingle<T>(val value: T) : Decoded<T>()
     }
 
     private inline fun <reified T> vt5ReadDecoded(binFile: DocumentFile, expectedKind: UShort): Decoded<T>? {
@@ -210,7 +274,6 @@ class ServerDataRepository(
                         }
                     }
                 }
-
                 VT5Bin.Codec.JSON -> {
                     val text = dataBytes.decodeToString()
                     runCatching {
@@ -235,14 +298,15 @@ class ServerDataRepository(
                         }
                     }
                 }
-
                 else -> null
             }
         }
         return null
     }
 
-    /* ========================= Utils ========================= */
+    // =====================================================================
+    //  Utils
+    // =====================================================================
 
     private fun normalizeCanonical(input: String): String {
         val lower = input.lowercase(Locale.ROOT)
@@ -285,9 +349,8 @@ class ServerDataRepository(
         return ByteArray(out.size) { idx -> out[idx] }
     }
 
-    companion object {
-        val defaultJson = Json { ignoreUnknownKeys = true; explicitNulls = false }
-        val defaultCbor = Cbor { ignoreUnknownKeys = true }
+    private fun InputStream.resetSafely() {
+        try { if (markSupported()) reset() } catch (_: Throwable) {}
     }
 }
 
