@@ -3,8 +3,6 @@
 package com.yvesds.vt5.features.serverdata.model
 
 import android.content.Context
-import android.content.SharedPreferences
-import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import kotlinx.coroutines.Dispatchers
@@ -29,93 +27,15 @@ class ServerDataRepository(
     private val cbor: Cbor = defaultCbor
 ) {
 
-    private val prefs: SharedPreferences by lazy {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    }
-
     private val snapshotState = MutableStateFlow(DataSnapshot())
     val snapshot: StateFlow<DataSnapshot> = snapshotState
 
-    // ================== PUBLIC – gericht/fast loaders ==================
-
-    /**
-     * Laad enkel SITES in één beweging (bin → json fallback), en retourneer Map<telpostid, SiteItem>.
-     * Resultaat is off-main.
-     */
-    suspend fun loadSitesOnly(): Map<String, SiteItem> = withContext(Dispatchers.IO) {
-        val saf = SaFStorageHelper(context)
-        val vt5Root = saf.getVt5DirIfExists() ?: return@withContext emptyMap()
-        val serverdata = findServerDataDir(vt5Root) ?: return@withContext emptyMap()
-
-        val sites = readList<SiteItem>(serverdata, "sites", VT5Bin.Kind.SITES)
-        sites.associateBy { it.telpostid }
-    }
-
-    /**
-     * Single-pass load van CODES, groepeer in-memory op category (of fallback).
-     * Returned ook lastModified zodat VT5App een RAM-cache kan invalidaten bij wijziging.
-     */
-    suspend fun loadCodesAllOnceFast(): Pair<Map<String, List<CodeItem>>, Long> = withContext(Dispatchers.IO) {
-        val saf = SaFStorageHelper(context)
-        val vt5Root = saf.getVt5DirIfExists() ?: return@withContext (emptyMap<String, List<CodeItem>>() to -1L)
-        val serverdata = findServerDataDir(vt5Root) ?: return@withContext (emptyMap<String, List<CodeItem>>() to -1L)
-
-        val (codesFile, lm) = findChildByNameCachedWithLastModified(serverdata, "codes.bin")
-            ?: findChildByNameCachedWithLastModified(serverdata, "codes.json")
-            ?: return@withContext (emptyMap<String, List<CodeItem>>() to -1L)
-
-        val items: List<CodeItem> = when (codesFile.name) {
-            "codes.bin" -> {
-                // We weten niet zeker of het JSON- of CBOR-coded bin is; vt5ReadDecoded regelt beide
-                vt5ReadDecoded<CodeItem>(codesFile, VT5Bin.Kind.CODES)?.let { decoded ->
-                    when (decoded) {
-                        is Decoded.AsList -> decoded.list
-                        is Decoded.AsWrapped -> decoded.wrapped.json
-                        is Decoded.AsSingle -> listOf(decoded.value)
-                    }
-                } ?: emptyList()
-            }
-            "codes.json" -> {
-                context.contentResolver.openInputStream(codesFile.uri)?.use { input ->
-                    val text = input.readBytes().decodeToString()
-                    runCatching {
-                        json.decodeFromString(
-                            WrappedJson.serializer(json.serializersModule.serializer<CodeItem>()),
-                            text
-                        ).json
-                    }.getOrElse {
-                        runCatching {
-                            json.decodeFromString(
-                                json.serializersModule.serializer<List<CodeItem>>(),
-                                text
-                            )
-                        }.getOrElse {
-                            listOf(
-                                json.decodeFromString(
-                                    json.serializersModule.serializer<CodeItem>(),
-                                    text
-                                )
-                            )
-                        }
-                    }
-                } ?: emptyList()
-            }
-            else -> emptyList()
-        }
-
-        // Groepering in-memory: category is de “veld”-categorie uit codes.json
-        val grouped = items.groupBy { it.category ?: (it.key?.substringBefore('_') ?: "uncategorized") }
-        (grouped to lm)
-    }
-
-    /**
-     * Volledige snapshot loader (alle tabellen) – alleen gebruiken als je écht alles nodig hebt.
-     * (We houden ‘m aan boord, maar in de UI flows gebruiken we de gericht/fast varianten.)
-     */
+    /** Volledige load – blijft beschikbaar. */
     suspend fun loadAllFromSaf(): DataSnapshot = withContext(Dispatchers.IO) {
         val saf = SaFStorageHelper(context)
         val vt5Root = saf.getVt5DirIfExists() ?: return@withContext DataSnapshot()
-        val serverdata = findServerDataDir(vt5Root) ?: return@withContext DataSnapshot()
+        val serverdata = vt5Root.findChildByName("serverdata")?.takeIf { it.isDirectory }
+            ?: return@withContext DataSnapshot()
 
         val userObj = readOne<CheckUserItem>(serverdata, "checkuser", VT5Bin.Kind.CHECK_USER)
 
@@ -126,12 +46,10 @@ class ServerDataRepository(
         val siteLocations = readList<SiteValueItem>(serverdata, "site_locations", VT5Bin.Kind.SITE_LOCATIONS)
         val siteHeights = readList<SiteValueItem>(serverdata, "site_heights", VT5Bin.Kind.SITE_HEIGHTS)
         val siteSpecies = readList<SiteSpeciesItem>(serverdata, "site_species", VT5Bin.Kind.SITE_SPECIES)
-        val codes = readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES)
+        val codes = runCatching { readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES) }.getOrElse { emptyList() }
 
         val speciesById = speciesList.associateBy { it.soortid }
-        val speciesByCanonical = speciesList.associate { sp ->
-            normalizeCanonical(sp.soortnaam) to sp.soortid
-        }
+        val speciesByCanonical = speciesList.associate { sp -> normalizeCanonical(sp.soortnaam) to sp.soortid }
 
         val sitesById = sites.associateBy { it.telpostid }
         val siteLocationsBySite = siteLocations.groupBy { it.telpostid }
@@ -139,7 +57,9 @@ class ServerDataRepository(
         val siteSpeciesBySite = siteSpecies.groupBy { it.telpostid }
         val protocolSpeciesByProtocol = protocolSpecies.groupBy { it.protocolid }
 
-        val codesByCategory = codes.groupBy { it.category ?: (it.key?.substringBefore('_') ?: "uncategorized") }
+        val codesByCategory = codes
+            .filter { it.category != null }
+            .groupBy { it.category!! }
 
         val snap = DataSnapshot(
             currentUser = userObj,
@@ -154,46 +74,37 @@ class ServerDataRepository(
             protocolSpeciesByProtocol = protocolSpeciesByProtocol,
             codesByCategory = codesByCategory
         )
+
         snapshotState.value = snap
         snap
     }
 
-    // ================== Internals ==================
-
-    private fun findServerDataDir(vt5Root: DocumentFile): DocumentFile? {
-        // cached lookup
-        val cached = getCachedUri(KEY_SERVERDATA_URI)?.let { uri ->
-            DocumentFile.fromTreeUri(context, uri)
-        }?.takeIf { it != null && it.exists() && it.isDirectory && it.name == "serverdata" }
-        if (cached != null) return cached
-
-        val dir = vt5Root.listFiles().firstOrNull { it.isDirectory && it.name == "serverdata" }
-        if (dir != null) cacheUri(KEY_SERVERDATA_URI, dir.uri)
-        return dir
+    /** Snelle helper: enkel sites.json/bin laden en als map teruggeven. */
+    suspend fun loadSitesOnly(): Map<String, SiteItem> = withContext(Dispatchers.IO) {
+        val saf = SaFStorageHelper(context)
+        val vt5Root = saf.getVt5DirIfExists() ?: return@withContext emptyMap()
+        val serverdata = vt5Root.findChildByName("serverdata")?.takeIf { it.isDirectory } ?: return@withContext emptyMap()
+        val sites = readList<SiteItem>(serverdata, "sites", VT5Bin.Kind.SITES)
+        sites.associateBy { it.telpostid }
     }
 
-    private fun findChildByNameCachedWithLastModified(dir: DocumentFile, name: String): Pair<DocumentFile, Long>? {
-        // 1) probeer cached uri
-        val cached = getCachedUri("uri_$name")?.let { DocumentFile.fromSingleUri(context, it) }
-        if (cached != null && cached.exists() && cached.name == name) {
-            val lm = cached.lastModified()
-            return cached to lm
-        }
-
-        // 2) fallback: scan directory (duur), daarna cachen
-        val found = dir.listFiles().firstOrNull { it.name == name } ?: return null
-        cacheUri("uri_$name", found.uri)
-        return found to found.lastModified()
+    /** Snelle helper: codes per veldnaam (category) laden en sorteren op sortering/tekst. */
+    suspend fun loadCodesFor(field: String): List<CodeItem> = withContext(Dispatchers.IO) {
+        val saf = SaFStorageHelper(context)
+        val vt5Root = saf.getVt5DirIfExists() ?: return@withContext emptyList()
+        val serverdata = vt5Root.findChildByName("serverdata")?.takeIf { it.isDirectory } ?: return@withContext emptyList()
+        val codes = runCatching { readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES) }.getOrElse { emptyList() }
+        codes
+            .filter { it.category == field }
+            .sortedWith(
+                compareBy(
+                    { it.sortering?.toIntOrNull() ?: Int.MAX_VALUE },
+                    { it.tekst?.lowercase(Locale.getDefault()) ?: "" }
+                )
+            )
     }
 
-    private fun getCachedUri(key: String): Uri? =
-        prefs.getString(key, null)?.let { runCatching { Uri.parse(it) }.getOrNull() }
-
-    private fun cacheUri(key: String, uri: Uri) {
-        prefs.edit().putString(key, uri.toString()).apply()
-    }
-
-    // ================== Generieke readers ==================
+    /* ============ Binaries-first readers (SAF) ============ */
 
     private sealed class Decoded<out T> {
         data class AsList<T>(val list: List<T>) : Decoded<T>()
@@ -202,7 +113,7 @@ class ServerDataRepository(
     }
 
     private inline fun <reified T> readList(dir: DocumentFile, baseName: String, expectedKind: UShort): List<T> {
-        findChildByNameCachedWithLastModified(dir, "$baseName.bin")?.first?.let { bin ->
+        dir.findChildByName("$baseName.bin")?.let { bin ->
             vt5ReadDecoded<T>(bin, expectedKind)?.let { decoded ->
                 return when (decoded) {
                     is Decoded.AsList<T> -> decoded.list
@@ -211,7 +122,7 @@ class ServerDataRepository(
                 }
             }
         }
-        findChildByNameCachedWithLastModified(dir, "$baseName.json")?.first?.let { jf ->
+        dir.findChildByName("$baseName.json")?.let { jf ->
             context.contentResolver.openInputStream(jf.uri)?.use { input ->
                 val text = input.readBytes().decodeToString()
                 runCatching {
@@ -240,7 +151,7 @@ class ServerDataRepository(
     }
 
     private inline fun <reified T> readOne(dir: DocumentFile, baseName: String, expectedKind: UShort): T? {
-        findChildByNameCachedWithLastModified(dir, "$baseName.bin")?.first?.let { bin ->
+        dir.findChildByName("$baseName.bin")?.let { bin ->
             vt5ReadDecoded<T>(bin, expectedKind)?.let { decoded ->
                 return when (decoded) {
                     is Decoded.AsWrapped<T> -> decoded.wrapped.json.firstOrNull()
@@ -249,7 +160,7 @@ class ServerDataRepository(
                 }
             }
         }
-        findChildByNameCachedWithLastModified(dir, "$baseName.json")?.first?.let { jf ->
+        dir.findChildByName("$baseName.json")?.let { jf ->
             context.contentResolver.openInputStream(jf.uri)?.use { input ->
                 val text = input.readBytes().decodeToString()
                 return runCatching {
@@ -318,7 +229,6 @@ class ServerDataRepository(
                         }
                     }
                 }
-
                 VT5Bin.Codec.JSON -> {
                     val text = dataBytes.decodeToString()
                     runCatching {
@@ -343,14 +253,13 @@ class ServerDataRepository(
                         }
                     }
                 }
-
                 else -> null
             }
         }
         return null
     }
 
-    // ================== Utils ==================
+    /* ========================= Utils ========================= */
 
     private fun normalizeCanonical(input: String): String {
         val lower = input.lowercase(Locale.ROOT)
@@ -394,9 +303,6 @@ class ServerDataRepository(
     }
 
     companion object {
-        private const val PREFS_NAME = "vt5_repo_cache"
-        private const val KEY_SERVERDATA_URI = "serverdata_uri"
-
         val defaultJson = Json { ignoreUnknownKeys = true; explicitNulls = false }
         val defaultCbor = Cbor { ignoreUnknownKeys = true }
     }
@@ -472,3 +378,6 @@ private data class VT5Header(
         }
     }
 }
+
+private fun DocumentFile.findChildByName(name: String): DocumentFile? =
+    listFiles().firstOrNull { it.name == name }

@@ -1,70 +1,69 @@
-@file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
-
 package com.yvesds.vt5
 
 import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
-import com.yvesds.vt5.features.serverdata.model.CodeItem
-import com.yvesds.vt5.features.serverdata.model.ServerDataRepository
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.atomic.AtomicReference
+import kotlinx.serialization.json.Json
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 
+/**
+ * VT5 – App singleton
+ *
+ * - Houdt een veilige Application.instance bij
+ * - Biedt centrale Json/OkHttp singletons
+ * - Biedt nextTellingId() (als String), oplopend en persistent via SharedPreferences
+ *
+ * Let op: geen zware I/O of DocumentFile calls in onCreate(), om opstart traagheid te vermijden.
+ */
 class VT5App : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        instance = this
+        // Geen zware preloads hier – bewust licht houden voor snellere app-start.
     }
 
     companion object {
-        private const val PREFS_NAME = "vt5_prefs"
-        private lateinit var prefs: SharedPreferences
+        // ====== App instance ======
+        lateinit var instance: VT5App
+            private set
 
-        fun prefs(): SharedPreferences = prefs
+        // ====== Prefs ======
+        private const val PREFS = "vt5_prefs"
+        private const val KEY_TELLING_ID = "telling_id"
 
-        // ====== Telling-id generatie ======
-        private const val KEY_NEXT_TELLING_ID = "next_telling_id"
-
-        @Synchronized
-        fun nextTellingId(): Long {
-            val id = prefs.getLong(KEY_NEXT_TELLING_ID, 1L)
-            prefs.edit().putLong(KEY_NEXT_TELLING_ID, id + 1L).apply()
-            return id
-        }
-
-        // ====== Metadata start epoch (optioneel) ======
-        private const val KEY_META_START_EPOCH = "meta_start_epoch"
-
-        fun setMetaStartEpoch(epochSec: Long) {
-            prefs.edit().putLong(KEY_META_START_EPOCH, epochSec).apply()
-        }
-
-        fun getMetaStartEpoch(): Long =
-            prefs.getLong(KEY_META_START_EPOCH, System.currentTimeMillis() / 1000L)
-
-        // ====== Codes cache (RAM, sessie) ======
-        private val codesCache = AtomicReference<Map<String, List<CodeItem>>>(emptyMap())
-        private val codesLastModified = AtomicLong(-1L)
+        /** Toegang tot app-prefs. */
+        fun prefs(): SharedPreferences =
+            instance.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
         /**
-         * Zorgt ervoor dat codes exact 1x (of wanneer gewijzigd op schijf) geladen worden.
-         * - Single-pass read (bin/json)
-         * - In RAM gecachet per sessie
-         * - LastModified vergeleken met disk om bij wijzigingen te refreshen
+         * Geef volgende telling-id terug als String en verhoog de teller.
+         * Thread-safe via @Synchronized.
          */
-        suspend fun getCodesMapOnce(ctx: Context, repo: ServerDataRepository): Map<String, List<CodeItem>> {
-            return withContext(Dispatchers.IO) {
-                val (loadedMap, lm) = repo.loadCodesAllOnceFast()
-                val currentLm = codesLastModified.get()
-                if (lm != currentLm || codesCache.get().isEmpty()) {
-                    codesCache.set(loadedMap)
-                    codesLastModified.set(lm)
-                }
-                codesCache.get()
+        @Synchronized
+        fun nextTellingId(): String {
+            val p = prefs()
+            val current = p.getLong(KEY_TELLING_ID, 1L)
+            p.edit().putLong(KEY_TELLING_ID, current + 1L).apply()
+            return current.toString()
+        }
+
+        // ====== Shared singletons ======
+        /** Lenient JSON decoder (ignoreUnknownKeys/explicitNulls=false) */
+        val json: Json by lazy {
+            Json {
+                ignoreUnknownKeys = true
+                explicitNulls = false
             }
+        }
+
+        /** OkHttp client met bescheiden timeouts. */
+        val http: OkHttpClient by lazy {
+            OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .build()
         }
     }
 }

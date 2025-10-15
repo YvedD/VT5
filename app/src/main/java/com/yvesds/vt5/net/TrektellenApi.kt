@@ -1,27 +1,41 @@
 package com.yvesds.vt5.net
 
-import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import okhttp3.Credentials
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.HttpUrl.Companion.toHttpUrl
 
 /**
- * Eenvoudige client om de metadata-header te POSTen naar
- *   {baseUrl}/api/counts_save?language=...&versie=...
+ * API-client voor Trektellen.
  *
- * Auth: Basic (zoals bij je download usecase). We sturen géén naam= of ww= in de query.
+ * - Auth: HTTP Basic (zelfde als in InstallatieScherm login-test)
+ * - Endpoint: /api/counts_save?language=dutch&versie=1845
+ * - Body: JSON array met 1 envelope (ServerTellingEnvelope)
  */
 object TrektellenApi {
 
-    private val client by lazy { OkHttpClient() }
-    private val JSON: String = "application/json; charset=utf-8"
+    private val client: OkHttpClient by lazy { OkHttpClient() }
+    private val json: Json by lazy { Json { ignoreUnknownKeys = true; explicitNulls = false } }
 
     /**
-     * @param jsonBody  Het *volledige JSON array* (als String), vb. van StartTelling.buildJsonEnvelopeFromUi(...)
-     * @return Pair<ok:Boolean, responseBody:String>. Bij fouten krijg je de servertekst terug.
+     * POST /api/counts_save
+     *
+     * @param baseUrl  bv. "https://trektellen.nl"
+     * @param language bv. "dutch"
+     * @param versie   bv. "1845"
+     * @param username basic-auth user (uit CredentialsStore / checkuser.json)
+     * @param password basic-auth pass (uit CredentialsStore / checkuser.json)
+     * @param envelope lijst met precies 1 ServerTellingEnvelope (metadata + lege data)
+     *
+     * @return Pair(ok, responseBodyText)
      */
     suspend fun postCountsSave(
         baseUrl: String,
@@ -29,35 +43,42 @@ object TrektellenApi {
         versie: String,
         username: String,
         password: String,
-        jsonBody: String
+        envelope: List<ServerTellingEnvelope>
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        // ❗ Nieuw: vervangt HttpUrl.parse(...) door toHttpUrl()
+        val url = try {
+            baseUrl
+                .toHttpUrl()
+                .newBuilder()
+                .addPathSegment("api")
+                .addPathSegment("counts_save")
+                .addQueryParameter("language", language)
+                .addQueryParameter("versie", versie)
+                .build()
+        } catch (e: IllegalArgumentException) {
+            return@withContext false to "Bad baseUrl: $baseUrl (${e.message})"
+        }
 
-        val url = "$baseUrl/api/counts_save?language=$language&versie=$versie"
+        // JSON body (array met 1 envelope)
+        val bodyJson = json.encodeToString(
+            ListSerializer(ServerTellingEnvelope.serializer()),
+            envelope
+        )
 
-        val authHeader = basic(username, password)
-        val body = jsonBody.toRequestBody(JSON.toMediaType())
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val requestBody: RequestBody = bodyJson.toRequestBody(mediaType)
+
+        val authHeader = Credentials.basic(username, password)
 
         val req = Request.Builder()
             .url(url)
             .header("Authorization", authHeader)
-            .header("Accept", "application/json")
-            .header("Content-Type", JSON)
-            .post(body)
+            .post(requestBody)
             .build()
 
-        runCatching {
-            client.newCall(req).execute().use { resp ->
-                val text = resp.body?.string().orEmpty()
-                (resp.isSuccessful) to text
-            }
-        }.getOrElse { ex ->
-            false to ("EXCEPTION: ${ex.message ?: ex.javaClass.simpleName}")
+        client.newCall(req).execute().use { resp ->
+            val respText = resp.body?.string().orEmpty()
+            (resp.isSuccessful) to respText
         }
-    }
-
-    private fun basic(user: String, pass: String): String {
-        val creds = "$user:$pass"
-        val b64 = Base64.encodeToString(creds.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-        return "Basic $b64"
     }
 }
