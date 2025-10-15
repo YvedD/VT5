@@ -1,76 +1,157 @@
 package com.yvesds.vt5.net
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.UUID
+import kotlin.math.roundToInt
 
-object StartTellingApi {
+/**
+ * Bouwt het exacte JSON-body (als String) dat de server verwacht voor /api/counts_save.
+ * We gebruiken expres geen project-specifieke data classes om type-mismatches te vermijden.
+ */
+object StartTelling {
 
-    fun buildEnvelopeFromUi(
+    private val json by lazy {
+        Json {
+            ignoreUnknownKeys = true
+            prettyPrint = false
+        }
+    }
+
+    /**
+     * Bouw het volledige JSON-array (String) met precies één metadata-header en lege data[].
+     *
+     * Alle numerieke velden worden als String verstuurd (vereiste van jouw server).
+     * - tijdstippen: epoch seconden (als String)
+     * - temperatuur: afgerond integer (String)
+     * - zicht: meters zonder decimalen (String)
+     * - luchtdruk: eerste 4 cijfers (String)
+     */
+    fun buildJsonEnvelopeFromUi(
         tellingId: Long,
         telpostId: String,
         begintijdEpochSec: Long,
         eindtijdEpochSec: Long,
-        windrichtingLabel: String?,
-        windkrachtBftOnly: String?,
-        temperatuurC: String?,
-        bewolkingAchtstenOnly: String?,
-        neerslagCode: String?,
-        zichtMeters: String?,
-        typetellingCode: String?,
-        telers: String?,
-        weerOpmerking: String?,
-        opmerkingen: String?,
-        luchtdrukHpaRaw: String?
-    ): List<ServerTellingEnvelope> {
+        windrichtingLabel: String?,      // bv "NW", "ZO", ...
+        windkrachtBftOnly: String?,      // "0".."12" (enkel getal)
+        temperatuurC: String?,           // kan "12.3" of "12" zijn → we maken er "12" van
+        bewolkingAchtstenOnly: String?,  // "0".."8"
+        neerslagCode: String?,           // bv "geen","mist","regen",...
+        zichtMeters: String?,            // bv "14600" of "14600.0" → we maken er "14600" van
+        typetellingCode: String?,        // bv "all","sea","raptor",...
+        telers: String?,                 // vrij tekstveld
+        weerOpmerking: String?,          // vrij tekstveld
+        opmerkingen: String?,            // vrij tekstveld
+        luchtdrukHpaRaw: String?,        // kan "1013.2" zijn → neem eerste 4 cijfers
+        // optioneel
+        externId: String = "Android App 1.8.45",
+        timezoneId: String = "Europe/Brussels",
+        bron: String = "4",              // test-bron zoals afgesproken
+        uuid: String = "",               // mag leeg blijven; vul in als je wil
+        uploadNowMillis: Long = System.currentTimeMillis()
+    ): String {
 
-        fun nowStamp(): String =
-            SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+        val uploadTime = formatUploadTime(uploadNowMillis) // "yyyy-MM-dd HH:mm:ss"
 
-        fun digitsOnly(s: String?): String = s?.filter { it.isDigit() } ?: ""
+        // Normalisaties naar pure String-getallen, zonder decimalen.
+        val tempStr = temperatuurC?.let { toIntStringOrEmpty(it) } ?: ""
+        val zichtStr = zichtMeters?.let { toIntStringOrEmpty(it) } ?: ""
+        val hpaStr = luchtdrukHpaRaw?.let { first4Digits(it) } ?: ""
 
-        // eerste 4 digits van HPA als ze er zijn
-        val hpa4 = digitsOnly(luchtdrukHpaRaw).let {
-            if (it.length >= 4) it.substring(0, 4) else it
+        val payload = buildJsonArray {
+            add(
+                buildJsonObject {
+                    put("externid", externId)
+                    put("timezoneid", timezoneId)
+                    put("bron", bron)
+
+                    // Identifiers (als String)
+                    put("_id", "") // leeg bij init
+                    put("tellingid", tellingId.toString())
+                    put("telpostid", telpostId)
+
+                    // Tijden (epoch sec als String)
+                    put("begintijd", begintijdEpochSec.toString())
+                    put("eindtijd", eindtijdEpochSec.toString())
+
+                    // Personen en weer
+                    put("tellers", telers ?: "")
+                    put("weer", weerOpmerking ?: "")
+
+                    // Wind
+                    put("windrichting", windrichtingLabel ?: "")
+                    put("windkracht", windkrachtBftOnly ?: "")
+
+                    // Temp & wolken & neerslag & zicht
+                    put("temperatuur", tempStr)
+                    put("bewolking", bewolkingAchtstenOnly ?: "")
+                    put("bewolkinghoogte", "") // n.v.t.
+                    put("neerslag", neerslagCode ?: "")
+                    put("duurneerslag", "")    // n.v.t.
+                    put("zicht", zichtStr)
+
+                    // Aanwezig/actief (n.v.t.)
+                    put("tellersactief", "")
+                    put("tellersaanwezig", "")
+
+                    // Type telling
+                    put("typetelling", typetellingCode ?: "all")
+
+                    // Niet van toepassing in VT5:
+                    put("metersnet", "")
+                    put("geluid", "")
+
+                    // Vrije opm.
+                    put("opmerkingen", opmerkingen ?: "")
+
+                    // Online ID (leeg bij init), HYDRO (n.v.t.), luchtdruk (hpa), materiaal (n.v.t.)
+                    put("onlineid", "")
+                    put("HYDRO", "")
+                    put("hpa", hpaStr)
+                    put("equipment", "")
+
+                    put("uuid", uuid)
+                    put("uploadtijdstip", uploadTime)
+
+                    // Voor later, nu leeg/0
+                    put("nrec", "0")
+                    put("nsoort", "0")
+
+                    // lege data array (telling starten)
+                    put("data", buildJsonArray { /* niets */ })
+                }
+            )
         }
 
-        val env = ServerTellingEnvelope(
-            externid = "Android App 1.8.45",
-            timezoneid = "Europe/Brussels",
-            bron = "4",
-            idLocal = "",                                // ← was "_id" in JSON; veldnaam in data class = idLocal
-            tellingid = tellingId.toString(),
-            telpostid = telpostId,
-            begintijd = begintijdEpochSec.toString(),
-            eindtijd = eindtijdEpochSec.toString(),
-            tellers = telers.orEmpty(),
-            weer = weerOpmerking.orEmpty(),
-            windrichting = (windrichtingLabel ?: "").uppercase(Locale.getDefault()),
-            windkracht = (windkrachtBftOnly ?: ""),
-            temperatuur = digitsOnly(temperatuurC),
-            bewolking = (bewolkingAchtstenOnly ?: ""),
-            bewolkinghoogte = "",
-            neerslag = neerslagCode.orEmpty(),
-            duurneerslag = "",
-            zicht = digitsOnly(zichtMeters),
-            tellersactief = "",
-            tellersaanwezig = "",
-            typetelling = typetellingCode.orEmpty(),
-            metersnet = "",
-            geluid = "",
-            opmerkingen = opmerkingen.orEmpty(),
-            onlineid = "",
-            hydro = "",                                  // ← was "HYDRO" als JSON key; veldnaam in data class = hydro
-            hpa = hpa4,
-            equipment = "",
-            uuid = "VT5_${tellingId}_${UUID.randomUUID()}",
-            uploadtijdstip = nowStamp(),
-            nrec = "0",
-            nsoort = "0",
-            data = emptyList()
-        )
+        return json.encodeToString(payload)
+    }
 
-        return listOf(env)
+    private fun formatUploadTime(millis: Long): String {
+        val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+        return sdf.format(Date(millis))
+    }
+
+    /** "12.9" → "13", "12" → "12", "12.0" → "12", "abc" → "" */
+    private fun toIntStringOrEmpty(raw: String): String {
+        val d = raw.replace(',', '.').toDoubleOrNull() ?: return digitsOnly(raw)
+        return d.roundToInt().toString()
+    }
+
+    /** "14600.0" → "14600", " 14 600 " → "14600", "abc123" → "123" */
+    private fun digitsOnly(raw: String): String {
+        val s = raw.trim()
+        val sb = StringBuilder(s.length)
+        for (ch in s) if (ch.isDigit()) sb.append(ch)
+        return sb.toString()
+    }
+
+    /** "1013.8" → "1013" ; "1018" → "1018" ; "101" → "101" ; "abc1013" → "1013" */
+    private fun first4Digits(raw: String): String {
+        val d = digitsOnly(raw)
+        return if (d.length <= 4) d else d.substring(0, 4)
     }
 }
