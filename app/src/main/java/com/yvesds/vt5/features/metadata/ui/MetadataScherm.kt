@@ -16,6 +16,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.yvesds.vt5.VT5App
 import com.yvesds.vt5.databinding.SchermMetadataBinding
 import com.yvesds.vt5.features.serverdata.model.CodeItem
 import com.yvesds.vt5.features.serverdata.model.DataSnapshot
@@ -34,6 +35,8 @@ import kotlin.math.roundToInt
 class MetadataScherm : AppCompatActivity() {
 
     private lateinit var binding: SchermMetadataBinding
+    private lateinit var repo: ServerDataRepository
+
     private var snapshot: DataSnapshot = DataSnapshot()
 
     // Gekozen waarden
@@ -58,6 +61,8 @@ class MetadataScherm : AppCompatActivity() {
         binding = SchermMetadataBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        repo = ServerDataRepository(applicationContext)
+
         // geen keyboard voor datum/tijd
         binding.etDatum.inputType = InputType.TYPE_NULL
         binding.etTijd.inputType = InputType.TYPE_NULL
@@ -66,42 +71,20 @@ class MetadataScherm : AppCompatActivity() {
         initDateTimePickers()
         prefillCurrentDateTime()
 
-        // --- SNELLER LADEN: elke dataset los en parallel, UI binden zodra klaar ---
+        // Off-main gericht laden:
+        // - Sites: één pass
+        // - Codes: één pass (global cache in VT5App)
         lifecycleScope.launch {
-            val repo = ServerDataRepository.getInstance(applicationContext)
+            val sitesById = withContext(Dispatchers.IO) { repo.loadSitesOnly() }
+            val codesByCategory = VT5App.getCodesMapOnce(applicationContext, repo)
 
-            // Sites apart laden → direct binden
-            launch(Dispatchers.IO) {
-                val sitesById = repo.loadSites()
-                withContext(Dispatchers.Main) {
-                    snapshot = snapshot.copy(sitesById = sitesById)
-                    bindTelpostDropdown()
-                }
-            }
+            snapshot = snapshot.copy(
+                sitesById = sitesById,
+                codesByCategory = codesByCategory
+            )
 
-            // Wind-codes apart
-            launch(Dispatchers.IO) {
-                val wind = repo.loadCodesFor("wind")
-                withContext(Dispatchers.Main) {
-                    mergeCodesAndRebind("wind", wind)
-                }
-            }
-
-            // Neerslag-codes apart
-            launch(Dispatchers.IO) {
-                val rain = repo.loadCodesFor("neerslag")
-                withContext(Dispatchers.Main) {
-                    mergeCodesAndRebind("neerslag", rain)
-                }
-            }
-
-            // Typetelling-codes apart
-            launch(Dispatchers.IO) {
-                val types = repo.loadCodesFor("typetelling_trek")
-                withContext(Dispatchers.Main) {
-                    mergeCodesAndRebind("typetelling_trek", types)
-                }
-            }
+            bindTelpostDropdown()
+            bindWeatherDropdowns()
         }
 
         // Acties
@@ -111,15 +94,6 @@ class MetadataScherm : AppCompatActivity() {
         }
         binding.btnAnnuleer.setOnClickListener { finish() }
         binding.btnWeerAuto.setOnClickListener { ensureLocationPermissionThenFetch() }
-    }
-
-    // Kleine helper om codes-incrementieel samen te voegen en dropdowns te verversen
-    private fun mergeCodesAndRebind(category: String, list: List<CodeItem>) {
-        snapshot = snapshot.copy(
-            codesByCategory = snapshot.codesByCategory + (category to list)
-        )
-        // Idempotent: bindWeatherDropdowns kan meerdere keren aangeroepen worden
-        bindWeatherDropdowns()
     }
 
     /* ---------- Permissie → weer auto ---------- */
@@ -136,23 +110,18 @@ class MetadataScherm : AppCompatActivity() {
 
     private fun onWeerAutoClicked() {
         lifecycleScope.launch {
-            // 1) Locatie ophalen (off-main)
             val loc = withContext(Dispatchers.IO) { WeatherManager.getLastKnownLocation(this@MetadataScherm) }
             if (loc == null) {
                 Toast.makeText(this@MetadataScherm, "Geen locatie beschikbaar.", Toast.LENGTH_SHORT).show()
                 return@launch
             }
-
-            // 2) Huidig weer ophalen (off-main)
             val cur = withContext(Dispatchers.IO) { WeatherManager.fetchCurrent(loc.latitude, loc.longitude) }
             if (cur == null) {
                 Toast.makeText(this@MetadataScherm, "Kon weer niet ophalen.", Toast.LENGTH_SHORT).show()
                 return@launch
             }
 
-            // 3) Mapping naar UI
-
-            // Windrichting: graden → 16-sectie label → code via codes("wind")
+            // Windrichting
             val windLabel = WeatherManager.degTo16WindLabel(cur.windDirection10m)
             val windCodes = snapshot.codesByCategory["wind"].orEmpty()
             val valueByLabel = windCodes.associateBy(
@@ -163,18 +132,17 @@ class MetadataScherm : AppCompatActivity() {
             gekozenWindrichtingCode = foundWindCode
             binding.acWindrichting.setText(windLabel, false)
 
-            // Windkracht (Beaufort uit m/s): "<1bf" = 0, anders "1bf".. "12bf"
+            // Windkracht
             val bft = WeatherManager.msToBeaufort(cur.windSpeed10m)
             gekozenWindkracht = bft.toString()
-            val windForceDisplay = if (bft == 0) "<1bf" else "${bft}bf"
-            binding.acWindkracht.setText(windForceDisplay, false)
+            binding.acWindkracht.setText(if (bft == 0) "<1bf" else "${bft}bf", false)
 
-            // Bewolking: % → achtsten ("0".."8")
+            // Bewolking
             val achtsten = WeatherManager.cloudPercentToAchtsten(cur.cloudCover)
             gekozenBewolking = achtsten
             binding.acBewolking.setText("$achtsten/8", false)
 
-            // Neerslag: intensiteit → code; toon bijbehorend NL-label uit codes("neerslag")
+            // Neerslag
             val rainCode = WeatherManager.precipitationToCode(cur.precipitation)
             gekozenNeerslagCode = rainCode
             val rainCodes = snapshot.codesByCategory["neerslag"].orEmpty()
@@ -185,15 +153,11 @@ class MetadataScherm : AppCompatActivity() {
             val rainLabel = rainLabelByValue[rainCode] ?: rainCode
             binding.acNeerslag.setText(rainLabel, false)
 
-            // Temperatuur (°C, int), Zicht (meters, int), Luchtdruk (hPa, int)
+            // Temperatuur / Zicht / Luchtdruk
             cur.temperature2m?.let { binding.etTemperatuur.setText(it.roundToInt().toString()) }
-
-            val visMeters = WeatherManager.toVisibilityMeters(cur.visibility)
-            visMeters?.let { binding.etZicht.setText(it.toString()) }
-
+            WeatherManager.toVisibilityMeters(cur.visibility)?.let { binding.etZicht.setText(it.toString()) }
             cur.pressureMsl?.let { binding.etLuchtdruk.setText(it.roundToInt().toString()) }
 
-            // 4) Knop markeren: definitief blauw + disabled
             markWeatherAutoApplied()
         }
     }
@@ -311,22 +275,20 @@ class MetadataScherm : AppCompatActivity() {
     }
 
     private fun bindWeatherDropdowns() {
-        // WINDRICHTING (veld == "wind")
+        // WINDRICHTING
         runCatching {
             val windCodes = getCodesForField("wind")
-            if (windCodes.isNotEmpty()) {
-                val labels = windCodes.mapNotNull { it.tekst }
-                val values = windCodes.map { it.value ?: "" }
-                binding.acWindrichting.setAdapter(
-                    ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
-                )
-                binding.acWindrichting.setOnItemClickListener { _, _, pos, _ ->
-                    gekozenWindrichtingCode = values[pos]
-                }
+            val labels = windCodes.mapNotNull { it.tekst }
+            val values = windCodes.map { it.value ?: "" }
+            binding.acWindrichting.setAdapter(
+                ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
+            )
+            binding.acWindrichting.setOnItemClickListener { _, _, pos, _ ->
+                gekozenWindrichtingCode = values[pos]
             }
         }
 
-        // BEWOLKING 0/8..8/8 -> "0".."8"
+        // BEWOLKING
         val cloudDisplays = (0..8).map { "$it/8" }
         val cloudValues   = (0..8).map { it.toString() }
         binding.acBewolking.setAdapter(
@@ -336,7 +298,7 @@ class MetadataScherm : AppCompatActivity() {
             gekozenBewolking = cloudValues[pos]
         }
 
-        // WINDKRACHT <1bf, 1..12bf -> "0".."12"
+        // WINDKRACHT
         val windForceDisplays = buildList { add("<1bf"); addAll((1..12).map { "${it}bf" }) }
         val windForceValues   = buildList { add("0"); addAll((1..12).map { it.toString() }) }
         binding.acWindkracht.setAdapter(
@@ -346,43 +308,41 @@ class MetadataScherm : AppCompatActivity() {
             gekozenWindkracht = windForceValues[pos]
         }
 
-        // NEERSLAG (veld == "neerslag")
+        // NEERSLAG
         runCatching {
             val rainCodes = getCodesForField("neerslag")
-            if (rainCodes.isNotEmpty()) {
-                val labels = rainCodes.mapNotNull { it.tekst }
-                val values = rainCodes.map { it.value ?: "" }
-                binding.acNeerslag.setAdapter(
-                    ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
-                )
-                binding.acNeerslag.setOnItemClickListener { _, _, pos, _ ->
-                    gekozenNeerslagCode = values[pos]
-                }
+            val labels = rainCodes.mapNotNull { it.tekst }
+            val values = rainCodes.map { it.value ?: "" }
+            binding.acNeerslag.setAdapter(
+                ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
+            )
+            binding.acNeerslag.setOnItemClickListener { _, _, pos, _ ->
+                gekozenNeerslagCode = values[pos]
             }
         }
 
-        // TYPE TELLING (veld == "typetelling_trek") met filters op tekstkey
+        // TYPE TELLING
         runCatching {
             val all = getCodesForField("typetelling_trek")
-            if (all.isNotEmpty()) {
-                val filtered = all.filterNot { c ->
-                    val key = c.key ?: ""
-                    key.contains("_sound") ||
-                            key.contains("_ringen") ||
-                            key.startsWith("samplingrate_") ||
-                            key.startsWith("gain_") ||
-                            key.startsWith("verstoring_")
-                }
-                val labels = filtered.mapNotNull { it.tekst }
-                val values = filtered.map { it.value ?: "" }
-                binding.acTypeTelling.setAdapter(
-                    ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
-                )
-                binding.acTypeTelling.setOnItemClickListener { _, _, pos, _ ->
-                    gekozenTypeTellingCode = values[pos]
-                }
+            val filtered = all.filterNot { c ->
+                val key = c.key ?: ""
+                key.contains("_sound") ||
+                        key.contains("_ringen") ||
+                        key.startsWith("samplingrate_") ||
+                        key.startsWith("gain_") ||
+                        key.startsWith("verstoring_")
+            }
+            val labels = filtered.mapNotNull { it.tekst }
+            val values = filtered.map { it.value ?: "" }
+            binding.acTypeTelling.setAdapter(
+                ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
+            )
+            binding.acTypeTelling.setOnItemClickListener { _, _, pos, _ ->
+                gekozenTypeTellingCode = values[pos]
             }
         }
+
+        Toast.makeText(this, "Metadata geladen.", Toast.LENGTH_SHORT).show()
     }
 
     /** Haal codes per veld uit snapshot en sorteer op sortering (numeriek) + tekst. */

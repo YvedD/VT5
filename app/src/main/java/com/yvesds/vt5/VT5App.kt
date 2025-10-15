@@ -1,74 +1,70 @@
+@file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+
 package com.yvesds.vt5
 
 import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
+import com.yvesds.vt5.features.serverdata.model.CodeItem
 import com.yvesds.vt5.features.serverdata.model.ServerDataRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 class VT5App : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        app = this
-        // (optioneel) hier zou je een eenmalige warm-up kunnen triggeren
-        // ServerDataRepository.getInstance(applicationContext) // lazy init
+        prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
 
-    // ---------- Publieke helpers (statics) ----------
     companion object {
-        private const val PREFS_NAME = "vt5_app_prefs"
+        private const val PREFS_NAME = "vt5_prefs"
+        private lateinit var prefs: SharedPreferences
+
+        fun prefs(): SharedPreferences = prefs
+
+        // ====== Telling-id generatie ======
         private const val KEY_NEXT_TELLING_ID = "next_telling_id"
-        private const val KEY_META_START_EPOCH = "meta_start_epoch"
 
-        @Volatile
-        private lateinit var app: VT5App
-
-        fun ctx(): Context = app.applicationContext
-
-        /** Lazy-gekoppelde repository (singleton). */
-        fun repo(): ServerDataRepository = ServerDataRepository.getInstance(ctx())
-
-        /** Unix epoch in seconden. */
-        fun nowEpochSeconds(): Long = System.currentTimeMillis() / 1000L
-
-        /** Haal (en verhoog) het volgende lokale telling-id. Persistenter opslag via SharedPreferences. */
         @Synchronized
         fun nextTellingId(): Long {
-            val sp = app.prefs()
-            val current = sp.getLong(KEY_NEXT_TELLING_ID, 1L)
-            val next = if (current <= 0L) 1L else current + 1L
-            sp.edit().putLong(KEY_NEXT_TELLING_ID, next).apply()
-            return current
+            val id = prefs.getLong(KEY_NEXT_TELLING_ID, 1L)
+            prefs.edit().putLong(KEY_NEXT_TELLING_ID, id + 1L).apply()
+            return id
         }
+
+        // ====== Metadata start epoch (optioneel) ======
+        private const val KEY_META_START_EPOCH = "meta_start_epoch"
+
+        fun setMetaStartEpoch(epochSec: Long) {
+            prefs.edit().putLong(KEY_META_START_EPOCH, epochSec).apply()
+        }
+
+        fun getMetaStartEpoch(): Long =
+            prefs.getLong(KEY_META_START_EPOCH, System.currentTimeMillis() / 1000L)
+
+        // ====== Codes cache (RAM, sessie) ======
+        private val codesCache = AtomicReference<Map<String, List<CodeItem>>>(emptyMap())
+        private val codesLastModified = AtomicLong(-1L)
 
         /**
-         * Haal de starttijd (epoch s) van de huidige metadata-sessie.
-         * Als die nog niet bestond, wordt hij nu gezet op 'nu' en teruggegeven.
+         * Zorgt ervoor dat codes exact 1x (of wanneer gewijzigd op schijf) geladen worden.
+         * - Single-pass read (bin/json)
+         * - In RAM gecachet per sessie
+         * - LastModified vergeleken met disk om bij wijzigingen te refreshen
          */
-        @Synchronized
-        fun getOrInitMetadataStartEpoch(): Long {
-            val sp = app.prefs()
-            val existing = sp.getLong(KEY_META_START_EPOCH, 0L)
-            if (existing > 0L) return existing
-            val now = nowEpochSeconds()
-            sp.edit().putLong(KEY_META_START_EPOCH, now).apply()
-            return now
-        }
-
-        /** Handig als je na verzenden van de header opnieuw wil beginnen. */
-        @Synchronized
-        fun clearMetadataStartEpoch() {
-            app.prefs().edit().remove(KEY_META_START_EPOCH).apply()
-        }
-
-        /** Optioneel direct zetten (bv. als je zelf het moment bepaalt). */
-        @Synchronized
-        fun setMetadataStartEpoch(epochSeconds: Long) {
-            app.prefs().edit().putLong(KEY_META_START_EPOCH, epochSeconds).apply()
+        suspend fun getCodesMapOnce(ctx: Context, repo: ServerDataRepository): Map<String, List<CodeItem>> {
+            return withContext(Dispatchers.IO) {
+                val (loadedMap, lm) = repo.loadCodesAllOnceFast()
+                val currentLm = codesLastModified.get()
+                if (lm != currentLm || codesCache.get().isEmpty()) {
+                    codesCache.set(loadedMap)
+                    codesLastModified.set(lm)
+                }
+                codesCache.get()
+            }
         }
     }
-
-    // ---------- Intern ----------
-    private fun prefs(): SharedPreferences =
-        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 }
