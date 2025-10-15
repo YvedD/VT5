@@ -2,7 +2,6 @@
 
 package com.yvesds.vt5.net
 
-import kotlinx.serialization.Serializable
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -29,13 +28,14 @@ object StartTellingApi {
         telers: String?,
         weerOpmerking: String?,
         opmerkingen: String?,
-        luchtdrukHpaRaw: String?           // bv "1013"
+        luchtdrukHpaRaw: String?,          // bv "1013"
+        liveMode: Boolean                  // live: eindtijd = ""
     ): List<ServerTellingEnvelope> {
 
         val nowStr = nowAsSqlLike()
-        val externId = "Android App 1.8.45"  // conform voorbeeld
+        val externId = "Android App 1.8.45"
         val timezone = "Europe/Brussels"
-        val bron = "4"                        // test bron
+        val bron = "4"
 
         val windkracht = (windkrachtBftOnly ?: "").ifEmpty { "" }
         val temperatuur = (temperatuurC ?: "").ifEmpty { "" }
@@ -52,7 +52,7 @@ object StartTellingApi {
             tellingid = tellingId.toString(),
             telpostid = telpostId,
             begintijd = begintijdEpochSec.toString(),
-            eindtijd = eindtijdEpochSec.toString(),
+            eindtijd = if (liveMode) "" else eindtijdEpochSec.toString(),  // ← live: eindtijd leeg
             tellers = telers ?: "",
             weer = weerOpmerking ?: "",
             windrichting = windrichtingLabel ?: "",
@@ -70,14 +70,14 @@ object StartTellingApi {
             geluid = "",
             opmerkingen = opmerkingen ?: "",
             onlineid = "",                    // server vult terug
-            hydro = "",                       // "HYDRO" → "hydro"
+            hydro = "",
             hpa = hpa,
             equipment = "",
             uuid = "Trektellen_Android_1.8.45_${java.util.UUID.randomUUID()}",
-            uploadtijdstip = nowStr,
+            uploadtijdstip = nowStr,          // niet leeg in live
             nrec = "0",
             nsoort = "0",
-            data = emptyList()                // lege data bij start
+            data = emptyList()                // nu nog leeg
         )
 
         return listOf(env)
@@ -89,5 +89,4 @@ object StartTellingApi {
         return sdf.format(Date())
     }
 }
-
 

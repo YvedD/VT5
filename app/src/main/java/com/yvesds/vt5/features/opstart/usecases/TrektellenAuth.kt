@@ -2,7 +2,9 @@
 
 package com.yvesds.vt5.features.opstart.usecases
 
+import android.content.Context
 import android.util.Base64
+import com.yvesds.vt5.core.secure.CredentialsStore
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import okhttp3.HttpUrl
@@ -53,6 +55,16 @@ object TrektellenAuth {
                 prettyJsonOrRaw(bodyStr)
             }
         }
+    }
+
+    /**
+     * Helper om opgeslagen credentials (InstallatieScherm) op te halen.
+     */
+    fun getSavedCredentials(context: Context): Pair<String, String>? {
+        val store = CredentialsStore(context)
+        val u = store.getUsername()
+        val p = store.getPassword()
+        return if (!u.isNullOrBlank() && !p.isNullOrBlank()) u to p else null
     }
 
     private fun prettyJsonOrRaw(raw: String): String =

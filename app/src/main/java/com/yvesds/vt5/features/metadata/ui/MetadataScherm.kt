@@ -19,8 +19,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
-import com.yvesds.vt5.features.opstart.usecases.TrektellenAuth
 import com.yvesds.vt5.databinding.SchermMetadataBinding
+import com.yvesds.vt5.features.opstart.usecases.TrektellenAuth
 import com.yvesds.vt5.features.serverdata.model.CodeItem
 import com.yvesds.vt5.features.serverdata.model.DataSnapshot
 import com.yvesds.vt5.features.serverdata.model.ServerDataRepository
@@ -31,6 +31,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -51,6 +58,9 @@ class MetadataScherm : AppCompatActivity() {
 
     // Startmoment van de header (epoch sec)
     private var startEpochSec: Long = System.currentTimeMillis() / 1000L
+
+    // JSON parser voor respons parsing
+    private val jsonSloppy: Json by lazy { Json { ignoreUnknownKeys = true; isLenient = true } }
 
     private val requestLocationPerms = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -272,6 +282,7 @@ class MetadataScherm : AppCompatActivity() {
             .sortedBy { it.telpostnaam.lowercase(Locale.getDefault()) }
 
         val labels = sites.map { it.telpostnaam }
+        thelpostIds@ run { }
         val ids    = sites.map { it.telpostid }
 
         binding.acTelpost.setAdapter(
@@ -364,7 +375,7 @@ class MetadataScherm : AppCompatActivity() {
         )
     }
 
-    /* ---------------- Verder → upload ---------------- */
+    /* ---------------- Verder → upload (met Live-toggle) ---------------- */
 
     private fun onVerderClicked() {
         val telpostId = gekozenTelpostId
@@ -373,7 +384,29 @@ class MetadataScherm : AppCompatActivity() {
             return
         }
 
-        val windrichtingLabel = binding.acWindrichting.text?.toString()
+        // Credentials ophalen
+        val creds = TrektellenAuth.getSavedCredentials(this)
+        val username = creds?.first
+        val password = creds?.second
+        if (username.isNullOrBlank() || password.isNullOrBlank()) {
+            Toast.makeText(this, "Geen user (check login).", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Keuze aan gebruiker: live-modus => eindtijd leeg
+        AlertDialog.Builder(this)
+            .setTitle("Live gaan?")
+            .setMessage("Wil je deze telling in live-modus starten? (eindtijd blijft dan leeg)")
+            .setPositiveButton("Ja (live)") { _, _ -> proceedUpload(liveMode = true, username = username, password = password) }
+            .setNegativeButton("Nee") { _, _ -> proceedUpload(liveMode = false, username = username, password = password) }
+            .setNeutralButton("Annuleer", null)
+            .show()
+    }
+
+    private fun proceedUpload(liveMode: Boolean, username: String, password: String) {
+        val telpostId = gekozenTelpostId ?: return
+
+        val windrichtingCode  = gekozenWindrichtingCode   // code, niet label
         val windkrachtOnly    = gekozenWindkracht
         val temperatuurC      = binding.etTemperatuur.text?.toString()
         val bewolkingOnly     = gekozenBewolking
@@ -386,6 +419,7 @@ class MetadataScherm : AppCompatActivity() {
         val luchtdrukRaw      = binding.etLuchtdruk.text?.toString()
 
         val tellingId = com.yvesds.vt5.VT5App.nextTellingId().toLong()
+        // Geen debug +1 minuut meer — eindtijd voor niet-live = huidig epoch
         val eindEpochSec = System.currentTimeMillis() / 1000L
 
         val envelope = StartTellingApi.buildEnvelopeFromUi(
@@ -393,7 +427,7 @@ class MetadataScherm : AppCompatActivity() {
             telpostId = telpostId,
             begintijdEpochSec = startEpochSec,
             eindtijdEpochSec = eindEpochSec,
-            windrichtingLabel = windrichtingLabel,
+            windrichtingLabel = windrichtingCode,
             windkrachtBftOnly = windkrachtOnly,
             temperatuurC = temperatuurC,
             bewolkingAchtstenOnly = bewolkingOnly,
@@ -403,36 +437,59 @@ class MetadataScherm : AppCompatActivity() {
             telers = telers,
             weerOpmerking = weerOpmerking,
             opmerkingen = opmerkingen,
-            luchtdrukHpaRaw = luchtdrukRaw
+            luchtdrukHpaRaw = luchtdrukRaw,
+            liveMode = liveMode               // bepaalt nu eindtijd
         )
-
-// Credentials op dezelfde manier als in InstallatieScherm (Login test)
-        val creds = TrektellenAuth.getSavedCredentials(this)
-        val username = creds?.first
-        val password = creds?.second
-        if (username.isNullOrBlank() || password.isNullOrBlank()) {
-            Toast.makeText(this, "Geen user (check login).", Toast.LENGTH_SHORT).show()
-            return
-        }
 
         lifecycleScope.launch {
             val (ok, body) = TrektellenApi.postCountsSave(
                 baseUrl = "https://trektellen.nl",
                 language = "dutch",
                 versie = "1845",
-                username = username!!,
-                password = password!!,
+                username = username,
+                password = password,
                 envelope = envelope
             )
 
             dumpServerResponse(body)
 
             if (ok) {
-                Toast.makeText(this@MetadataScherm, "Telling gestart! Server antwoord ontvangen.", Toast.LENGTH_SHORT).show()
+                val onlineId = extractOnlineId(body)
+                val msg = if (!onlineId.isNullOrBlank()) "Telling $onlineId gestart" else "Telling gestart"
+                Toast.makeText(this@MetadataScherm, msg, Toast.LENGTH_SHORT).show()
             } else {
-                Toast.makeText(this@MetadataScherm, "Start mislukt: $body", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@MetadataScherm, "Start mislukt (details in popup).", Toast.LENGTH_LONG).show()
+                showServerResponseDialog("Server response (fout)", body)
             }
         }
+    }
+
+    private fun showServerResponseDialog(title: String, body: String) {
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(body.ifBlank { "(leeg antwoord)" })
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    private fun extractOnlineId(body: String): String? = runCatching {
+        val root: JsonElement = jsonSloppy.parseToJsonElement(body)
+        findOnlineIdRecursive(root)
+    }.getOrNull()
+
+    private fun findOnlineIdRecursive(el: JsonElement): String? {
+        return when (el) {
+            is JsonObject -> {
+                (el["onlineid"] as? JsonPrimitive)?.contentOrNull
+                    ?: el.values.firstNotNullOfOrNull { v -> findOnlineIdRecursive(v) }
+            }
+            else -> {
+                if (el is kotlinx.serialization.json.JsonArray) {
+                    el.jsonArray.firstNotNullOfOrNull { v -> findOnlineIdRecursive(v) }
+                } else null
+            }
+        }
+    }
 
     private suspend fun dumpServerResponse(body: String) = withContext(Dispatchers.IO) {
         try {
@@ -441,12 +498,24 @@ class MetadataScherm : AppCompatActivity() {
             val serverdata = vt5Root.findFile("serverdata")?.takeIf { it.isDirectory }
                 ?: vt5Root.createDirectory("serverdata")
 
+            // Tijdstempel-bestand
             val fileName = "counts_save_${System.currentTimeMillis()}.json"
-            // safe calls op nullable serverdata
-            val f = serverdata?.createFile("application/json", fileName) ?: return@withContext
-            contentResolver.openOutputStream(f.uri, "w")?.use { out ->
-                out.write(body.toByteArray(Charsets.UTF_8))
-                out.flush()
+            val f = serverdata?.createFile("application/json", fileName)
+            if (f != null) {
+                contentResolver.openOutputStream(f.uri, "w")?.use { out ->
+                    out.write(body.toByteArray(Charsets.UTF_8))
+                    out.flush()
+                }
+            }
+
+            // Laatste respons handig overschrijven
+            serverdata?.findFile("counts_save_last.json")?.delete()
+            val last = serverdata?.createFile("application/json", "counts_save_last.json")
+            if (last != null) {
+                contentResolver.openOutputStream(last.uri, "w")?.use { out ->
+                    out.write(body.toByteArray(Charsets.UTF_8))
+                    out.flush()
+                }
             }
         } catch (_: Throwable) {
             // enkel debug

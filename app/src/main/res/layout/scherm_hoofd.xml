@@ -23,7 +23,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginBottom="12dp"
-        android:text="@string/btn_install_start"
+        android:text="@string/titel_install"
         android:textSize="16sp" />
 
     <com.google.android.material.button.MaterialButton
