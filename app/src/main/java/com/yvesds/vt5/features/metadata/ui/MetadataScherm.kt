@@ -5,6 +5,7 @@ package com.yvesds.vt5.features.metadata.ui
 import android.Manifest
 import android.app.DatePickerDialog
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Bundle
 import android.text.InputType
 import android.widget.ArrayAdapter
@@ -15,26 +16,29 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.lifecycleScope
+import com.yvesds.vt5.VT5App
 import com.yvesds.vt5.databinding.SchermMetadataBinding
 import com.yvesds.vt5.features.serverdata.model.CodeItem
 import com.yvesds.vt5.features.serverdata.model.DataSnapshot
 import com.yvesds.vt5.features.serverdata.model.ServerDataRepository
+import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.utils.weather.WeatherManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.Credentials
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
 import android.content.res.ColorStateList
-import android.graphics.Color
 import kotlin.math.roundToInt
-import com.yvesds.vt5.VT5App
-import com.yvesds.vt5.core.opslag.SaFStorageHelper
-import androidx.documentfile.provider.DocumentFile
-import com.yvesds.vt5.net.StartTellingApi
-import com.yvesds.vt5.net.TrektellenApi
 
 class MetadataScherm : AppCompatActivity() {
 
@@ -45,12 +49,15 @@ class MetadataScherm : AppCompatActivity() {
     private var gekozenTelpostId: String? = null
     private var gekozenBewolking: String? = null        // "0".."8"
     private var gekozenWindkracht: String? = null       // "0".."12"
-    private var gekozenWindrichtingCode: String? = null // codes.waarde
-    private var gekozenNeerslagCode: String? = null     // codes.waarde
-    private var gekozenTypeTellingCode: String? = null  // codes.waarde
+    private var gekozenWindrichtingCode: String? = null // codes.value
+    private var gekozenNeerslagCode: String? = null     // codes.value
+    private var gekozenTypeTellingCode: String? = null  // codes.value
 
-    // Voor upload: begin van dit scherm (epoch sec)
-    private var startEpochSec: Long = 0L
+    // starttijd telling (voor metadata)
+    private var startEpochSec: Long = System.currentTimeMillis() / 1000L
+
+    private val httpClient by lazy { OkHttpClient() }
+    private val jsonMedia by lazy { "application/json; charset=utf-8".toMediaType() }
 
     private val requestLocationPerms = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -66,8 +73,6 @@ class MetadataScherm : AppCompatActivity() {
         binding = SchermMetadataBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        startEpochSec = System.currentTimeMillis() / 1000L
-
         // geen keyboard voor datum/tijd
         binding.etDatum.inputType = InputType.TYPE_NULL
         binding.etTijd.inputType = InputType.TYPE_NULL
@@ -75,8 +80,9 @@ class MetadataScherm : AppCompatActivity() {
         // pickers + defaults
         initDateTimePickers()
         prefillCurrentDateTime()
+        startEpochSec = System.currentTimeMillis() / 1000L
 
-        // Off-main: snapshot laden en dropdowns binden (gericht, snel)
+        // Off-main: snapshot laden en dropdowns binden
         lifecycleScope.launch {
             val repo = ServerDataRepository(this@MetadataScherm)
             snapshot = withContext(Dispatchers.IO) { repo.loadAllFromSaf() }
@@ -85,101 +91,178 @@ class MetadataScherm : AppCompatActivity() {
         }
 
         // Acties
+        binding.btnVerder.setOnClickListener { onVerderClicked() }
         binding.btnAnnuleer.setOnClickListener { finish() }
         binding.btnWeerAuto.setOnClickListener { ensureLocationPermissionThenFetch() }
+    }
 
-        binding.btnVerder.setOnClickListener {
-            // 1) Validatie
-            val telpostId = gekozenTelpostId
-            if (telpostId.isNullOrBlank()) {
-                Toast.makeText(this, "Kies eerst een telpost.", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            val user = snapshot.currentUser
-            val username = user?.userid ?: run {
-                Toast.makeText(this, "Geen user (check login).", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            val password = user.password ?: ""
+    /* ---------- VERDER → upload metadata ---------- */
 
-            // 2) UI-waarden ophalen
-            val windrichtingLabel = binding.acWindrichting.text?.toString()
-            val windkrachtOnly    = gekozenWindkracht                 // "0".."12"
-            val temperatuurC      = binding.etTemperatuur.text?.toString()
-            val bewolkingOnly     = gekozenBewolking                  // "0".."8"
-            val neerslagCode      = gekozenNeerslagCode               // b.v. "regen"
-            val zichtMeters       = binding.etZicht.text?.toString()
-            val typetellingCode   = gekozenTypeTellingCode
-            val telers            = binding.etTellers.text?.toString()
-            val weerOpmerking     = binding.etWeerOpmerking.text?.toString()
-            val opmerkingen       = binding.etOpmerkingen.text?.toString()
-            val luchtdrukRaw      = binding.etLuchtdruk.text?.toString()
-
-            // 3) tellingId genereren en eindtijd pakken
-            val tellingId: Long = VT5App.nextTellingId()
-            val eindEpochSec = System.currentTimeMillis() / 1000L
-
-            // 4) Envelope bouwen zoals eerder afgesproken (alle velden als String)
-            val envelope = StartTellingApi.buildEnvelopeFromUi(
-                tellingId = tellingId,
-                telpostId = telpostId,
-                begintijdEpochSec = startEpochSec,
-                eindtijdEpochSec = eindEpochSec,
-                windrichtingLabel = windrichtingLabel,
-                windkrachtBftOnly = windkrachtOnly,
-                temperatuurC = temperatuurC,
-                bewolkingAchtstenOnly = bewolkingOnly,
-                neerslagCode = neerslagCode,
-                zichtMeters = zichtMeters,
-                typetellingCode = typetellingCode,
-                telers = telers,
-                weerOpmerking = weerOpmerking,
-                opmerkingen = opmerkingen,
-                luchtdrukHpaRaw = luchtdrukRaw
-            )
-
-            // 5) Upload off-main + reply opslaan in /serverdata
-            lifecycleScope.launch {
-                val (ok, body) = withContext(Dispatchers.IO) {
-                    TrektellenApi.postCountsSave(
-                        baseUrl = "https://trektellen.nl",
-                        language = "dutch",
-                        versie = "1845",
-                        username = username,
-                        password = password,
-                        envelope = envelope
-                    )
-                }
-
-                // Altijd reply wegschrijven voor debugging
-                val fileName = "counts_save_${tellingId}_${System.currentTimeMillis()/1000}.json"
-                val savedOk = withContext(Dispatchers.IO) {
-                    saveServerReplyToFile(fileName, body ?: "")
-                }
-
-                // onlineid proberen uit te lezen (best effort)
-                val onlineId = extractOnlineId(body)
-
-                if (ok) {
-                    val msg = buildString {
-                        append("Telling gestart! ")
-                        if (!onlineId.isNullOrBlank()) append("(onlineid=$onlineId) ")
-                        append(if (savedOk) "Reply opgeslagen als $fileName" else "Reply kon niet opgeslagen worden")
-                    }
-                    Toast.makeText(this@MetadataScherm, msg, Toast.LENGTH_LONG).show()
-                    // TODO: onlineid lokaal bewaren als je dat al voorzien hebt
-                } else {
-                    val msg = buildString {
-                        append("Start mislukt.\n")
-                        append("Reply opgeslagen: ")
-                        append(if (savedOk) fileName else "NEE")
-                        append("\nServer antwoord:\n")
-                        append(body ?: "(leeg)")
-                    }
-                    Toast.makeText(this@MetadataScherm, msg, Toast.LENGTH_LONG).show()
-                }
-            }
+    private fun onVerderClicked() {
+        val telpostId = gekozenTelpostId
+        if (telpostId.isNullOrBlank()) {
+            Toast.makeText(this, "Kies eerst een telpost.", Toast.LENGTH_SHORT).show()
+            return
         }
+
+        // UI-waarden
+        val windrichtingLabel = binding.acWindrichting.text?.toString() ?: ""
+        val windkrachtOnly    = gekozenWindkracht ?: ""
+        val temperatuurC      = (binding.etTemperatuur.text?.toString() ?: "").trim()
+        val bewolkingOnly     = gekozenBewolking ?: ""
+        val neerslagCode      = gekozenNeerslagCode ?: ""
+        val zichtMeters       = (binding.etZicht.text?.toString() ?: "").trim()
+        val typetellingCode   = gekozenTypeTellingCode ?: ""
+        val tellers           = binding.etTellers.text?.toString() ?: ""
+        val weerOpmerking     = binding.etWeerOpmerking.text?.toString() ?: ""
+        val opmerkingen       = binding.etOpmerkingen.text?.toString() ?: ""
+        val luchtdrukRaw      = (binding.etLuchtdruk.text?.toString() ?: "").trim()
+
+        val username = com.yvesds.vt5.core.secure.CredentialsStore.getUsername(applicationContext)
+        val password = com.yvesds.vt5.core.secure.CredentialsStore.getPassword(applicationContext)
+
+        if (username.isNullOrBlank() || password.isNullOrBlank()) {
+            Toast.makeText(this, "Geen login gevonden. Ga naar Installatie en log in.", Toast.LENGTH_LONG).show()
+            return@setOnClickListener
+        }
+
+        // telling-id en eindtijd
+        val tellingId = VT5App.nextTellingId()
+        val eindEpochSec = System.currentTimeMillis() / 1000L
+
+        // Bouw JSON-array payload (1 item) exact zoals server verwacht (alles als String)
+        val bodyString = buildCountsSaveJson(
+            externId = "Android App VT5",
+            timezoneId = "Europe/Brussels",
+            bron = "4",
+            idLocal = "", // _id leeg bij init
+            tellingId = tellingId.toString(),
+            telpostId = telpostId,
+            beginEpoch = startEpochSec.toString(),
+            eindEpoch = eindEpochSec.toString(),
+            tellers = tellers,
+            weer = weerOpmerking,
+            windrichting = windrichtingLabel,     // label (bv. "WNW")
+            windkracht = windkrachtOnly,          // "0".."12"
+            temperatuur = temperatuurC.noDecimals(),
+            bewolking = bewolkingOnly,            // "0".."8"
+            bewolkinghoogte = "",
+            neerslag = neerslagCode,              // bv. "regen"
+            duurneerslag = "",
+            zicht = zichtMeters.noDecimals(),
+            tellersactief = "",
+            tellersaanwezig = "",
+            typetelling = typetellingCode,        // uit codes.json (bv. "all")
+            metersnet = "",
+            geluid = "",
+            opmerkingen = opmerkingen,
+            onlineId = "",                        // leeg bij init; server geeft dit terug
+            hydro = "",
+            hpa = luchtdrukRaw.take(4),           // eerste 4 cijfers
+            equipment = "",
+            uuid = "Trektellen_Android_VT5_${System.currentTimeMillis()}",
+            uploadTs = nowTimestamp(),
+            nrec = "0",
+            nsoort = "0",
+            userid = user.userid // extra veld; sommige backends verwachten dit
+        )
+
+        // Fire off-main
+        lifecycleScope.launch {
+            binding.btnVerder.isEnabled = false
+            Toast.makeText(this@MetadataScherm, "Metadata verzenden…", Toast.LENGTH_SHORT).show()
+            val (ok, respText) = withContext(Dispatchers.IO) {
+                postCountsSave(
+                    baseUrl = "https://trektellen.nl",
+                    language = "dutch",
+                    versie = "1845",
+                    username = username,
+                    password = password,
+                    bodyJson = bodyString
+                )
+            }
+
+            // Altijd wegschrijven naar serverdata/… zodat we kunnen debuggen
+            withContext(Dispatchers.IO) {
+                saveDebugResponseToServerdata(respText)
+            }
+
+            // Feedback
+            val toastText = if (ok) {
+                "Telling gestart! Server antwoord: ${respText.truncate(800)}"
+            } else {
+                "Start mislukt: ${respText.truncate(800)}"
+            }
+            Toast.makeText(this@MetadataScherm, toastText, Toast.LENGTH_LONG).show()
+
+            binding.btnVerder.isEnabled = true
+        }
+    }
+
+    /** POST /api/counts_save met Basic Auth. */
+    private fun postCountsSave(
+        baseUrl: String,
+        language: String,
+        versie: String,
+        username: String,
+        password: String,
+        bodyJson: String
+    ): Pair<Boolean, String> {
+        val url = "$baseUrl/api/counts_save?language=$language&versie=$versie"
+        val reqBody: RequestBody = bodyJson.toRequestBody(jsonMedia)
+        val auth = Credentials.basic(username, password, Charsets.UTF_8)
+
+        val req = Request.Builder()
+            .url(url)
+            .post(reqBody)
+            .addHeader("Authorization", auth)
+            .addHeader("Accept", "application/json")
+            .build()
+
+        return try {
+            httpClient.newCall(req).execute().use { resp ->
+                val txt = resp.body?.string() ?: ""
+                (resp.isSuccessful) to txt
+            }
+        } catch (e: Exception) {
+            false to ("EXCEPTION: ${e.message}")
+        }
+    }
+
+    /** Debug dump van serverantwoord in Documents/VT5/serverdata/… */
+    private fun saveDebugResponseToServerdata(text: String) {
+        try {
+            val saf = SaFStorageHelper(this)
+            val vt5Root = saf.getVt5DirIfExists() ?: return
+            val serverdata = vt5Root.findFile("serverdata") ?: vt5Root.createDirectory("serverdata")
+            serverdata ?: return
+            val fname = "counts_save_response_${System.currentTimeMillis()}.json"
+            val df: DocumentFile = serverdata.createFile("application/json", fname) ?: return
+            contentResolver.openOutputStream(df.uri)?.use { out ->
+                out.write(text.toByteArray())
+                out.flush()
+            }
+        } catch (_: Exception) {
+            // stil debug-bestand — geen crash risk
+        }
+    }
+
+    private fun String.truncate(n: Int): String =
+        if (length <= n) this else substring(0, n) + "…"
+
+    private fun String.noDecimals(): String {
+        val t = trim()
+        if (t.isEmpty()) return ""
+        // strip eventuele . of , en neem enkel integer-deel
+        val dot = t.indexOf('.')
+        val comma = t.indexOf(',')
+        val cut = listOf(dot, comma).filter { it >= 0 }.minOrNull() ?: -1
+        return if (cut >= 0) t.substring(0, cut) else t
+    }
+
+    private fun nowTimestamp(): String {
+        val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+        return sdf.format(System.currentTimeMillis())
     }
 
     /* ---------- Permissie → weer auto ---------- */
@@ -211,8 +294,6 @@ class MetadataScherm : AppCompatActivity() {
             }
 
             // 3) Mapping naar UI
-
-            // Windrichting: graden → 16-sectie label → code via codes("wind")
             val windLabel = WeatherManager.degTo16WindLabel(cur.windDirection10m)
             val windCodes = snapshot.codesByCategory["wind"].orEmpty()
             val valueByLabel = windCodes.associateBy(
@@ -223,18 +304,15 @@ class MetadataScherm : AppCompatActivity() {
             gekozenWindrichtingCode = foundWindCode
             binding.acWindrichting.setText(windLabel, false)
 
-            // Windkracht (Beaufort uit m/s): "<1bf" = 0, anders "1bf".. "12bf"
             val bft = WeatherManager.msToBeaufort(cur.windSpeed10m)
             gekozenWindkracht = bft.toString()
             val windForceDisplay = if (bft == 0) "<1bf" else "${bft}bf"
             binding.acWindkracht.setText(windForceDisplay, false)
 
-            // Bewolking: % → achtsten ("0".."8")
             val achtsten = WeatherManager.cloudPercentToAchtsten(cur.cloudCover)
             gekozenBewolking = achtsten
             binding.acBewolking.setText("$achtsten/8", false)
 
-            // Neerslag: intensiteit → code; toon bijbehorend NL-label uit codes("neerslag")
             val rainCode = WeatherManager.precipitationToCode(cur.precipitation)
             gekozenNeerslagCode = rainCode
             val rainCodes = snapshot.codesByCategory["neerslag"].orEmpty()
@@ -245,15 +323,11 @@ class MetadataScherm : AppCompatActivity() {
             val rainLabel = rainLabelByValue[rainCode] ?: rainCode
             binding.acNeerslag.setText(rainLabel, false)
 
-            // Temperatuur (°C, int), Zicht (meters, int), Luchtdruk (hPa, int)
             cur.temperature2m?.let { binding.etTemperatuur.setText(it.roundToInt().toString()) }
-
             val visMeters = WeatherManager.toVisibilityMeters(cur.visibility)
             visMeters?.let { binding.etZicht.setText(it.toString()) }
-
             cur.pressureMsl?.let { binding.etLuchtdruk.setText(it.roundToInt().toString()) }
 
-            // 4) Knop markeren: definitief blauw + disabled
             markWeatherAutoApplied()
         }
     }
@@ -417,7 +491,7 @@ class MetadataScherm : AppCompatActivity() {
             }
         }
 
-        // TYPE TELLING (veld == "typetelling_trek") met filters op tekstkey
+        // TYPE TELLING (veld == "typetelling_trek") met filters op key
         runCatching {
             val all = getCodesForField("typetelling_trek")
             val filtered = all.filterNot { c ->
@@ -452,37 +526,111 @@ class MetadataScherm : AppCompatActivity() {
         )
     }
 
-    /* ---------------- Helpers: serverreply bewaren + onlineid uit reply ---------------- */
+    /* ---------------- Payload (voor debug/toast) ---------------- */
 
-    private fun saveServerReplyToFile(fileName: String, body: String): Boolean {
-        return try {
-            val saf = SaFStorageHelper(this)
-            val vt5Dir = saf.getVt5DirIfExists() ?: return false
+    private fun buildMetadataHeader(): Map<String, String?> = mapOf(
+        "datum" to binding.etDatum.text?.toString(),
+        "tijd" to binding.etTijd.text?.toString(),
+        "telpostid" to gekozenTelpostId,
+        "windrichting_code" to gekozenWindrichtingCode,
+        "windkracht_bft" to gekozenWindkracht,
+        "bewolking_achtsten" to gekozenBewolking,
+        "neerslag_code" to gekozenNeerslagCode,
+        "typetelling_code" to gekozenTypeTellingCode,
+        "tellers" to binding.etTellers.text?.toString(),
+        "weer_opmerking" to binding.etWeerOpmerking.text?.toString(),
+        "zicht_m" to binding.etZicht.text?.toString(),
+        "temperatuur_c" to binding.etTemperatuur.text?.toString(),
+        "luchtdruk_hpa" to binding.etLuchtdruk.text?.toString()
+    )
 
-            // Zoek of maak de submap 'serverdata'
-            val existing = vt5Dir.findFile("serverdata")?.takeIf { it.isDirectory }
-            val created  = if (existing == null) vt5Dir.createDirectory("serverdata") else null
-            val serverdata = (existing ?: created) ?: return false  // <- vanaf hier non-null
+    /* ---------------- JSON builder ---------------- */
 
-            // Overschrijf als het al bestaat
-            serverdata.findFile(fileName)?.delete()
+    private fun buildCountsSaveJson(
+        externId: String,
+        timezoneId: String,
+        bron: String,
+        idLocal: String,
+        tellingId: String,
+        telpostId: String,
+        beginEpoch: String,
+        eindEpoch: String,
+        tellers: String,
+        weer: String,
+        windrichting: String,
+        windkracht: String,
+        temperatuur: String,
+        bewolking: String,
+        bewolkinghoogte: String,
+        neerslag: String,
+        duurneerslag: String,
+        zicht: String,
+        tellersactief: String,
+        tellersaanwezig: String,
+        typetelling: String,
+        metersnet: String,
+        geluid: String,
+        opmerkingen: String,
+        onlineId: String,
+        hydro: String,
+        hpa: String,
+        equipment: String,
+        uuid: String,
+        uploadTs: String,
+        nrec: String,
+        nsoort: String,
+        userid: String?
+    ): String {
+        // Bouw een string zonder externe models om conflicts te vermijden.
+        // JSON array met één object, veldvolgorde vergelijkbaar met je voorbeeld.
+        val esc = { s: String -> s.replace("\\", "\\\\").replace("\"", "\\\"") }
+        val sb = StringBuilder(2048)
+        sb.append("[{")
+        sb.append("\"externid\":\"").append(esc(externId)).append("\",")
+        sb.append("\"timezoneid\":\"").append(esc(timezoneId)).append("\",")
+        sb.append("\"bron\":\"").append(esc(bron)).append("\",")
+        sb.append("\"_id\":\"").append(esc(idLocal)).append("\",")
+        sb.append("\"tellingid\":\"").append(esc(tellingId)).append("\",")
+        sb.append("\"telpostid\":\"").append(esc(telpostId)).append("\",")
+        sb.append("\"begintijd\":\"").append(esc(beginEpoch)).append("\",")
+        sb.append("\"eindtijd\":\"").append(esc(eindEpoch)).append("\",")
+        sb.append("\"tellers\":\"").append(esc(tellers)).append("\",")
+        sb.append("\"weer\":\"").append(esc(weer)).append("\",")
+        sb.append("\"windrichting\":\"").append(esc(windrichting)).append("\",")
+        sb.append("\"windkracht\":\"").append(esc(windkracht)).append("\",")
+        sb.append("\"temperatuur\":\"").append(esc(temperatuur)).append("\",")
+        sb.append("\"bewolking\":\"").append(esc(bewolking)).append("\",")
+        sb.append("\"bewolkinghoogte\":\"").append(esc(bewolkinghoogte)).append("\",")
+        sb.append("\"neerslag\":\"").append(esc(neerslag)).append("\",")
+        sb.append("\"duurneerslag\":\"").append(esc(duurneerslag)).append("\",")
+        sb.append("\"zicht\":\"").append(esc(zicht)).append("\",")
+        sb.append("\"tellersactief\":\"").append(esc(tellersactief)).append("\",")
+        sb.append("\"tellersaanwezig\":\"").append(esc(tellersaanwezig)).append("\",")
+        sb.append("\"typetelling\":\"").append(esc(typetelling)).append("\",")
+        sb.append("\"metersnet\":\"").append(esc(metersnet)).append("\",")
+        sb.append("\"geluid\":\"").append(esc(geluid)).append("\",")
+        sb.append("\"opmerkingen\":\"").append(esc(opmerkingen)).append("\",")
+        sb.append("\"onlineid\":\"").append(esc(onlineId)).append("\",")
+        sb.append("\"HYDRO\":\"").append(esc(hydro)).append("\",")
+        sb.append("\"hpa\":\"").append(esc(hpa)).append("\",")
+        sb.append("\"equipment\":\"").append(esc(equipment)).append("\",")
+        sb.append("\"uuid\":\"").append(esc(uuid)).append("\",")
+        sb.append("\"uploadtijdstip\":\"").append(esc(uploadTs)).append("\",")
+        sb.append("\"nrec\":\"").append(esc(nrec)).append("\",")
+        sb.append("\"nsoort\":\"").append(esc(nsoort)).append("\",")
 
-            val file = serverdata.createFile("application/json", fileName) ?: return false
-            contentResolver.openOutputStream(file.uri, "w")?.use { out ->
-                out.write(body.toByteArray(Charsets.UTF_8))
-                out.flush()
-            } ?: return false
-
-            true
-        } catch (_: Throwable) {
-            false
+        // Indien userid mee moet:
+        if (!userid.isNullOrBlank()) {
+            sb.append("\"userid\":\"").append(esc(userid)).append("\",")
         }
-    }
 
-    private fun extractOnlineId(body: String?): String? {
-        if (body.isNullOrBlank()) return null
-        // simpele regex: "onlineid":"12345" of 'onlineid': '12345'
-        val rx = Regex("\"onlineid\"\\s*:\\s*\"(\\d+)\"")
-        return rx.find(body)?.groupValues?.getOrNull(1)
+        // lege data-array bij init
+        sb.append("\"data\":[]")
+        sb.append("}]")
+        return sb.toString()
     }
 }
+
+/* ---------- Kleine helpers op DocumentFile ---------- */
+private fun DocumentFile.findFile(name: String): DocumentFile? =
+    this.listFiles().firstOrNull { it.name == name }

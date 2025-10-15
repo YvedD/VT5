@@ -1,6 +1,8 @@
 package com.yvesds.vt5.net
 
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -23,7 +25,7 @@ object StartTelling {
     }
 
     /**
-     * Bouw het volledige JSON-array (String) met precies één metadata-header en lege data[].
+     * Bouw het volledige JSON-array (String) met precies één metadata-header en een lege data[].
      *
      * Alle numerieke velden worden als String verstuurd (vereiste van jouw server).
      * - tijdstippen: epoch seconden (als String)
@@ -36,35 +38,39 @@ object StartTelling {
         telpostId: String,
         begintijdEpochSec: Long,
         eindtijdEpochSec: Long,
-        windrichtingLabel: String?,      // bv "NW", "ZO", ...
-        windkrachtBftOnly: String?,      // "0".."12" (enkel getal)
-        temperatuurC: String?,           // kan "12.3" of "12" zijn → we maken er "12" van
-        bewolkingAchtstenOnly: String?,  // "0".."8"
-        neerslagCode: String?,           // bv "geen","mist","regen",...
-        zichtMeters: String?,            // bv "14600" of "14600.0" → we maken er "14600" van
-        typetellingCode: String?,        // bv "all","sea","raptor",...
-        telers: String?,                 // vrij tekstveld
-        weerOpmerking: String?,          // vrij tekstveld
-        opmerkingen: String?,            // vrij tekstveld
-        luchtdrukHpaRaw: String?,        // kan "1013.2" zijn → neem eerste 4 cijfers
-        // optioneel
+
+        // UI-waarden
+        windrichtingLabel: String?,          // bv "N","NW","ZO", ...
+        windkrachtBftOnly: String?,          // "0".."12" (enkel getal)
+        temperatuurC: String?,               // "12.3" of "12" → wordt "12"
+        bewolkingAchtstenOnly: String?,      // "0".."8"
+        neerslagCode: String?,               // bv "geen","mist","regen",...
+        zichtMeters: String?,                // "14600" of "14600.0" → wordt "14600"
+        typetellingCode: String?,            // bv "all","sea","raptor",...
+        telers: String?,                     // vrije tekst
+        weerOpmerking: String?,              // vrije tekst
+        opmerkingen: String?,                // vrije tekst
+        luchtdrukHpaRaw: String?,            // bv "1013.2" → neem eerste 4 cijfers
+
+        // defaults volgens jouw specs
         externId: String = "Android App 1.8.45",
         timezoneId: String = "Europe/Brussels",
-        bron: String = "4",              // test-bron zoals afgesproken
-        uuid: String = "",               // mag leeg blijven; vul in als je wil
+        bron: String = "4",                  // test-bron
+        uuid: String = "",                   // optioneel leeg
+
         uploadNowMillis: Long = System.currentTimeMillis()
     ): String {
-
         val uploadTime = formatUploadTime(uploadNowMillis) // "yyyy-MM-dd HH:mm:ss"
 
-        // Normalisaties naar pure String-getallen, zonder decimalen.
+        // Normaliseer naar pure String-getallen, zonder decimalen.
         val tempStr = temperatuurC?.let { toIntStringOrEmpty(it) } ?: ""
         val zichtStr = zichtMeters?.let { toIntStringOrEmpty(it) } ?: ""
         val hpaStr = luchtdrukHpaRaw?.let { first4Digits(it) } ?: ""
 
-        val payload = buildJsonArray {
+        val payload: JsonArray = buildJsonArray {
             add(
                 buildJsonObject {
+                    // Meta
                     put("externid", externId)
                     put("timezoneid", timezoneId)
                     put("bron", bron)
@@ -89,9 +95,9 @@ object StartTelling {
                     // Temp & wolken & neerslag & zicht
                     put("temperatuur", tempStr)
                     put("bewolking", bewolkingAchtstenOnly ?: "")
-                    put("bewolkinghoogte", "") // n.v.t.
+                    put("bewolkinghoogte", "")     // n.v.t.
                     put("neerslag", neerslagCode ?: "")
-                    put("duurneerslag", "")    // n.v.t.
+                    put("duurneerslag", "")        // n.v.t.
                     put("zicht", zichtStr)
 
                     // Aanwezig/actief (n.v.t.)
@@ -105,7 +111,7 @@ object StartTelling {
                     put("metersnet", "")
                     put("geluid", "")
 
-                    // Vrije opm.
+                    // Vrije opmerkingen
                     put("opmerkingen", opmerkingen ?: "")
 
                     // Online ID (leeg bij init), HYDRO (n.v.t.), luchtdruk (hpa), materiaal (n.v.t.)
@@ -114,19 +120,21 @@ object StartTelling {
                     put("hpa", hpaStr)
                     put("equipment", "")
 
+                    // UUID + uploadtijdstip
                     put("uuid", uuid)
                     put("uploadtijdstip", uploadTime)
 
-                    // Voor later, nu leeg/0
+                    // Voor later (nu leeg/0)
                     put("nrec", "0")
                     put("nsoort", "0")
 
                     // lege data array (telling starten)
-                    put("data", buildJsonArray { /* niets */ })
+                    put("data", buildJsonArray { /* leeg */ })
                 }
             )
         }
 
+        // encode JsonArray → String
         return json.encodeToString(payload)
     }
 
