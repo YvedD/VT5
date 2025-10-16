@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/headerRoot"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <!-- Zichtbaar lijntje tussen 'recents' en alfabetische lijst -->
+    <View
+        android:id="@+id/divider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#303030"
+        android:layout_marginTop="6dp"
+        android:layout_marginBottom="4dp"/>
+
+    <!-- Checkbox 'Alle recente' -->
+    <CheckBox
+        android:id="@+id/cbAlleRecente"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Alle recente (0)"
+        android:paddingBottom="6dp"/>
+</LinearLayout>

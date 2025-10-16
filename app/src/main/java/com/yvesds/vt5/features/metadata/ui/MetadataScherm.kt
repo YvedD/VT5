@@ -3,7 +3,9 @@
 package com.yvesds.vt5.features.metadata.ui
 
 import android.Manifest
+import android.app.Activity
 import android.app.DatePickerDialog
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Color
@@ -18,12 +20,15 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.databinding.SchermMetadataBinding
 import com.yvesds.vt5.features.opstart.usecases.TrektellenAuth
 import com.yvesds.vt5.features.serverdata.model.CodeItem
 import com.yvesds.vt5.features.serverdata.model.DataSnapshot
 import com.yvesds.vt5.features.serverdata.model.ServerDataRepository
+import com.yvesds.vt5.features.soort.ui.SoortSelectieScherm
+import com.yvesds.vt5.features.telling.TellingSessionManager
+import com.yvesds.vt5.core.opslag.SaFStorageHelper
+import com.yvesds.vt5.features.telling.TellingScherm
 import com.yvesds.vt5.net.StartTellingApi
 import com.yvesds.vt5.net.TrektellenApi
 import com.yvesds.vt5.utils.weather.WeatherManager
@@ -61,6 +66,18 @@ class MetadataScherm : AppCompatActivity() {
 
     // JSON parser voor respons parsing
     private val jsonSloppy: Json by lazy { Json { ignoreUnknownKeys = true; isLenient = true } }
+
+    // Launcher voor SoortSelectieScherm (multi-select)
+    private val selectSoortenLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { res ->
+        if (res.resultCode == Activity.RESULT_OK) {
+            val ids = res.data?.getStringArrayListExtra(SoortSelectieScherm.EXTRA_SELECTED_SOORT_IDS).orEmpty()
+            gekozenTelpostId?.let { TellingSessionManager.setTelpost(it) }
+            TellingSessionManager.setPreselectedSoorten(ids)
+            startActivity(Intent(this, TellingScherm::class.java))
+        }
+    }
 
     private val requestLocationPerms = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -107,7 +124,7 @@ class MetadataScherm : AppCompatActivity() {
         }
 
         // Acties
-        binding.btnVerder.setOnClickListener { onVerderClicked() }
+        binding.btnVerder.setOnClickListener { onVerderClicked() } // → counts_save + naar SoortSelectieScherm
         binding.btnAnnuleer.setOnClickListener { finish() }
         binding.btnWeerAuto.setOnClickListener { ensureLocationPermissionThenFetch() }
     }
@@ -282,7 +299,6 @@ class MetadataScherm : AppCompatActivity() {
             .sortedBy { it.telpostnaam.lowercase(Locale.getDefault()) }
 
         val labels = sites.map { it.telpostnaam }
-        thelpostIds@ run { }
         val ids    = sites.map { it.telpostid }
 
         binding.acTelpost.setAdapter(
@@ -307,7 +323,7 @@ class MetadataScherm : AppCompatActivity() {
             }
         }
 
-        // BEWOLKING 0/8..8/8 -> "0".."8"
+        // BEWOLKING 0/8..8/8 → "0".."8"
         val cloudDisplays = (0..8).map { "$it/8" }
         val cloudValues   = (0..8).map { it.toString() }
         binding.acBewolking.setAdapter(
@@ -317,7 +333,7 @@ class MetadataScherm : AppCompatActivity() {
             gekozenBewolking = cloudValues[pos]
         }
 
-        // WINDKRACHT <1bf, 1..12bf -> "0".."12"
+        // WINDKRACHT <1bf, 1..12bf → "0".."12"
         val windForceDisplays = buildList { add("<1bf"); addAll((1..12).map { "${it}bf" }) }
         val windForceValues   = buildList { add("0"); addAll((1..12).map { it.toString() }) }
         binding.acWindkracht.setAdapter(
@@ -375,7 +391,7 @@ class MetadataScherm : AppCompatActivity() {
         )
     }
 
-    /* ---------------- Verder → upload (met Live-toggle) ---------------- */
+    /* ---------------- Verder → counts_save (header) → SoortSelectieScherm ---------------- */
 
     private fun onVerderClicked() {
         val telpostId = gekozenTelpostId
@@ -397,13 +413,13 @@ class MetadataScherm : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle("Live gaan?")
             .setMessage("Wil je deze telling in live-modus starten? (eindtijd blijft dan leeg)")
-            .setPositiveButton("Ja (live)") { _, _ -> proceedUpload(liveMode = true, username = username, password = password) }
-            .setNegativeButton("Nee") { _, _ -> proceedUpload(liveMode = false, username = username, password = password) }
+            .setPositiveButton("Ja (live)") { _, _ -> startTellingAndOpenSoortSelectie(liveMode = true, username = username, password = password) }
+            .setNegativeButton("Nee") { _, _ -> startTellingAndOpenSoortSelectie(liveMode = false, username = username, password = password) }
             .setNeutralButton("Annuleer", null)
             .show()
     }
 
-    private fun proceedUpload(liveMode: Boolean, username: String, password: String) {
+    private fun startTellingAndOpenSoortSelectie(liveMode: Boolean, username: String, password: String) {
         val telpostId = gekozenTelpostId ?: return
 
         val windrichtingCode  = gekozenWindrichtingCode   // code, niet label
@@ -419,7 +435,6 @@ class MetadataScherm : AppCompatActivity() {
         val luchtdrukRaw      = binding.etLuchtdruk.text?.toString()
 
         val tellingId = com.yvesds.vt5.VT5App.nextTellingId().toLong()
-        // Geen debug +1 minuut meer — eindtijd voor niet-live = huidig epoch
         val eindEpochSec = System.currentTimeMillis() / 1000L
 
         val envelope = StartTellingApi.buildEnvelopeFromUi(
@@ -438,7 +453,7 @@ class MetadataScherm : AppCompatActivity() {
             weerOpmerking = weerOpmerking,
             opmerkingen = opmerkingen,
             luchtdrukHpaRaw = luchtdrukRaw,
-            liveMode = liveMode               // bepaalt nu eindtijd
+            liveMode = liveMode               // bepaalt nu eindtijd ("") bij live
         )
 
         lifecycleScope.launch {
@@ -457,6 +472,12 @@ class MetadataScherm : AppCompatActivity() {
                 val onlineId = extractOnlineId(body)
                 val msg = if (!onlineId.isNullOrBlank()) "Telling $onlineId gestart" else "Telling gestart"
                 Toast.makeText(this@MetadataScherm, msg, Toast.LENGTH_SHORT).show()
+
+                // Zet telpost in sessie en ga door naar soort-voorselectie
+                TellingSessionManager.setTelpost(telpostId)
+                val intent = Intent(this@MetadataScherm, SoortSelectieScherm::class.java)
+                    .putExtra(SoortSelectieScherm.EXTRA_TELPOST_ID, telpostId)
+                selectSoortenLauncher.launch(intent)
             } else {
                 Toast.makeText(this@MetadataScherm, "Start mislukt (details in popup).", Toast.LENGTH_LONG).show()
                 showServerResponseDialog("Server response (fout)", body)

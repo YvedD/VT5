@@ -15,6 +15,7 @@ import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import com.yvesds.vt5.features.serverdata.model.ServerDataCache
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -109,6 +110,7 @@ object ServerJsonDownloader {
             }
             msgs += msg
         }
+        ServerDataCache.invalidate()
         msgs
     }
 

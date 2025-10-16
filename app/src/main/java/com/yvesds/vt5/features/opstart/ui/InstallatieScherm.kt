@@ -15,6 +15,7 @@ import com.yvesds.vt5.databinding.SchermInstallatieBinding
 import com.yvesds.vt5.features.alias.AliasIndexWriter
 import com.yvesds.vt5.features.opstart.usecases.ServerJsonDownloader
 import com.yvesds.vt5.features.opstart.usecases.TrektellenAuth
+import com.yvesds.vt5.features.serverdata.model.ServerDataCache
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -193,6 +194,10 @@ class InstallatieScherm : AppCompatActivity() {
                     versie = "1845"
                 )
             }
+
+            // Belangrijk: in-memory cache ongeldig maken zodat nieuwe data direct gebruikt wordt
+            com.yvesds.vt5.features.serverdata.model.ServerDataCache.invalidate()
+
             dlg.dismiss()
             showInfoDialog(getString(com.yvesds.vt5.R.string.dlg_titel_result), msgs.joinToString("\n"))
         }

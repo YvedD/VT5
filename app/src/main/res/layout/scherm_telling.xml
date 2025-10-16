@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/root"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="8dp">
+
+    <!-- Log-venster -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:paddingBottom="1dp"
+        android:text="Resultaten spraak- of manuele invoer"
+        android:textSize="11sp"
+        android:textStyle="bold" />
+
+    <!-- Card met afgeronde hoeken + stroke in lichtblauw -->
+    <com.google.android.material.card.MaterialCardView
+        android:layout_width="match_parent"
+        android:layout_height="140dp"
+        android:layout_marginBottom="8dp"
+        app:cardCornerRadius="8dp"
+        app:cardUseCompatPadding="true"
+        app:strokeColor="@color/vt5_light_blue"
+        app:strokeWidth="2dp">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recyclerViewSpeechLog"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:padding="6dp"
+            android:background="#111111" />
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- Actieknoppen -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="end"
+        android:orientation="horizontal"
+        android:padding="4dp">
+
+        <Button
+            android:id="@+id/btnAddSoorten"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Soorten toevoegen" />
+
+        <Button
+            android:id="@+id/btnAfronden"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="Afronden" />
+    </LinearLayout>
+
+    <!-- Grid met soort-tiles -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recyclerViewSpecies"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"/>
+</LinearLayout>

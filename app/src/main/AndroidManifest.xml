@@ -5,14 +5,13 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
 
-
     <application
         android:name=".VT5App"
         android:allowBackup="true"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.VT5.Dark">
-
+        <!-- OpstartScherm -->
         <activity
             android:name=".hoofd.HoofdActiviteit"
             android:exported="true">
@@ -21,17 +20,26 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-
-        <!-- Installatie-scherm XML -->
+        <!-- InstallatieScherm -->
         <activity
             android:name=".features.opstart.ui.InstallatieScherm"
             android:exported="false" />
-
-        <!-- NIEUW: Metadata-scherm XML -->
-        <!-- ✅ Voeg deze regel toe -->
+        <!-- Nieuw: MetadataScherm -->
         <activity
             android:name=".features.metadata.ui.MetadataScherm"
             android:exported="false"
             android:windowSoftInputMode="stateHidden|adjustResize" />
+
+        <!-- SoortSelectieScherm -->
+        <activity
+            android:name=".features.soort.ui.SoortSelectieScherm"
+            android:exported="false"
+            android:windowSoftInputMode="stateHidden|adjustResize" />
+        <!-- TellingScherm -->
+        <activity
+            android:name=".features.telling.TellingScherm"
+            android:exported="false"
+            android:windowSoftInputMode="stateHidden|adjustResize" />
+
     </application>
 </manifest>
