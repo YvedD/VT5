@@ -3,6 +3,12 @@ package com.yvesds.vt5
 import android.app.Application
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
+import com.yvesds.vt5.features.serverdata.model.ServerDataCache
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
@@ -13,15 +19,38 @@ import java.util.concurrent.TimeUnit
  * - Houdt een veilige Application.instance bij
  * - Biedt centrale Json/OkHttp singletons
  * - Biedt nextTellingId() (als String), oplopend en persistent via SharedPreferences
+ * - Proactieve data preloading voor betere app performance
  *
- * Let op: geen zware I/O of DocumentFile calls in onCreate(), om opstart traagheid te vermijden.
+ * Note: Zware dataverwerking gebeurt in een background scope, onzichtbaar voor de gebruiker.
  */
 class VT5App : Application() {
+    // Speciale scope die blijft bestaan gedurende de hele app-lifecycle
+    private val appScope = CoroutineScope(Job() + Dispatchers.IO)
+    private val TAG = "VT5App"
 
     override fun onCreate() {
         super.onCreate()
         instance = this
-        // Geen zware preloads hier – bewust licht houden voor snellere app-start.
+        Log.d(TAG, "VT5App onCreate - initiating background data preload")
+
+        // Preload data in de achtergrond - verhoogt app responsiviteit
+        preloadDataAsync()
+    }
+
+    /**
+     * Start een achtergrond taak om server data te preloaden
+     * Dit maakt scherm-transities sneller wanneer de data nodig is
+     */
+    private fun preloadDataAsync() {
+        appScope.launch {
+            try {
+                Log.d(TAG, "Starting background data preload - coroutine active")
+                ServerDataCache.preload(applicationContext)
+                Log.d(TAG, "Background data preload complete")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during data preloading: ${e.message}", e)
+            }
+        }
     }
 
     companion object {

@@ -3,9 +3,11 @@
 package com.yvesds.vt5.features.serverdata.model
 
 import android.content.Context
+import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
@@ -18,38 +20,155 @@ import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.zip.CRC32
 import java.util.zip.GZIPInputStream
 
+/**
+ * Optimized ServerDataRepository:
+ * - Parallel loading of data files for faster startup
+ * - Memory efficient decoding with reused buffers
+ * - Selective data loading for specific use cases
+ * - Efficient caching of file metadata
+ */
 class ServerDataRepository(
     private val context: Context,
     private val json: Json = defaultJson,
     private val cbor: Cbor = defaultCbor
 ) {
+    companion object {
+        private const val TAG = "ServerDataRepo"
+
+        val defaultJson = Json { ignoreUnknownKeys = true; explicitNulls = false }
+        val defaultCbor = Cbor { ignoreUnknownKeys = true }
+
+        // Cache for file existence to avoid repeated directory scanning
+        private val fileExistenceCache = ConcurrentHashMap<String, Boolean>()
+    }
 
     private val snapshotState = MutableStateFlow(DataSnapshot())
     val snapshot: StateFlow<DataSnapshot> = snapshotState
 
-    /** Volledige load – blijft beschikbaar. */
-    suspend fun loadAllFromSaf(): DataSnapshot = withContext(Dispatchers.IO) {
+    // File type quick lookup cache
+    private val fileTypeCache = ConcurrentHashMap<String, Boolean>() // true = .bin, false = .json
+
+    /**
+     * Checks if required data files exist without loading them
+     * Used to quickly determine if app is ready to run
+     */
+    suspend fun hasRequiredFiles(): Boolean = withContext(Dispatchers.IO) {
+        val saf = SaFStorageHelper(context)
+        val vt5Root = saf.getVt5DirIfExists() ?: return@withContext false
+        val serverdata = vt5Root.findChildByName("serverdata")?.takeIf { it.isDirectory }
+            ?: return@withContext false
+
+        // Cache result for each file to avoid repeated scans
+        val cacheKey = "${vt5Root.uri}_hasRequiredFiles"
+        fileExistenceCache[cacheKey]?.let {
+            return@withContext it
+        }
+
+        // Check for essential files (sites and codes)
+        val hasSites = serverdata.findChildByName("sites.bin") != null || serverdata.findChildByName("sites.json") != null
+        val hasCodes = serverdata.findChildByName("codes.bin") != null || serverdata.findChildByName("codes.json") != null
+        val hasSpecies = serverdata.findChildByName("species.bin") != null || serverdata.findChildByName("species.json") != null
+
+        val result = hasSites && hasCodes && hasSpecies
+        fileExistenceCache[cacheKey] = result
+
+        return@withContext result
+    }
+
+    /**
+     * Clear any cached file information
+     */
+    fun clearFileCache() {
+        fileExistenceCache.clear()
+        fileTypeCache.clear()
+    }
+
+    /**
+     * Load only minimal data required for startup
+     * - Optimized for faster initial rendering
+     */
+    suspend fun loadMinimalData(): DataSnapshot = withContext(Dispatchers.IO) {
         val saf = SaFStorageHelper(context)
         val vt5Root = saf.getVt5DirIfExists() ?: return@withContext DataSnapshot()
         val serverdata = vt5Root.findChildByName("serverdata")?.takeIf { it.isDirectory }
             ?: return@withContext DataSnapshot()
 
-        val userObj = readOne<CheckUserItem>(serverdata, "checkuser", VT5Bin.Kind.CHECK_USER)
+        // Load sites and codes in parallel for faster loading
+        val sitesDef = async { readList<SiteItem>(serverdata, "sites", VT5Bin.Kind.SITES) }
+        val codesDef = async { runCatching {
+            readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES)
+        }.getOrElse { emptyList() } }
 
-        val speciesList = readList<SpeciesItem>(serverdata, "species", VT5Bin.Kind.SPECIES)
-        val protocolInfo = readList<ProtocolInfoItem>(serverdata, "protocolinfo", VT5Bin.Kind.PROTOCOL_INFO)
-        val protocolSpecies = readList<ProtocolSpeciesItem>(serverdata, "protocolspecies", VT5Bin.Kind.PROTOCOL_SPECIES)
-        val sites = readList<SiteItem>(serverdata, "sites", VT5Bin.Kind.SITES)
-        val siteLocations = readList<SiteValueItem>(serverdata, "site_locations", VT5Bin.Kind.SITE_LOCATIONS)
-        val siteHeights = readList<SiteValueItem>(serverdata, "site_heights", VT5Bin.Kind.SITE_HEIGHTS)
-        val siteSpecies = readList<SiteSpeciesItem>(serverdata, "site_species", VT5Bin.Kind.SITE_SPECIES)
-        val codes = runCatching { readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES) }.getOrElse { emptyList() }
+        // Await results
+        val sites = sitesDef.await()
+        val codes = codesDef.await()
 
+        // Process data
+        val sitesById = sites.associateBy { it.telpostid }
+        val codesByCategory = codes
+            .filter { it.category != null }
+            .groupBy { it.category!! }
+
+        // Create minimal snapshot
+        val snap = DataSnapshot(
+            sitesById = sitesById,
+            codesByCategory = codesByCategory
+        )
+
+        // Don't update the state flow with partial data
+        return@withContext snap
+    }
+
+    /** Full data load with parallel processing for better performance */
+    suspend fun loadAllFromSaf(): DataSnapshot = withContext(Dispatchers.IO) {
+        val startTime = System.currentTimeMillis()
+
+        val saf = SaFStorageHelper(context)
+        val vt5Root = saf.getVt5DirIfExists() ?: return@withContext DataSnapshot()
+        val serverdata = vt5Root.findChildByName("serverdata")?.takeIf { it.isDirectory }
+            ?: return@withContext DataSnapshot()
+
+        // First, check if we have files
+        if (!hasRequiredFiles()) {
+            Log.w(TAG, "Missing required data files")
+            return@withContext DataSnapshot()
+        }
+
+        // Load all files in parallel for better performance
+        val userObjDef = async { readOne<CheckUserItem>(serverdata, "checkuser", VT5Bin.Kind.CHECK_USER) }
+        val speciesListDef = async { readList<SpeciesItem>(serverdata, "species", VT5Bin.Kind.SPECIES) }
+        val protocolInfoDef = async { readList<ProtocolInfoItem>(serverdata, "protocolinfo", VT5Bin.Kind.PROTOCOL_INFO) }
+        val protocolSpeciesDef = async { readList<ProtocolSpeciesItem>(serverdata, "protocolspecies", VT5Bin.Kind.PROTOCOL_SPECIES) }
+        val sitesDef = async { readList<SiteItem>(serverdata, "sites", VT5Bin.Kind.SITES) }
+        val siteLocationsDef = async { readList<SiteValueItem>(serverdata, "site_locations", VT5Bin.Kind.SITE_LOCATIONS) }
+        val siteHeightsDef = async { readList<SiteValueItem>(serverdata, "site_heights", VT5Bin.Kind.SITE_HEIGHTS) }
+        val siteSpeciesDef = async { readList<SiteSpeciesItem>(serverdata, "site_species", VT5Bin.Kind.SITE_SPECIES) }
+        val codesDef = async { runCatching { readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES) }.getOrElse { emptyList() } }
+
+        // Await all results
+        val userObj = userObjDef.await()
+        val speciesList = speciesListDef.await()
+        val protocolInfo = protocolInfoDef.await()
+        val protocolSpecies = protocolSpeciesDef.await()
+        val sites = sitesDef.await()
+        val siteLocations = siteLocationsDef.await()
+        val siteHeights = siteHeightsDef.await()
+        val siteSpecies = siteSpeciesDef.await()
+        val codes = codesDef.await()
+
+        // Process data into maps efficiently
         val speciesById = speciesList.associateBy { it.soortid }
-        val speciesByCanonical = speciesList.associate { sp -> normalizeCanonical(sp.soortnaam) to sp.soortid }
+
+        // Build canonical map only when needed and avoid multiple iterations
+        val canonicalBuilder = HashMap<String, String>(speciesById.size)
+        speciesList.forEach { sp ->
+            canonicalBuilder[normalizeCanonical(sp.soortnaam)] = sp.soortid
+        }
+        val speciesByCanonical = canonicalBuilder
 
         val sitesById = sites.associateBy { it.telpostid }
         val siteLocationsBySite = siteLocations.groupBy { it.telpostid }
@@ -61,6 +180,7 @@ class ServerDataRepository(
             .filter { it.category != null }
             .groupBy { it.category!! }
 
+        // Create full snapshot
         val snap = DataSnapshot(
             currentUser = userObj,
             speciesById = speciesById,
@@ -75,11 +195,15 @@ class ServerDataRepository(
             codesByCategory = codesByCategory
         )
 
+        val elapsed = System.currentTimeMillis() - startTime
+        Log.d(TAG, "Loaded all data in ${elapsed}ms - ${speciesById.size} species, ${sitesById.size} sites")
+
+        // Update state flow and return
         snapshotState.value = snap
         snap
     }
 
-    /** Snelle helper: enkel sites.json/bin laden en als map teruggeven. */
+    /** Load only site data - optimized with caching */
     suspend fun loadSitesOnly(): Map<String, SiteItem> = withContext(Dispatchers.IO) {
         val saf = SaFStorageHelper(context)
         val vt5Root = saf.getVt5DirIfExists() ?: return@withContext emptyMap()
@@ -88,11 +212,23 @@ class ServerDataRepository(
         sites.associateBy { it.telpostid }
     }
 
-    /** Snelle helper: codes per veldnaam (category) laden en sorteren op sortering/tekst. */
+    /** Load only codes for a specific field - optimized with caching */
     suspend fun loadCodesFor(field: String): List<CodeItem> = withContext(Dispatchers.IO) {
         val saf = SaFStorageHelper(context)
         val vt5Root = saf.getVt5DirIfExists() ?: return@withContext emptyList()
         val serverdata = vt5Root.findChildByName("serverdata")?.takeIf { it.isDirectory } ?: return@withContext emptyList()
+
+        // Reuse previously loaded codes if possible
+        val cachedCodes = snapshotState.value.codesByCategory[field]
+        if (!cachedCodes.isNullOrEmpty()) {
+            return@withContext cachedCodes.sortedWith(
+                compareBy(
+                    { it.sortering?.toIntOrNull() ?: Int.MAX_VALUE },
+                    { it.tekst?.lowercase(Locale.getDefault()) ?: "" }
+                )
+            )
+        }
+
         val codes = runCatching { readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES) }.getOrElse { emptyList() }
         codes
             .filter { it.category == field }
@@ -104,7 +240,7 @@ class ServerDataRepository(
             )
     }
 
-    /* ============ Binaries-first readers (SAF) ============ */
+    /* ============ Binaries-first readers (SAF) with optimizations ============ */
 
     private sealed class Decoded<out T> {
         data class AsList<T>(val list: List<T>) : Decoded<T>()
@@ -112,9 +248,57 @@ class ServerDataRepository(
         data class AsSingle<T>(val value: T) : Decoded<T>()
     }
 
+    // Shared buffer for better memory usage
+    private val headerBuffer = ByteArray(VT5Bin.HEADER_SIZE)
+
     private inline fun <reified T> readList(dir: DocumentFile, baseName: String, expectedKind: UShort): List<T> {
+        // Check cache for file type preference (.bin vs .json)
+        val cacheKey = "${dir.uri}_$baseName"
+        fileTypeCache[cacheKey]?.let { isBin ->
+            if (isBin) {
+                dir.findChildByName("$baseName.bin")?.let { bin ->
+                    vt5ReadDecoded<T>(bin, expectedKind)?.let { decoded ->
+                        return when (decoded) {
+                            is Decoded.AsList<T> -> decoded.list
+                            is Decoded.AsWrapped<T> -> decoded.wrapped.json
+                            is Decoded.AsSingle<T> -> listOf(decoded.value)
+                        }
+                    }
+                }
+            } else {
+                dir.findChildByName("$baseName.json")?.let { jf ->
+                    context.contentResolver.openInputStream(jf.uri)?.use { input ->
+                        val text = input.readBytes().decodeToString()
+                        runCatching {
+                            json.decodeFromString(
+                                WrappedJson.serializer(json.serializersModule.serializer<T>()),
+                                text
+                            ).json
+                        }.getOrElse {
+                            runCatching {
+                                json.decodeFromString(
+                                    json.serializersModule.serializer<List<T>>(),
+                                    text
+                                )
+                            }.getOrElse {
+                                listOf(
+                                    json.decodeFromString(
+                                        json.serializersModule.serializer<T>(),
+                                        text
+                                    )
+                                )
+                            }
+                        }.let { return it }
+                    }
+                }
+            }
+        }
+
+        // Try .bin first (faster binary format)
         dir.findChildByName("$baseName.bin")?.let { bin ->
             vt5ReadDecoded<T>(bin, expectedKind)?.let { decoded ->
+                // Cache that this file exists as binary
+                fileTypeCache[cacheKey] = true
                 return when (decoded) {
                     is Decoded.AsList<T> -> decoded.list
                     is Decoded.AsWrapped<T> -> decoded.wrapped.json
@@ -122,7 +306,11 @@ class ServerDataRepository(
                 }
             }
         }
+
+        // Fall back to .json
         dir.findChildByName("$baseName.json")?.let { jf ->
+            // Cache that this file exists as JSON
+            fileTypeCache[cacheKey] = false
             context.contentResolver.openInputStream(jf.uri)?.use { input ->
                 val text = input.readBytes().decodeToString()
                 runCatching {
@@ -151,8 +339,44 @@ class ServerDataRepository(
     }
 
     private inline fun <reified T> readOne(dir: DocumentFile, baseName: String, expectedKind: UShort): T? {
+        // Similar optimization as readList, with caching of file type preference
+        val cacheKey = "${dir.uri}_$baseName"
+        fileTypeCache[cacheKey]?.let { isBin ->
+            if (isBin) {
+                dir.findChildByName("$baseName.bin")?.let { bin ->
+                    vt5ReadDecoded<T>(bin, expectedKind)?.let { decoded ->
+                        return when (decoded) {
+                            is Decoded.AsWrapped<T> -> decoded.wrapped.json.firstOrNull()
+                            is Decoded.AsList<T> -> decoded.list.firstOrNull()
+                            is Decoded.AsSingle<T> -> decoded.value
+                        }
+                    }
+                }
+            } else {
+                dir.findChildByName("$baseName.json")?.let { jf ->
+                    context.contentResolver.openInputStream(jf.uri)?.use { input ->
+                        val text = input.readBytes().decodeToString()
+                        return runCatching {
+                            json.decodeFromString(
+                                WrappedJson.serializer(json.serializersModule.serializer<T>()),
+                                text
+                            ).json.firstOrNull()
+                        }.getOrElse {
+                            json.decodeFromString(
+                                json.serializersModule.serializer<T>(),
+                                text
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Try .bin first
         dir.findChildByName("$baseName.bin")?.let { bin ->
             vt5ReadDecoded<T>(bin, expectedKind)?.let { decoded ->
+                // Cache that this file exists as binary
+                fileTypeCache[cacheKey] = true
                 return when (decoded) {
                     is Decoded.AsWrapped<T> -> decoded.wrapped.json.firstOrNull()
                     is Decoded.AsList<T> -> decoded.list.firstOrNull()
@@ -160,7 +384,11 @@ class ServerDataRepository(
                 }
             }
         }
+
+        // Fall back to .json
         dir.findChildByName("$baseName.json")?.let { jf ->
+            // Cache that this file exists as JSON
+            fileTypeCache[cacheKey] = false
             context.contentResolver.openInputStream(jf.uri)?.use { input ->
                 val text = input.readBytes().decodeToString()
                 return runCatching {
@@ -183,77 +411,80 @@ class ServerDataRepository(
         val cr = context.contentResolver
         cr.openInputStream(binFile.uri)?.use { raw ->
             val bis = BufferedInputStream(raw)
-            val headerBytes = ByteArray(VT5Bin.HEADER_SIZE)
-            if (bis.read(headerBytes) != VT5Bin.HEADER_SIZE) return null
 
-            val hdr = VT5Header.fromBytes(headerBytes) ?: return null
-            if (!hdr.magic.contentEquals(VT5Bin.MAGIC)) return null
-            if (hdr.headerVersion.toInt() < VT5Bin.HEADER_VERSION.toInt()) return null
-            if (hdr.datasetKind != expectedKind) return null
-            if (hdr.codec != VT5Bin.Codec.JSON && hdr.codec != VT5Bin.Codec.CBOR) return null
-            if (hdr.compression != VT5Bin.Compression.NONE && hdr.compression != VT5Bin.Compression.GZIP) return null
+            // Use shared buffer
+            synchronized(headerBuffer) {
+                if (bis.read(headerBuffer) != VT5Bin.HEADER_SIZE) return null
 
-            val pl = hdr.payloadLen.toLong()
-            if (pl < 0) return null
-            val payload = ByteArray(pl.toInt())
-            val read = bis.readNBytesCompat(payload)
-            if (read != pl.toInt()) return null
+                val hdr = VT5Header.fromBytes(headerBuffer) ?: return null
+                if (!hdr.magic.contentEquals(VT5Bin.MAGIC)) return null
+                if (hdr.headerVersion.toInt() < VT5Bin.HEADER_VERSION.toInt()) return null
+                if (hdr.datasetKind != expectedKind) return null
+                if (hdr.codec != VT5Bin.Codec.JSON && hdr.codec != VT5Bin.Codec.CBOR) return null
+                if (hdr.compression != VT5Bin.Compression.NONE && hdr.compression != VT5Bin.Compression.GZIP) return null
 
-            val dataBytes = when (hdr.compression) {
-                VT5Bin.Compression.GZIP -> GZIPInputStream(ByteArrayInputStream(payload)).use { it.readAllBytesCompat() }
-                VT5Bin.Compression.NONE -> payload
-                else -> return null
-            }
+                val pl = hdr.payloadLen.toLong()
+                if (pl < 0) return null
+                val payload = ByteArray(pl.toInt())
+                val read = bis.readNBytesCompat(payload)
+                if (read != pl.toInt()) return null
 
-            return when (hdr.codec) {
-                VT5Bin.Codec.CBOR -> {
-                    runCatching {
-                        val w = cbor.decodeFromByteArray(
-                            WrappedJson.serializer(cbor.serializersModule.serializer<T>()),
-                            dataBytes
-                        )
-                        Decoded.AsWrapped(w)
-                    }.getOrElse {
+                val dataBytes = when (hdr.compression) {
+                    VT5Bin.Compression.GZIP -> GZIPInputStream(ByteArrayInputStream(payload)).use { it.readAllBytesCompat() }
+                    VT5Bin.Compression.NONE -> payload
+                    else -> return null
+                }
+
+                return when (hdr.codec) {
+                    VT5Bin.Codec.CBOR -> {
                         runCatching {
-                            val l = cbor.decodeFromByteArray(
-                                cbor.serializersModule.serializer<List<T>>(),
+                            val w = cbor.decodeFromByteArray(
+                                WrappedJson.serializer(cbor.serializersModule.serializer<T>()),
                                 dataBytes
                             )
-                            Decoded.AsList(l)
+                            Decoded.AsWrapped(w)
                         }.getOrElse {
-                            val t = cbor.decodeFromByteArray(
-                                cbor.serializersModule.serializer<T>(),
-                                dataBytes
-                            )
-                            Decoded.AsSingle(t)
+                            runCatching {
+                                val l = cbor.decodeFromByteArray(
+                                    cbor.serializersModule.serializer<List<T>>(),
+                                    dataBytes
+                                )
+                                Decoded.AsList(l)
+                            }.getOrElse {
+                                val t = cbor.decodeFromByteArray(
+                                    cbor.serializersModule.serializer<T>(),
+                                    dataBytes
+                                )
+                                Decoded.AsSingle(t)
+                            }
                         }
                     }
-                }
-                VT5Bin.Codec.JSON -> {
-                    val text = dataBytes.decodeToString()
-                    runCatching {
-                        val w = json.decodeFromString(
-                            WrappedJson.serializer(json.serializersModule.serializer<T>()),
-                            text
-                        )
-                        Decoded.AsWrapped(w)
-                    }.getOrElse {
+                    VT5Bin.Codec.JSON -> {
+                        val text = dataBytes.decodeToString()
                         runCatching {
-                            val l = json.decodeFromString(
-                                json.serializersModule.serializer<List<T>>(),
+                            val w = json.decodeFromString(
+                                WrappedJson.serializer(json.serializersModule.serializer<T>()),
                                 text
                             )
-                            Decoded.AsList(l)
+                            Decoded.AsWrapped(w)
                         }.getOrElse {
-                            val t = json.decodeFromString(
-                                json.serializersModule.serializer<T>(),
-                                text
-                            )
-                            Decoded.AsSingle(t)
+                            runCatching {
+                                val l = json.decodeFromString(
+                                    json.serializersModule.serializer<List<T>>(),
+                                    text
+                                )
+                                Decoded.AsList(l)
+                            }.getOrElse {
+                                val t = json.decodeFromString(
+                                    json.serializersModule.serializer<T>(),
+                                    text
+                                )
+                                Decoded.AsSingle(t)
+                            }
                         }
                     }
+                    else -> null
                 }
-                else -> null
             }
         }
         return null
@@ -300,11 +531,6 @@ class ServerDataRepository(
             for (i in 0 until n) out.add(tmp[i])
         }
         return ByteArray(out.size) { idx -> out[idx] }
-    }
-
-    companion object {
-        val defaultJson = Json { ignoreUnknownKeys = true; explicitNulls = false }
-        val defaultCbor = Cbor { ignoreUnknownKeys = true }
     }
 }
 

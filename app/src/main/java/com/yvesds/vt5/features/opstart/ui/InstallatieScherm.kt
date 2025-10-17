@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -13,9 +14,11 @@ import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.core.secure.CredentialsStore
 import com.yvesds.vt5.databinding.SchermInstallatieBinding
 import com.yvesds.vt5.features.alias.AliasIndexWriter
+import com.yvesds.vt5.features.metadata.ui.MetadataScherm
 import com.yvesds.vt5.features.opstart.usecases.ServerJsonDownloader
 import com.yvesds.vt5.features.opstart.usecases.TrektellenAuth
 import com.yvesds.vt5.features.serverdata.model.ServerDataCache
+import com.yvesds.vt5.core.ui.ProgressDialogHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,15 +32,23 @@ import kotlinx.coroutines.withContext
  * - Login testen (Basic Auth) -> popup + checkuser.json wegschrijven
  * - Serverdata downloaden (.json + .bin)
  * - Aliassen pré-computen (assets -> binaries)
- * Alles off-main.
+ *
+ * Prestatie-optimalisaties:
+ * - Preloading van data voor snellere schermovergangen
+ * - Parallelle verwerking waar mogelijk
+ * - Vermijden van blokkerende I/O op de main thread
  */
 class InstallatieScherm : AppCompatActivity() {
+    companion object {
+        private const val TAG = "InstallatieScherm"
+    }
 
     private lateinit var binding: SchermInstallatieBinding
     private lateinit var saf: SaFStorageHelper
     private lateinit var creds: CredentialsStore
 
     private val uiScope = CoroutineScope(Job() + Dispatchers.Main)
+    private var dataPreloaded = false
 
     private val treePicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
         if (uri == null) {
@@ -48,6 +59,8 @@ class InstallatieScherm : AppCompatActivity() {
         saf.saveRootUri(uri)
         val ok = saf.foldersExist() || saf.ensureFolders()
         binding.tvStatus.text = if (ok) {
+            // Als mappen OK zijn, preload data om latere overgangen sneller te maken
+            preloadDataIfExists()
             getString(com.yvesds.vt5.R.string.status_saf_ok)
         } else {
             getString(com.yvesds.vt5.R.string.status_saf_missing)
@@ -64,12 +77,40 @@ class InstallatieScherm : AppCompatActivity() {
 
         initUi()
         wireClicks()
+
+        // Check of data al kan worden voorgeladen
+        if (saf.foldersExist()) {
+            preloadDataIfExists()
+        }
+    }
+
+    /**
+     * Preload data in de achtergrond om schermovergang naar MetadataScherm te versnellen
+     */
+    private fun preloadDataIfExists() {
+        if (dataPreloaded) return
+
+        uiScope.launch {
+            try {
+                Log.d(TAG, "Preloading data in background")
+                withContext(Dispatchers.IO) {
+                    ServerDataCache.preload(applicationContext)
+                }
+                dataPreloaded = true
+                Log.d(TAG, "Data preloading complete")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during data preloading: ${e.message}")
+            }
+        }
     }
 
     private fun initUi() {
         binding.etUitleg.setText(getString(com.yvesds.vt5.R.string.install_uitleg))
         restoreCreds()
         refreshSafStatus()
+
+        // Voorkom dat de UI "springt" door de views al direct hun juiste grootte te geven
+        binding.etUitleg.measure(0, 0)
     }
 
     private fun wireClicks() = with(binding) {
@@ -78,6 +119,7 @@ class InstallatieScherm : AppCompatActivity() {
         btnCheckFolders.setOnClickListener {
             val ok = saf.foldersExist() || saf.ensureFolders()
             tvStatus.text = if (ok) {
+                preloadDataIfExists()
                 getString(com.yvesds.vt5.R.string.status_saf_ok)
             } else {
                 getString(com.yvesds.vt5.R.string.status_saf_missing)
@@ -121,8 +163,45 @@ class InstallatieScherm : AppCompatActivity() {
         btnAliasPrecompute.setOnClickListener { doAliasPrecompute() }
 
         btnKlaar.setOnClickListener {
-            setResult(Activity.RESULT_OK, Intent())
-            finish()
+            // Navigeer direct naar MetadataScherm in plaats van terug te gaan
+            navigateToMetadata()
+        }
+    }
+
+    /**
+     * Navigeer naar MetadataScherm met voorgeladen data
+     * Dit verbetert de app flow door een directe overgang mogelijk te maken
+     */
+    private fun navigateToMetadata() {
+        val intent = Intent(this, MetadataScherm::class.java)
+
+        // Accelerate the transition
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+
+        uiScope.launch {
+            try {
+                // Ensure data is loaded before navigation
+                if (!dataPreloaded) {
+                    // Show progress while loading
+                    val dlg = progressDialog(
+                        title = getString(com.yvesds.vt5.R.string.dlg_busy_titel),
+                        msg = "Gegevens laden..."
+                    )
+                    dlg.show()
+
+                    withContext(Dispatchers.IO) {
+                        ServerDataCache.getOrLoad(applicationContext)
+                    }
+
+                    dlg.dismiss()
+                }
+
+                startActivity(intent)
+                finish() // Remove this activity from the back stack
+            } catch (e: Exception) {
+                Toast.makeText(this@InstallatieScherm, "Fout bij laden data: ${e.message}", Toast.LENGTH_SHORT).show()
+                Log.e(TAG, "Error navigating to MetadataScherm", e)
+            }
         }
     }
 
@@ -144,11 +223,9 @@ class InstallatieScherm : AppCompatActivity() {
     }
 
     private fun doLoginTestAndPersist(username: String, password: String) {
-        val dlg = progressDialog(
-            title = getString(com.yvesds.vt5.R.string.dlg_busy_titel),
-            msg = "Login testen…"
-        )
-        dlg.show()
+        // Gebruik de ProgressDialogHelper in plaats van een aangepaste dialog
+        val dlg = ProgressDialogHelper.show(this, "Login testen...")
+
         uiScope.launch {
             val res = withContext(Dispatchers.IO) {
                 TrektellenAuth.checkUser(
@@ -167,7 +244,6 @@ class InstallatieScherm : AppCompatActivity() {
             }
         }
     }
-
     private fun doDownloadServerData(username: String, password: String) {
         val vt5Dir: DocumentFile? = saf.getVt5DirIfExists()
         if (vt5Dir == null) {
@@ -177,11 +253,9 @@ class InstallatieScherm : AppCompatActivity() {
         val serverdata = vt5Dir.findFile("serverdata")?.takeIf { it.isDirectory } ?: vt5Dir.createDirectory("serverdata")
         val binaries = vt5Dir.findFile("binaries")?.takeIf { it.isDirectory } ?: vt5Dir.createDirectory("binaries")
 
-        val dlg = progressDialog(
-            title = getString(com.yvesds.vt5.R.string.dlg_busy_titel),
-            msg = "JSONs downloaden…"
-        )
-        dlg.show()
+        // Gebruik de ProgressDialogHelper
+        val dlg = ProgressDialogHelper.show(this, "JSONs downloaden...")
+
         uiScope.launch {
             val msgs = withContext(Dispatchers.IO) {
                 ServerJsonDownloader.downloadAll(
@@ -196,7 +270,11 @@ class InstallatieScherm : AppCompatActivity() {
             }
 
             // Belangrijk: in-memory cache ongeldig maken zodat nieuwe data direct gebruikt wordt
-            com.yvesds.vt5.features.serverdata.model.ServerDataCache.invalidate()
+            ServerDataCache.invalidate()
+            dataPreloaded = false
+
+            // Direct na een download alvast in de achtergrond de data voorladen
+            preloadDataIfExists()
 
             dlg.dismiss()
             showInfoDialog(getString(com.yvesds.vt5.R.string.dlg_titel_result), msgs.joinToString("\n"))
@@ -204,11 +282,9 @@ class InstallatieScherm : AppCompatActivity() {
     }
 
     private fun doAliasPrecompute() {
-        val dlg = progressDialog(
-            title = getString(com.yvesds.vt5.R.string.dlg_busy_titel),
-            msg = "Pré-computen van aliassen…"
-        )
-        dlg.show()
+        // Gebruik de ProgressDialogHelper
+        val dlg = ProgressDialogHelper.show(this, "Pré-computen van aliassen...")
+
         uiScope.launch {
             val msg = withContext(Dispatchers.Default) {
                 runCatching {
@@ -232,7 +308,6 @@ class InstallatieScherm : AppCompatActivity() {
             showInfoDialog(getString(com.yvesds.vt5.R.string.dlg_titel_result), msg)
         }
     }
-
     /* -------------------- Helpers -------------------- */
 
     private fun saveCheckUserJson(prettyText: String) {
