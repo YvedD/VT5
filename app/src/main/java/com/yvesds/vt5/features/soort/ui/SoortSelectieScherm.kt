@@ -74,14 +74,15 @@ class SoortSelectieScherm : AppCompatActivity() {
 
         telpostId = intent.getStringExtra(EXTRA_TELPOST_ID)
 
+        // Begin met een lege selectie in plaats van alle preselecties toe te voegen
         selectedIds.clear()
-        selectedIds += TellingSessionManager.preselectState.value.selectedSoortIds
+        // Verwijder of commentarieer deze regel uit:
+        // selectedIds += TellingSessionManager.preselectState.value.selectedSoortIds
 
         setupAdapters()
         setupListeners()
         loadData()
     }
-
     private fun setupAdapters() {
         // GRID: sectioned (recents header + items)
         gridAdapter = SoortSelectieSectionedAdapter(

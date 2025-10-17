@@ -22,6 +22,8 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.yvesds.vt5.core.opslag.SaFStorageHelper
+import com.yvesds.vt5.core.ui.ProgressDialogHelper
 import com.yvesds.vt5.databinding.SchermMetadataBinding
 import com.yvesds.vt5.features.opstart.usecases.TrektellenAuth
 import com.yvesds.vt5.features.serverdata.model.CodeItem
@@ -29,27 +31,16 @@ import com.yvesds.vt5.features.serverdata.model.DataSnapshot
 import com.yvesds.vt5.features.serverdata.model.ServerDataCache
 import com.yvesds.vt5.features.serverdata.model.ServerDataRepository
 import com.yvesds.vt5.features.soort.ui.SoortSelectieScherm
-import com.yvesds.vt5.features.telling.TellingSessionManager
-import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.features.telling.TellingScherm
-import com.yvesds.vt5.net.StartTellingApi
-import com.yvesds.vt5.net.TrektellenApi
+import com.yvesds.vt5.features.telling.TellingSessionManager
 import com.yvesds.vt5.utils.weather.WeatherManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -85,21 +76,6 @@ class MetadataScherm : AppCompatActivity() {
 
     // Startmoment van de header (epoch sec)
     private var startEpochSec: Long = System.currentTimeMillis() / 1000L
-
-    // JSON parser voor respons parsing
-    private val jsonSloppy: Json by lazy { Json { ignoreUnknownKeys = true; isLenient = true } }
-
-    // Launcher voor SoortSelectieScherm (multi-select)
-    private val selectSoortenLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { res ->
-        if (res.resultCode == Activity.RESULT_OK) {
-            val ids = res.data?.getStringArrayListExtra(SoortSelectieScherm.EXTRA_SELECTED_SOORT_IDS).orEmpty()
-            gekozenTelpostId?.let { TellingSessionManager.setTelpost(it) }
-            TellingSessionManager.setPreselectedSoorten(ids)
-            startActivity(Intent(this, TellingScherm::class.java))
-        }
-    }
 
     private val requestLocationPerms = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -153,31 +129,20 @@ class MetadataScherm : AppCompatActivity() {
                     return@launch
                 }
 
-                // We hebben geen volledige cache, laad alleen de codes
-                val repo = ServerDataRepository(this@MetadataScherm)
+                // Toon de progress dialog
+                ProgressDialogHelper.withProgress(this@MetadataScherm, "Bezig met laden van gegevens...") {
+                    // Laad de minimale data
+                    val repo = ServerDataRepository(this@MetadataScherm)
+                    val minimal = repo.loadMinimalData()
+                    snapshot = minimal
 
-                // Parallel laden van code categorieën
-                val windCodesDef = async(Dispatchers.IO) { repo.loadCodesFor("wind") }
-                val rainCodesDef = async(Dispatchers.IO) { repo.loadCodesFor("neerslag") }
-                val typeCodesDef = async(Dispatchers.IO) { repo.loadCodesFor("typetelling_trek") }
-                val sitesDefMin = async(Dispatchers.IO) { repo.loadSitesOnly() }
+                    withContext(Dispatchers.Main) {
+                        initializeDropdowns()
+                    }
 
-                // Update snapshot met minimale gegevens
-                snapshot = snapshot.copy(
-                    sitesById = sitesDefMin.await(),
-                    codesByCategory = mapOf(
-                        "wind" to windCodesDef.await(),
-                        "neerslag" to rainCodesDef.await(),
-                        "typetelling_trek" to typeCodesDef.await()
-                    )
-                )
-
-                // Vul de dropdowns direct na het laden van de minimale data
-                initializeDropdowns()
-
-                // Plan het laden van de volledige data in de achtergrond
-                scheduleBackgroundLoading()
-
+                    // Start het laden van de volledige data in de achtergrond
+                    scheduleBackgroundLoading()
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading essential data: ${e.message}")
                 Toast.makeText(this@MetadataScherm, "Fout bij laden essentiële gegevens", Toast.LENGTH_SHORT).show()
@@ -530,161 +495,53 @@ class MetadataScherm : AppCompatActivity() {
             .show()
     }
 
+    // Launcher voor SoortSelectieScherm (multi-select)
+    private val soortSelectieLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { res ->
+        if (res.resultCode == Activity.RESULT_OK) {
+            val ids = res.data?.getStringArrayListExtra(SoortSelectieScherm.EXTRA_SELECTED_SOORT_IDS).orEmpty()
+            gekozenTelpostId?.let { TellingSessionManager.setTelpost(it) }
+            TellingSessionManager.setPreselectedSoorten(ids)
+            startActivity(Intent(this, TellingScherm::class.java))
+        }
+    }
+
     private fun startTellingAndOpenSoortSelectie(liveMode: Boolean, username: String, password: String) {
         val telpostId = gekozenTelpostId ?: return
 
-        // Toon alleen een ProgressDialog voor de API call
-        val windrichtingCode  = gekozenWindrichtingCode   // code, niet label
-        val windkrachtOnly    = gekozenWindkracht
-        val temperatuurC      = binding.etTemperatuur.text?.toString()
-        val bewolkingOnly     = gekozenBewolking
-        val neerslagCode      = gekozenNeerslagCode
-        val zichtMeters       = binding.etZicht.text?.toString()
-        val typetellingCode   = gekozenTypeTellingCode
-        val telers            = binding.etTellers.text?.toString()
-        val weerOpmerking     = binding.etWeerOpmerking.text?.toString()
-        val opmerkingen       = binding.etOpmerkingen.text?.toString()
-        val luchtdrukRaw      = binding.etLuchtdruk.text?.toString()
-
-        val tellingId = com.yvesds.vt5.VT5App.nextTellingId().toLong()
-        val eindEpochSec = System.currentTimeMillis() / 1000L
-
-        val envelope = StartTellingApi.buildEnvelopeFromUi(
-            tellingId = tellingId,
-            telpostId = telpostId,
-            begintijdEpochSec = startEpochSec,
-            eindtijdEpochSec = eindEpochSec,
-            windrichtingLabel = windrichtingCode,
-            windkrachtBftOnly = windkrachtOnly,
-            temperatuurC = temperatuurC,
-            bewolkingAchtstenOnly = bewolkingOnly,
-            neerslagCode = neerslagCode,
-            zichtMeters = zichtMeters,
-            typetellingCode = typetellingCode,
-            telers = telers,
-            weerOpmerking = weerOpmerking,
-            opmerkingen = opmerkingen,
-            luchtdrukHpaRaw = luchtdrukRaw,
-            liveMode = liveMode               // bepaalt nu eindtijd ("") bij live
-        )
-
-        // Toon compact progress dialog alleen tijdens netwerk operatie
         uiScope.launch {
-            val dialog = AlertDialog.Builder(this@MetadataScherm)
-                .setMessage("Telling starten...")
-                .setCancelable(false)
-                .create()
-            dialog.show()
-
             try {
-                // Start API call en preloading parallel
-                val apiJob = async(Dispatchers.IO) {
-                    TrektellenApi.postCountsSave(
-                        baseUrl = "https://trektellen.nl",
-                        language = "dutch",
-                        versie = "1845",
-                        username = username,
-                        password = password,
-                        envelope = envelope
-                    )
-                }
+                ProgressDialogHelper.withProgress(this@MetadataScherm, "Bezig met voorbereiden...") {
+                    // Laad soorten per telpost
+                    val snapshot = ServerDataCache.getOrLoad(this@MetadataScherm)
 
-                // Preload data terwijl API call bezig is
-                launch(Dispatchers.IO) {
-                    try {
-                        // Zorg ervoor dat data in de cache zit voor volgende scherm
-                        val data = ServerDataCache.getOrLoad(applicationContext)
-                        Log.d(TAG, "Preloaded ${data.speciesById.size} species for SoortSelectieScherm")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error preloading data: ${e.message}")
-                    }
-                }
+                    // Verzamel geselecteerde soorten
+                    val speciesForTelpost = snapshot.siteSpeciesBySite[telpostId]?.mapNotNull {
+                        it.soortid
+                    } ?: emptyList()
 
-                // Wacht alleen op het resultaat van de API call
-                val (ok, body) = apiJob.await()
-
-                dialog.dismiss()
-                dumpServerResponse(body)
-
-                if (ok) {
-                    val onlineId = extractOnlineId(body)
-                    val msg = if (!onlineId.isNullOrBlank()) "Telling $onlineId gestart" else "Telling gestart"
-                    // Dit is een belangrijke toast, behouden
-                    Toast.makeText(this@MetadataScherm, msg, Toast.LENGTH_SHORT).show()
-
-                    // Zet telpost in sessie en ga door naar soort-voorselectie
+                    // Stel de telpost in
                     TellingSessionManager.setTelpost(telpostId)
-                    val intent = Intent(this@MetadataScherm, SoortSelectieScherm::class.java)
-                        .putExtra(SoortSelectieScherm.EXTRA_TELPOST_ID, telpostId)
-                    selectSoortenLauncher.launch(intent)
 
-                } else {
-                    Toast.makeText(this@MetadataScherm, "Start mislukt", Toast.LENGTH_LONG).show()
-                    showServerResponseDialog("Server response (fout)", body)
+                    // Stel de geselecteerde soorten in
+                    TellingSessionManager.setPreselectedSoorten(speciesForTelpost)
+
+                    // Start het selectiescherm
+                    val intent = Intent(this@MetadataScherm, SoortSelectieScherm::class.java)
+                    intent.putExtra(SoortSelectieScherm.EXTRA_TELPOST_ID, telpostId)
+
+                    // Optioneel: Als je deze waarden later nodig hebt, kun je ze als extra's meegeven
+                    intent.putExtra("EXTRA_LIVE_MODE", liveMode)
+                    intent.putExtra("EXTRA_USERNAME", username)
+                    intent.putExtra("EXTRA_PASSWORD", password)
+
+                    soortSelectieLauncher.launch(intent)
                 }
             } catch (e: Exception) {
-                dialog.dismiss()
-                Toast.makeText(this@MetadataScherm, "Fout: ${e.message}", Toast.LENGTH_SHORT).show()
-                Log.e(TAG, "Error in telling flow", e)
+                Log.e(TAG, "Error preparing species selection: ${e.message}")
+                Toast.makeText(this@MetadataScherm, "Fout bij voorbereiden soortenlijst", Toast.LENGTH_SHORT).show()
             }
-        }
-    }
-
-    private fun showServerResponseDialog(title: String, body: String) {
-        AlertDialog.Builder(this)
-            .setTitle(title)
-            .setMessage(body.ifBlank { "(leeg antwoord)" })
-            .setPositiveButton("OK", null)
-            .show()
-    }
-
-    private fun extractOnlineId(body: String): String? = runCatching {
-        val root: JsonElement = jsonSloppy.parseToJsonElement(body)
-        findOnlineIdRecursive(root)
-    }.getOrNull()
-
-    private fun findOnlineIdRecursive(el: JsonElement): String? {
-        return when (el) {
-            is JsonObject -> {
-                (el["onlineid"] as? JsonPrimitive)?.contentOrNull
-                    ?: el.values.firstNotNullOfOrNull { v -> findOnlineIdRecursive(v) }
-            }
-            else -> {
-                if (el is kotlinx.serialization.json.JsonArray) {
-                    el.jsonArray.firstNotNullOfOrNull { v -> findOnlineIdRecursive(v) }
-                } else null
-            }
-        }
-    }
-
-    private suspend fun dumpServerResponse(body: String) = withContext(Dispatchers.IO) {
-        try {
-            val saf = SaFStorageHelper(this@MetadataScherm)
-            val vt5Root = saf.getVt5DirIfExists() ?: return@withContext
-            val serverdata = vt5Root.findFile("serverdata")?.takeIf { it.isDirectory }
-                ?: vt5Root.createDirectory("serverdata")
-
-            // Tijdstempel-bestand
-            val fileName = "counts_save_${System.currentTimeMillis()}.json"
-            val f = serverdata?.createFile("application/json", fileName)
-            if (f != null) {
-                contentResolver.openOutputStream(f.uri, "w")?.use { out ->
-                    out.write(body.toByteArray(Charsets.UTF_8))
-                    out.flush()
-                }
-            }
-
-            // Laatste respons handig overschrijven
-            serverdata?.findFile("counts_save_last.json")?.delete()
-            val last = serverdata?.createFile("application/json", "counts_save_last.json")
-            if (last != null) {
-                contentResolver.openOutputStream(last.uri, "w")?.use { out ->
-                    out.write(body.toByteArray(Charsets.UTF_8))
-                    out.flush()
-                }
-            }
-        } catch (_: Throwable) {
-            // enkel debug
         }
     }
 
