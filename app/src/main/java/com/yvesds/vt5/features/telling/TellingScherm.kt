@@ -200,6 +200,12 @@ class TellingScherm : AppCompatActivity() {
             // Vul de map met beschikbare soorten
             updateSelectedSpeciesMap()
 
+            // Log voor debug
+            Log.d(TAG, "Selected species map contains ${selectedSpeciesMap.size} species")
+            for (entry in selectedSpeciesMap.entries.take(10)) {
+                Log.d(TAG, "Species map entry: ${entry.key} -> ${entry.value}")
+            }
+
             // Stel de callback in voor als een soort wordt herkend met aantal
             speechRecognitionManager.setOnSpeciesCountListener { soortId, name, count ->
                 // Tel deze soort met het opgegeven aantal
@@ -228,8 +234,58 @@ class TellingScherm : AppCompatActivity() {
     }
 
     /**
-     * Initialiseert de volume key handler
+     * Toont een popup met de herkende soort en aantal voor debugging
      */
+    private fun showRecognizedSpeciesPopup(name: String, count: Int, soortId: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Herkend via spraak")
+            .setMessage("Soort: $name\nAantal: $count\nSoortID: $soortId\n\nWil je deze telling bijwerken?")
+            .setPositiveButton("OK") { dialog, _ ->
+                dialog.dismiss()
+                // Probeer nogmaals expliciet de telling bij te werken na bevestiging
+                updateSoortCountForced(soortId, count)
+            }
+            .show()
+    }
+
+    /**
+     * Geforceerde update van soort telling (alternatieve methode)
+     */
+    private fun updateSoortCountForced(soortId: String, count: Int) {
+        // Vind het item in de lijst op basis van soortId
+        val current = tilesAdapter.currentList
+        val item = current.find { it.soortId == soortId }
+
+        if (item == null) {
+            Log.e(TAG, "Species with ID $soortId not found in the list!")
+            Toast.makeText(this, "Soort met ID $soortId niet gevonden!", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Maak een nieuwe lijst met de bijgewerkte waarde
+        val oldCount = item.count
+        val newCount = oldCount + count
+
+        // Creëer een nieuwe lijst met het bijgewerkte item
+        val updatedList = current.map {
+            if (it.soortId == soortId) it.copy(count = newCount) else it
+        }
+
+        // Markeer als recent gebruikt
+        RecentSpeciesStore.recordUse(this, soortId, maxEntries = 25)
+
+        // Forceer een UI update met de nieuwe lijst
+        tilesAdapter.submitList(updatedList)
+
+        // Log de update
+        addLog("Handmatig bijgewerkt: ${item.naam} $oldCount → $newCount", "debug")
+
+        // Toon een bevestiging
+        Toast.makeText(this, "${item.naam} bijgewerkt: $oldCount → $newCount", Toast.LENGTH_SHORT).show()
+    }
+
+
+    // Oorspronkelijke volumekey handler implementatie
     private fun initializeVolumeKeyHandler() {
         try {
             volumeKeyHandler = VolumeKeyHandler(this)
@@ -250,6 +306,9 @@ class TellingScherm : AppCompatActivity() {
      */
     private fun startSpeechRecognition() {
         if (speechInitialized && !speechRecognitionManager.isCurrentlyListening()) {
+            // Zorg ervoor dat de soorten-map up-to-date is vóór elke luistersessie
+            updateSelectedSpeciesMap()
+
             speechRecognitionManager.startListening()
 
             // Visuele feedback dat spraakherkenning actief is
@@ -270,57 +329,6 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
-    /**
-     * Update de map met beschikbare soorten voor spraakherkenning
-     */
-    private fun updateSelectedSpeciesMap() {
-        selectedSpeciesMap.clear()
-
-        val soorten = tilesAdapter.currentList
-        for (soort in soorten) {
-            selectedSpeciesMap[soort.naam] = soort.soortId
-        }
-
-        if (speechInitialized) {
-            speechRecognitionManager.setAvailableSpecies(selectedSpeciesMap)
-            Log.d(TAG, "Updated speech recognition with ${selectedSpeciesMap.size} species")
-        }
-    }
-
-    /**
-     * Telt het opgegeven aantal bij bij het huidige aantal voor een soort
-     */
-    private fun updateSoortCount(soortId: String, count: Int) {
-        // Vind de positie van het item in de lijst
-        val current = tilesAdapter.currentList
-        val position = current.indexOfFirst { it.soortId == soortId }
-
-        if (position == -1) {
-            Log.e(TAG, "Species with ID $soortId not found in the list!")
-            return
-        }
-
-        val item = current[position]
-        val newCount = item.count + count
-
-        Log.d(TAG, "Updating ${item.naam} count from ${item.count} to $newCount")
-
-        // Maak een nieuwe lijst met de bijgewerkte waarde
-        val updatedList = ArrayList(current)
-        updatedList[position] = item.copy(count = newCount)
-
-        // Markeer als recent gebruikt
-        RecentSpeciesStore.recordUse(this, soortId, maxEntries = 25)
-
-        // Submit de nieuwe lijst en zorg dat de UI wordt bijgewerkt
-        tilesAdapter.submitList(updatedList)
-
-        // Force UI update voor het specifieke item
-        tilesAdapter.notifyItemChanged(position)
-
-        // Log de update
-        addLog("Bijgewerkt: ${item.naam} ${item.count} → $newCount", "spraak")
-    }
 
     // Override onKeyDown om volume events af te handelen
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
@@ -332,6 +340,94 @@ class TellingScherm : AppCompatActivity() {
         return super.onKeyDown(keyCode, event)
     }
 
+    /**
+     * Update de map met beschikbare soorten voor spraakherkenning
+     */
+    private fun updateSelectedSpeciesMap() {
+        selectedSpeciesMap.clear()
+
+        val soorten = tilesAdapter.currentList
+        Log.d(TAG, "Updating selected species map from ${soorten.size} items")
+
+        // Tijdelijke controle voor lege lijst
+        if (soorten.isEmpty()) {
+            Log.w(TAG, "Species list is empty! Cannot update selectedSpeciesMap")
+            return
+        }
+
+        for (soort in soorten) {
+            // Sla zowel de originele naam als een lowercase versie op voor case-insensitive matching
+            selectedSpeciesMap[soort.naam] = soort.soortId
+            selectedSpeciesMap[soort.naam.lowercase()] = soort.soortId
+
+            // Log voor debug
+            Log.d(TAG, "Added species: ${soort.naam} -> ${soort.soortId}")
+        }
+
+        Log.d(TAG, "Selected species map updated with ${selectedSpeciesMap.size} entries")
+
+        if (speechInitialized) {
+            Log.d(TAG, "Setting available species in speech recognition manager")
+            speechRecognitionManager.setAvailableSpecies(selectedSpeciesMap)
+            Log.d(TAG, "Updated speech recognition with ${selectedSpeciesMap.size} species")
+        }
+    }
+    /**
+     * Telt het opgegeven aantal bij bij het huidige aantal voor een soort
+     */
+    private fun updateSoortCount(soortId: String, count: Int) {
+        // Eerste logboek voor debugging
+        Log.d(TAG, "updateSoortCount called with soortId=$soortId, count=$count")
+
+        // Maak een mutableList van de huidige lijst (safe copy)
+        val currentList = tilesAdapter.currentList.toMutableList()
+
+        // Vind het item met de overeenkomende soortId
+        val position = currentList.indexOfFirst { it.soortId == soortId }
+
+        if (position == -1) {
+            Log.e(TAG, "Species with ID $soortId not found in the list! Available IDs: ${currentList.map { it.soortId }}")
+            return
+        }
+
+        // Get the current item
+        val item = currentList[position]
+        val oldCount = item.count
+        val newCount = oldCount + count
+
+        Log.d(TAG, "Found species at position $position: ${item.naam}, updating count from $oldCount to $newCount")
+
+        // Create a new item with updated count
+        val updatedItem = item.copy(count = newCount)
+
+        // Update the list with the new item
+        currentList[position] = updatedItem
+
+        // Markeer als recent gebruikt
+        RecentSpeciesStore.recordUse(this, soortId, maxEntries = 25)
+
+        // Gebruik verschillende aanpak voor het bijwerken van de adapter
+        // 1. Maak adapter eerst null om een volledige refresh te forceren
+        tilesAdapter.submitList(null)
+
+        // 2. Voeg een kleine vertraging toe voor betere UI-updating
+        uiScope.launch {
+            kotlinx.coroutines.delay(10) // korte vertraging van 10ms
+
+            // 3. Forceer een complete update van de lijst
+            Log.d(TAG, "Submitting updated list with new count")
+            tilesAdapter.submitList(currentList)
+
+            // 4. Expliciete notificatie voor de specifieke positie
+            tilesAdapter.notifyItemChanged(position)
+
+            // 5. Voeg direct logging toe om te bevestigen
+            addLog("Bijgewerkt: ${item.naam} $oldCount → $newCount", "spraak")
+
+            // 6. Extra debugging
+            Log.d(TAG, "Update completed for ${item.naam}: $oldCount → $newCount")
+        }
+    }
     // Override de onRequestPermissionsResult methode
     override fun onRequestPermissionsResult(
         requestCode: Int,

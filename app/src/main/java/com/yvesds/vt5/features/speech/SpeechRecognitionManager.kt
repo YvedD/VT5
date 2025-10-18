@@ -123,22 +123,41 @@ class SpeechRecognitionManager(private val activity: Activity) {
     /**
      * Zet de lijst met beschikbare soorten en bouwt de fonetische index
      */
+    /**
+     * Zet de lijst met beschikbare soorten en bouwt de fonetische index
+     */
     fun setAvailableSpecies(speciesMap: Map<String, String>) {
-        this.availableSpecies = speciesMap
+        Log.d(TAG, "setAvailableSpecies called with ${speciesMap.size} entries")
 
-        // Bouw de fonetische index
-        val entries = speciesMap.map { (name, id) ->
-            val words = name.lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
-            val phoneticWords = words.map { word ->
-                PhoneticWord(word, ColognePhonetic.encode(word))
-            }
-            PhoneticEntry(id, name, phoneticWords)
+        // Check voor lege map
+        if (speciesMap.isEmpty()) {
+            Log.e(TAG, "Warning: Empty species map provided!")
         }
 
-        this.phoneticIndex = PhoneticIndex(entries)
-        Log.d(TAG, "Built phonetic index with ${entries.size} species")
-    }
+        // Clone de map om thread-safety te garanderen
+        this.availableSpecies = HashMap(speciesMap)
 
+        // Log enkele voorbeelden
+        for (entry in speciesMap.entries.take(5)) {
+            Log.d(TAG, "Species entry: ${entry.key} -> ${entry.value}")
+        }
+
+        try {
+            // Bouw de fonetische index
+            val entries = speciesMap.map { (name, id) ->
+                val words = name.lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }
+                val phoneticWords = words.map { word ->
+                    PhoneticWord(word, ColognePhonetic.encode(word))
+                }
+                PhoneticEntry(id, name, phoneticWords)
+            }
+
+            this.phoneticIndex = PhoneticIndex(entries)
+            Log.d(TAG, "Built phonetic index with ${entries.size} species")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error building phonetic index", e)
+        }
+    }
     fun setOnSpeciesCountListener(listener: (soortId: String, name: String, count: Int) -> Unit) {
         this.onSpeciesCountListener = listener
     }
@@ -214,22 +233,67 @@ class SpeechRecognitionManager(private val activity: Activity) {
                     // Stuur ruwe tekst door voor debugging
                     onRawResultListener?.invoke(bestMatch)
 
-                    // Verwerk spraakresultaat volgens protocol
-                    val recognizedItems = parseSpeciesWithCounts(bestMatch)
+                    // DIRECTE VERWERKING VAN "SOORTNAAM AANTAL" PATROON
+                    val pattern = Regex("([a-zA-Z\\s]+)\\s+(\\d+)")
+                    val matchResult = pattern.find(bestMatch)
 
-                    if (recognizedItems.isNotEmpty()) {
-                        for (item in recognizedItems) {
-                            Log.d(TAG, "Found species with count: ${item.speciesName} (${item.count})")
-                            onSpeciesCountListener?.invoke(item.speciesId, item.speciesName, item.count)
+                    if (matchResult != null) {
+                        val (speciesNameRaw, countText) = matchResult.destructured
+                        val speciesName = speciesNameRaw.trim()
+                        val count = countText.toIntOrNull() ?: 1
+
+                        Log.d(TAG, "Direct regex match: Species='$speciesName', Count=$count")
+
+                        // Zoek de soortId op basis van de naam
+                        val speciesId = findSpeciesId(speciesName)
+
+                        if (speciesId != null) {
+                            Log.d(TAG, "Species ID found: $speciesId")
+                            onSpeciesCountListener?.invoke(speciesId, speciesName, count)
+                        } else {
+                            Log.d(TAG, "No species ID found for: $speciesName")
                         }
                     } else {
-                        Log.d(TAG, "No valid species and count combinations found in: $bestMatch")
+                        // Val terug op de normale parsing als de regex niet matcht
+                        val recognizedItems = parseSpeciesWithCounts(bestMatch)
+
+                        if (recognizedItems.isNotEmpty()) {
+                            for (item in recognizedItems) {
+                                Log.d(TAG, "Found species with count: ${item.speciesName} (${item.speciesId})")
+                                onSpeciesCountListener?.invoke(item.speciesId, item.speciesName, item.count)
+                            }
+                        } else {
+                            Log.d(TAG, "No valid species and count combinations found in: $bestMatch")
+                        }
                     }
                 }
 
                 isListening = false
             }
 
+            /**
+             * Helper functie om een soort-ID te vinden op basis van een soortnaam
+             * Probeert zowel exacte als case-insensitive matching
+             */
+            private fun findSpeciesId(speciesName: String): String? {
+                // 1. Probeer directe match
+                availableSpecies[speciesName]?.let { return it }
+
+                // 2. Probeer case-insensitive match
+                val lowerCaseName = speciesName.lowercase()
+                availableSpecies.entries.find { it.key.equals(speciesName, ignoreCase = true) }?.let {
+                    return it.value
+                }
+
+                // 3. Probeer met genormaliseerde naam
+                val normalized = normalizeSpeciesName(speciesName)
+                availableSpecies[normalized]?.let { return it }
+
+                // Log alle beschikbare soorten voor debug
+                Log.d(TAG, "Available species (first 10): ${availableSpecies.entries.take(10).map { it.key }}")
+
+                return null
+            }
             override fun onPartialResults(partialResults: Bundle?) {
                 // Niet gebruikt in deze implementatie
             }
@@ -318,14 +382,39 @@ class SpeechRecognitionManager(private val activity: Activity) {
      * Zoekt een match voor de opgegeven tekst in de beschikbare soorten
      * met fonetische indexering voor betere resultaten
      */
+    /**
+     * Zoekt een match voor de opgegeven tekst in de beschikbare soorten
+     * met fonetische indexering voor betere resultaten
+     */
     private fun findSpeciesMatch(text: String): Pair<String, String>? {
         if (text.isBlank()) return null
 
         val normalized = normalizeSpeciesName(text)
 
-        // 1. Directe match (exacte match op naam)
+        Log.d(TAG, "Finding match for '$text' (normalized: '$normalized')")
+
+        // Log de beschikbare soorten voor debug
+        Log.d(TAG, "Available species keys: ${availableSpecies.keys.take(5)}...")
+
+        // 1. Probeer exacte match met originele en genormaliseerde tekst
+        availableSpecies[text]?.let { id ->
+            Log.d(TAG, "Found exact match with original text: $text -> $id")
+            return id to text
+        }
+
         availableSpecies[normalized]?.let { id ->
+            Log.d(TAG, "Found exact match with normalized text: $normalized -> $id")
             return id to normalized
+        }
+
+        // Extra: Probeer case-insensitive matching
+        val lowerCaseText = text.lowercase()
+        val lowerCaseSpecies = availableSpecies.entries
+            .find { it.key.lowercase() == lowerCaseText }
+
+        lowerCaseSpecies?.let {
+            Log.d(TAG, "Found case-insensitive match: ${it.key} -> ${it.value}")
+            return it.value to it.key
         }
 
         // 2. Fonetische kandidaten zoeken via de index
@@ -340,6 +429,7 @@ class SpeechRecognitionManager(private val activity: Activity) {
             if (candidates.isNotEmpty()) {
                 // Neem de hoogst scorende kandidaat
                 val bestCandidate = candidates.first()
+                Log.d(TAG, "Found phonetic match: ${bestCandidate.sourceName} -> ${bestCandidate.sourceId}")
                 return bestCandidate.sourceId to bestCandidate.sourceName
             }
         }
@@ -356,9 +446,12 @@ class SpeechRecognitionManager(private val activity: Activity) {
             }
         }
 
+        bestMatch?.let {
+            Log.d(TAG, "Found Levenshtein match: ${it.second} -> ${it.first} (score: $bestScore)")
+        }
+
         return bestMatch
-    }
-    /**
+    }    /**
      * Berekent similariteit tussen twee strings voor fuzzy matching
      */
     private fun calculateSimilarity(s1: String, s2: String): Double {
