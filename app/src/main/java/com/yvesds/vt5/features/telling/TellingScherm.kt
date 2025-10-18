@@ -10,6 +10,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.flexbox.AlignItems
 import com.google.android.flexbox.FlexDirection
@@ -18,13 +19,13 @@ import com.google.android.flexbox.FlexboxLayoutManager
 import com.google.android.flexbox.JustifyContent
 import com.yvesds.vt5.core.ui.ProgressDialogHelper
 import com.yvesds.vt5.databinding.SchermTellingBinding
+import com.yvesds.vt5.features.alias.AliasRepository
 import com.yvesds.vt5.features.recent.RecentSpeciesStore
 import com.yvesds.vt5.features.serverdata.model.ServerDataCache
 import com.yvesds.vt5.features.soort.ui.SoortSelectieScherm
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.yvesds.vt5.features.speech.SpeechRecognitionManager
 import com.yvesds.vt5.features.speech.VolumeKeyHandler
 import android.Manifest
@@ -34,6 +35,14 @@ import android.view.KeyEvent
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
+/**
+ * TellingScherm - Hoofdscherm voor het tellen van soorten met spraakherkenning.
+ * Geoptimaliseerd met:
+ * - lifecycleScope voor coroutines gekoppeld aan de activity lifecycle
+ * - Verbeterde caching en UI-updates
+ * - Meer efficiënte spraakherkenning integratie
+ * - Alias ondersteuning voor betere spraakherkenning
+ */
 class TellingScherm : AppCompatActivity() {
 
     companion object {
@@ -44,16 +53,18 @@ class TellingScherm : AppCompatActivity() {
     // Spraakherkenning componenten
     private lateinit var speechRecognitionManager: SpeechRecognitionManager
     private lateinit var volumeKeyHandler: VolumeKeyHandler
-    private var selectedSpeciesMap = mutableMapOf<String, String>() // naam -> id
+    private val selectedSpeciesMap = HashMap<String, String>(100) // Pre-allocate capacity
     private var speechInitialized = false
 
     // UI componenten
     private lateinit var binding: SchermTellingBinding
-    private val uiScope = CoroutineScope(Job() + Dispatchers.Main)
 
     // Adapters
     private lateinit var tilesAdapter: SpeciesTileAdapter
     private lateinit var logAdapter: SpeechLogAdapter
+
+    // Alias repository
+    private val aliasRepository by lazy { AliasRepository.getInstance(this) }
 
     // Datamodellen
     data class SoortRow(val soortId: String, val naam: String, val count: Int = 0)
@@ -66,7 +77,7 @@ class TellingScherm : AppCompatActivity() {
         if (res.resultCode == Activity.RESULT_OK) {
             val newIds = res.data?.getStringArrayListExtra(SoortSelectieScherm.EXTRA_SELECTED_SOORT_IDS).orEmpty()
             if (newIds.isNotEmpty()) {
-                uiScope.launch {
+                lifecycleScope.launch {
                     val snapshot = ServerDataCache.getOrLoad(this@TellingScherm)
                     val speciesById = snapshot.speciesById
 
@@ -102,13 +113,72 @@ class TellingScherm : AppCompatActivity() {
         binding = SchermTellingBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Log-venster
-        binding.recyclerViewSpeechLog.layoutManager = LinearLayoutManager(this).apply { stackFromEnd = true }
+        // Log-venster setup met efficient recycler view
+        setupLogRecyclerView()
+
+        // Tiles setup met flexbox voor adaptieve layout
+        setupSpeciesTilesRecyclerView()
+
+        // Buttons setup
+        setupButtons()
+
+        // Voorselectie inladen
+        loadPreselection()
+
+        // Preload aliassen voor spraakherkenning (nieuw)
+        preloadAliases()
+    }
+
+    /**
+     * Preload aliassen voor betere spraakherkenning
+     */
+    private fun preloadAliases() {
+        lifecycleScope.launch {
+            try {
+                val success = aliasRepository.loadAliasData()
+
+                if (success) {
+                    Log.d(TAG, "Aliases preloaded successfully")
+                } else {
+                    Log.w(TAG, "Failed to preload aliases")
+
+                    // Probeer CSV naar JSON te converteren als laden mislukt
+                    tryConvertCsvToJson()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error preloading aliases", e)
+            }
+        }
+    }
+
+    /**
+     * Probeer CSV naar JSON te converteren
+     */
+    private fun tryConvertCsvToJson() {
+        lifecycleScope.launch {
+            try {
+                val success = aliasRepository.convertCsvToJson()
+                if (success) {
+                    Log.d(TAG, "Successfully converted CSV to JSON")
+                    // Probeer opnieuw te laden
+                    aliasRepository.loadAliasData()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error converting CSV to JSON", e)
+            }
+        }
+    }
+
+    private fun setupLogRecyclerView() {
+        val layoutManager = LinearLayoutManager(this)
+        layoutManager.stackFromEnd = true
+        binding.recyclerViewSpeechLog.layoutManager = layoutManager
         binding.recyclerViewSpeechLog.setHasFixedSize(true)
         logAdapter = SpeechLogAdapter()
         binding.recyclerViewSpeechLog.adapter = logAdapter
+    }
 
-        // Tiles: flexbox layout (wrap)
+    private fun setupSpeciesTilesRecyclerView() {
         val flm = FlexboxLayoutManager(this).apply {
             flexDirection = FlexDirection.ROW
             flexWrap = FlexWrap.WRAP
@@ -117,46 +187,66 @@ class TellingScherm : AppCompatActivity() {
         }
         binding.recyclerViewSpecies.layoutManager = flm
         binding.recyclerViewSpecies.setHasFixedSize(true)
+        binding.recyclerViewSpecies.itemAnimator?.changeDuration = 0 // Disable animations for better performance
 
         tilesAdapter = SpeciesTileAdapter(
             onTileClick = { pos -> showNumberInputDialog(pos) }
         )
         binding.recyclerViewSpecies.adapter = tilesAdapter
+    }
 
+    private fun setupButtons() {
         binding.btnAddSoorten.setOnClickListener { openSoortSelectieForAdd() }
+
+        // Normaal gedrag
         binding.btnAfronden.setOnClickListener {
             Toast.makeText(this, "Afronden (batch-upload) volgt later.", Toast.LENGTH_LONG).show()
         }
 
-        // Voorselectie inladen
-        uiScope.launch {
+        // Long click voor conversie van CSV naar JSON (voor admins)
+        binding.btnAfronden.setOnLongClickListener {
+            tryConvertCsvToJson()
+            Toast.makeText(this, "CSV naar JSON conversie gestart...", Toast.LENGTH_SHORT).show()
+            true
+        }
+    }
+
+    private fun loadPreselection() {
+        lifecycleScope.launch {
             try {
                 // Toon progressdialog
                 val dialog = ProgressDialogHelper.show(this@TellingScherm, "Soorten laden...")
 
                 try {
-                    val snapshot = ServerDataCache.getOrLoad(this@TellingScherm)
-                    val pre = TellingSessionManager.preselectState.value
-                    val ids = pre.selectedSoortIds
+                    // Load data in background
+                    val (snapshot, initial) = withContext(Dispatchers.IO) {
+                        val snapshot = ServerDataCache.getOrLoad(this@TellingScherm)
+                        val pre = TellingSessionManager.preselectState.value
+                        val ids = pre.selectedSoortIds
 
-                    if (ids.isEmpty()) {
+                        if (ids.isEmpty()) {
+                            return@withContext null to emptyList()
+                        }
+
+                        val speciesById = snapshot.speciesById
+                        val initialList = ids.mapNotNull { sid ->
+                            val naam = speciesById[sid]?.soortnaam ?: return@mapNotNull null
+                            SoortRow(sid, naam, 0)
+                        }.sortedBy { it.naam.lowercase() }
+
+                        snapshot to initialList
+                    }
+
+                    if (initial.isEmpty()) {
                         dialog.dismiss()
                         Toast.makeText(this@TellingScherm, "Geen voorselectie. Keer terug en selecteer soorten.", Toast.LENGTH_LONG).show()
                         finish()
                         return@launch
                     }
 
-                    val speciesById = snapshot.speciesById
-                    val initial = ids.mapNotNull { sid ->
-                        val naam = speciesById[sid]?.soortnaam ?: return@mapNotNull null
-                        SoortRow(sid, naam, 0)
-                    }.sortedBy { it.naam.lowercase() }
-
-                    // Update UI op main thread
+                    // Update UI on main thread
                     tilesAdapter.submitList(initial)
                     addLog("Telling gestart met ${initial.size} soorten.", "systeem")
-
-                    // Verberg progressdialog
                     dialog.dismiss()
 
                     // Controleer en vraag permissies voor spraakherkenning
@@ -200,10 +290,9 @@ class TellingScherm : AppCompatActivity() {
             // Vul de map met beschikbare soorten
             updateSelectedSpeciesMap()
 
-            // Log voor debug
-            Log.d(TAG, "Selected species map contains ${selectedSpeciesMap.size} species")
-            for (entry in selectedSpeciesMap.entries.take(10)) {
-                Log.d(TAG, "Species map entry: ${entry.key} -> ${entry.value}")
+            // Laad aliassen in de spraakherkenningsmanager
+            lifecycleScope.launch {
+                speechRecognitionManager.loadAliases()
             }
 
             // Stel de callback in voor als een soort wordt herkend met aantal
@@ -233,59 +322,6 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
-    /**
-     * Toont een popup met de herkende soort en aantal voor debugging
-     */
-    private fun showRecognizedSpeciesPopup(name: String, count: Int, soortId: String) {
-        AlertDialog.Builder(this)
-            .setTitle("Herkend via spraak")
-            .setMessage("Soort: $name\nAantal: $count\nSoortID: $soortId\n\nWil je deze telling bijwerken?")
-            .setPositiveButton("OK") { dialog, _ ->
-                dialog.dismiss()
-                // Probeer nogmaals expliciet de telling bij te werken na bevestiging
-                updateSoortCountForced(soortId, count)
-            }
-            .show()
-    }
-
-    /**
-     * Geforceerde update van soort telling (alternatieve methode)
-     */
-    private fun updateSoortCountForced(soortId: String, count: Int) {
-        // Vind het item in de lijst op basis van soortId
-        val current = tilesAdapter.currentList
-        val item = current.find { it.soortId == soortId }
-
-        if (item == null) {
-            Log.e(TAG, "Species with ID $soortId not found in the list!")
-            Toast.makeText(this, "Soort met ID $soortId niet gevonden!", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        // Maak een nieuwe lijst met de bijgewerkte waarde
-        val oldCount = item.count
-        val newCount = oldCount + count
-
-        // Creëer een nieuwe lijst met het bijgewerkte item
-        val updatedList = current.map {
-            if (it.soortId == soortId) it.copy(count = newCount) else it
-        }
-
-        // Markeer als recent gebruikt
-        RecentSpeciesStore.recordUse(this, soortId, maxEntries = 25)
-
-        // Forceer een UI update met de nieuwe lijst
-        tilesAdapter.submitList(updatedList)
-
-        // Log de update
-        addLog("Handmatig bijgewerkt: ${item.naam} $oldCount → $newCount", "debug")
-
-        // Toon een bevestiging
-        Toast.makeText(this, "${item.naam} bijgewerkt: $oldCount → $newCount", Toast.LENGTH_SHORT).show()
-    }
-
-
-    // Oorspronkelijke volumekey handler implementatie
     private fun initializeVolumeKeyHandler() {
         try {
             volumeKeyHandler = VolumeKeyHandler(this)
@@ -315,13 +351,13 @@ class TellingScherm : AppCompatActivity() {
             addLog("Luisteren...", "systeem")
 
             // Start een timer om automatic timeout te simuleren
-            uiScope.launch {
+            lifecycleScope.launch {
                 kotlinx.coroutines.delay(8000) // 8 seconden timeout
                 if (speechInitialized && speechRecognitionManager.isCurrentlyListening()) {
                     speechRecognitionManager.stopListening()
 
                     // Update UI op main thread
-                    runOnUiThread {
+                    withContext(Dispatchers.Main) {
                         addLog("Timeout na 8 seconden", "systeem")
                     }
                 }
@@ -329,8 +365,6 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
-
-    // Override onKeyDown om volume events af te handelen
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (::volumeKeyHandler.isInitialized && volumeKeyHandler.isVolumeUpEvent(keyCode)) {
             // Start spraakherkenning
@@ -347,88 +381,63 @@ class TellingScherm : AppCompatActivity() {
         selectedSpeciesMap.clear()
 
         val soorten = tilesAdapter.currentList
-        Log.d(TAG, "Updating selected species map from ${soorten.size} items")
-
-        // Tijdelijke controle voor lege lijst
         if (soorten.isEmpty()) {
             Log.w(TAG, "Species list is empty! Cannot update selectedSpeciesMap")
             return
         }
 
+        // Itereer over de soorten en vul de map
         for (soort in soorten) {
             // Sla zowel de originele naam als een lowercase versie op voor case-insensitive matching
             selectedSpeciesMap[soort.naam] = soort.soortId
             selectedSpeciesMap[soort.naam.lowercase()] = soort.soortId
-
-            // Log voor debug
-            Log.d(TAG, "Added species: ${soort.naam} -> ${soort.soortId}")
         }
-
-        Log.d(TAG, "Selected species map updated with ${selectedSpeciesMap.size} entries")
 
         if (speechInitialized) {
-            Log.d(TAG, "Setting available species in speech recognition manager")
             speechRecognitionManager.setAvailableSpecies(selectedSpeciesMap)
-            Log.d(TAG, "Updated speech recognition with ${selectedSpeciesMap.size} species")
         }
     }
+
     /**
      * Telt het opgegeven aantal bij bij het huidige aantal voor een soort
+     * Geoptimaliseerd voor snelheid en betere UI-updates
      */
     private fun updateSoortCount(soortId: String, count: Int) {
-        // Eerste logboek voor debugging
-        Log.d(TAG, "updateSoortCount called with soortId=$soortId, count=$count")
-
-        // Maak een mutableList van de huidige lijst (safe copy)
-        val currentList = tilesAdapter.currentList.toMutableList()
-
-        // Vind het item met de overeenkomende soortId
+        val currentList = tilesAdapter.currentList
         val position = currentList.indexOfFirst { it.soortId == soortId }
 
         if (position == -1) {
-            Log.e(TAG, "Species with ID $soortId not found in the list! Available IDs: ${currentList.map { it.soortId }}")
+            Log.e(TAG, "Species with ID $soortId not found in the list!")
             return
         }
 
-        // Get the current item
         val item = currentList[position]
         val oldCount = item.count
         val newCount = oldCount + count
 
-        Log.d(TAG, "Found species at position $position: ${item.naam}, updating count from $oldCount to $newCount")
+        // Create a new list with the updated item
+        val updatedList = ArrayList(currentList) // More efficient than toMutableList()
+        updatedList[position] = item.copy(count = newCount)
 
-        // Create a new item with updated count
-        val updatedItem = item.copy(count = newCount)
-
-        // Update the list with the new item
-        currentList[position] = updatedItem
-
-        // Markeer als recent gebruikt
+        // Mark as recently used
         RecentSpeciesStore.recordUse(this, soortId, maxEntries = 25)
 
-        // Gebruik verschillende aanpak voor het bijwerken van de adapter
-        // 1. Maak adapter eerst null om een volledige refresh te forceren
-        tilesAdapter.submitList(null)
+        // Use a diff-based approach for updating the adapter
+        lifecycleScope.launch(Dispatchers.Main.immediate) {
+            // First submit null to force a complete refresh
+            tilesAdapter.submitList(null)
 
-        // 2. Voeg een kleine vertraging toe voor betere UI-updating
-        uiScope.launch {
-            kotlinx.coroutines.delay(10) // korte vertraging van 10ms
+            // Then submit the new list
+            tilesAdapter.submitList(updatedList)
 
-            // 3. Forceer een complete update van de lijst
-            Log.d(TAG, "Submitting updated list with new count")
-            tilesAdapter.submitList(currentList)
-
-            // 4. Expliciete notificatie voor de specifieke positie
+            // Force notification for the specific item
             tilesAdapter.notifyItemChanged(position)
 
-            // 5. Voeg direct logging toe om te bevestigen
+            // Log the update
             addLog("Bijgewerkt: ${item.naam} $oldCount → $newCount", "spraak")
-
-            // 6. Extra debugging
-            Log.d(TAG, "Update completed for ${item.naam}: $oldCount → $newCount")
         }
     }
-    // Override de onRequestPermissionsResult methode
+
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<String>,
@@ -448,7 +457,6 @@ class TellingScherm : AppCompatActivity() {
                         "Spraakherkenning werkt niet zonder microfoonrechten",
                         Toast.LENGTH_LONG).show()
                 }
-                return
             }
         }
     }
@@ -476,12 +484,15 @@ class TellingScherm : AppCompatActivity() {
                 if (n == null || n < 0) {
                     Toast.makeText(this, "Ongeldig aantal.", Toast.LENGTH_SHORT).show()
                 } else {
-                    val updated = current.map {
-                        if (it.soortId == row.soortId) it.copy(count = n) else it
-                    }
+                    // Create a new list directly
+                    val updated = ArrayList(current)
+                    updated[position] = row.copy(count = n)
+
+                    // Submit the update
                     tilesAdapter.submitList(updated)
                     addLog("Set ${row.naam} = $n", "manueel")
-                    // Markeer als recent gebruikt (max 25)
+
+                    // Mark as recently used
                     RecentSpeciesStore.recordUse(this, row.soortId, maxEntries = 25)
                 }
             }
@@ -498,9 +509,15 @@ class TellingScherm : AppCompatActivity() {
     private fun addLog(msg: String, bron: String) {
         val now = System.currentTimeMillis() / 1000L
         val newRow = SpeechLogRow(ts = now, tekst = msg, bron = bron)
-        val newList = logAdapter.currentList + newRow
+
+        // Use efficient list update with pre-allocation
+        val currentSize = logAdapter.currentList.size
+        val newList = ArrayList<SpeechLogRow>(currentSize + 1)
+        newList.addAll(logAdapter.currentList)
+        newList.add(newRow)
+
         logAdapter.submitList(newList) {
-            binding.recyclerViewSpeechLog.scrollToPosition(logAdapter.itemCount - 1)
+            binding.recyclerViewSpeechLog.scrollToPosition(newList.size - 1)
         }
     }
 
@@ -523,4 +540,3 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 }
-

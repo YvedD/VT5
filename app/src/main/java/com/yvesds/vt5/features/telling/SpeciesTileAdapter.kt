@@ -1,6 +1,5 @@
 package com.yvesds.vt5.features.telling
 
-import android.util.Log
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
@@ -8,11 +7,15 @@ import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.yvesds.vt5.databinding.ItemSpeciesTileBinding
 
+/**
+ * Adapter voor soort-tegels met optimalisaties voor efficiente updates:
+ * - Efficiënt DiffUtil met payloads voor alleen aantal-wijzigingen
+ * - ViewHolder pattern met bindingadapter pattern
+ * - Stabiele IDs voor betere animaties
+ */
 class SpeciesTileAdapter(
     private val onTileClick: (position: Int) -> Unit
 ) : ListAdapter<TellingScherm.SoortRow, SpeciesTileAdapter.VH>(Diff) {
-
-    private val TAG = "SpeciesTileAdapter"
 
     init {
         setHasStableIds(true)
@@ -27,18 +30,9 @@ class SpeciesTileAdapter(
         override fun areContentsTheSame(
             oldItem: TellingScherm.SoortRow,
             newItem: TellingScherm.SoortRow
-        ): Boolean {
-            val sameContent = oldItem.soortId == newItem.soortId &&
-                    oldItem.naam == newItem.naam &&
-                    oldItem.count == newItem.count
-
-            // Extra logging om te zien of inhoud verschilt
-            if (!sameContent) {
-                Log.d("SpeciesTileAdapter", "Content changed for ${oldItem.naam}: count ${oldItem.count} -> ${newItem.count}")
-            }
-
-            return sameContent
-        }
+        ): Boolean = oldItem.soortId == newItem.soortId &&
+                oldItem.naam == newItem.naam &&
+                oldItem.count == newItem.count
 
         override fun getChangePayload(
             oldItem: TellingScherm.SoortRow,
@@ -66,11 +60,11 @@ class SpeciesTileAdapter(
         holder.vb.tvName.text = row.naam
         holder.vb.tvCount.text = row.count.toString()
 
-        // Log bij elke binding
-        Log.d(TAG, "Binding ${row.naam} with count ${row.count}")
-
         holder.vb.tileRoot.setOnClickListener {
-            onTileClick(holder.bindingAdapterPosition)
+            val pos = holder.bindingAdapterPosition
+            if (pos != RecyclerView.NO_POSITION) {
+                onTileClick(pos)
+            }
         }
     }
 
@@ -80,7 +74,6 @@ class SpeciesTileAdapter(
             val newCount = payloads[0] as? Int
             if (newCount != null) {
                 holder.vb.tvCount.text = newCount.toString()
-                Log.d(TAG, "Updated count via payload: $newCount")
                 return
             }
         }
