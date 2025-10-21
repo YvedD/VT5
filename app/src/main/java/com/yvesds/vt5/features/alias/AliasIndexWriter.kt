@@ -1,9 +1,4 @@
-// VT5 - AliasIndexWriter (fixed EnsureResult returns and cleaned up)
-//
-// - Fixes argument order / types when returning EnsureResult.
-// - Keeps detailed preflight, SAF copy, internal writes and export log behavior.
-// - Writes export log both to internal filesDir/exports and (if SAF root set) Documents/VT5/exports.
-
+@file:OptIn(kotlinx.serialization.InternalSerializationApi::class)
 package com.yvesds.vt5.features.alias
 
 import android.content.Context
@@ -11,297 +6,359 @@ import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.cbor.Cbor
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.ByteArrayOutputStream
-import java.io.File
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.zip.GZIPOutputStream
 
+/**
+ * AliasIndexWriter (SAF-only, corrected)
+ *
+ * - Reads inputs only from SAF (Documents/VT5)
+ * - Writes outputs only to SAF in the exact paths requested by the user
+ * - Produces:
+ *     - Documents/VT5/assets/alias_index.json           (JSON, WITHOUT simhash64)
+ *     - Documents/VT5/assets/alias_index.json.gz        (GZ)
+ *     - Documents/VT5/serverdata/aliases_flat.schema.json
+ *     - Documents/VT5/serverdata/species_master.schema.json
+ *     - Documents/VT5/serverdata/phonetic_map.schema.json
+ *     - Documents/VT5/serverdata/manifest.schema.json
+ *     - Documents/VT5/binaries/aliases_flat.cbor.gz      (full CBOR, includes simhash64/minhash64 etc)
+ *     - Documents/VT5/binaries/species_master.cbor.gz
+ *     - Documents/VT5/exports/alias_precompute_log_<timestamp>.txt
+ *
+ * Notes:
+ * - This implementation uses only public kotlinx.serialization APIs and explicit @Serializable
+ *   DTOs to avoid internal serializer usage and type-inference issues.
+ * - JSON export intentionally omits simhash64 (kept only in CBOR).
+ */
+
 object AliasIndexWriter {
     private const val TAG = "AliasIndexWriter"
 
     private const val CSV_NAME = "aliasmapping.csv"
-    private const val SAF_ASSETS_DIR = "assets"
-    private const val SAF_SERVERDATA_DIR = "serverdata"
-    private const val SAF_EXPORTS_DIR = "exports"
-    private const val BIN_DIR = "binaries"
-    private const val JSON_NAME = "alias_index.json"
-    private const val JSON_GZ_NAME = "alias_index.json.gz"
-    private const val CBOR_NAME = "alias_index.cbor"
-    private const val CBOR_GZ_NAME = "alias_index.cbor.gz"
+    private const val ASSETS = "assets"
+    private const val SERVERDATA = "serverdata"
+    private const val BINARIES = "binaries"
+    private const val EXPORTS = "exports"
+
+    private const val ALIAS_JSON_NAME = "alias_index.json"
+    private const val ALIAS_JSON_GZ_NAME = "alias_index.json.gz"
+    private const val ALIASES_CBOR_GZ = "aliases_flat.cbor.gz"
+    private const val SPECIES_CBOR_GZ = "species_master.cbor.gz"
+
+    private const val ALIASES_SCHEMA = "aliases_flat.schema.json"
+    private const val SPECIES_SCHEMA = "species_master.schema.json"
+    private const val PHONETIC_SCHEMA = "phonetic_map.schema.json"
+    private const val MANIFEST = "manifest.schema.json"
 
     private val jsonPretty = Json { prettyPrint = true }
 
-    data class EnsureResult(
-        val internalJsonGzPath: String?,
-        val internalCborGzPath: String?,
-        val internalWritten: Boolean,
-        val safJsonWritten: Boolean,
-        val safCborWritten: Boolean,
-        val exportLogInternalPath: String?,
-        val exportLogSafPath: String?,
+    /**
+     * JSON DTO for alias export (explicit fields, no simhash64).
+     * Field names chosen to be simple and stable.
+     */
+    @Serializable
+    data class AliasJsonEntry(
+        val aliasid: String,
+        val speciesid: String,
+        val canonical: String,
+        val tilename: String? = null,
+        val alias: String,
+        val norm: String,
+        val cologne: String? = null,
+        val dmetapho: List<String> = emptyList(),
+        val beidermorse: List<String> = emptyList(),
+        val phonemes: String? = null,
+        val ngrams: Map<String, String> = emptyMap(),
+        val minhash64: List<Long> = emptyList(),
+        // simhash64 intentionally omitted from JSON
+        val weight: Double = 1.0
+    )
+
+    @Serializable
+    data class SimpleSpecies(
+        val speciesId: String,
+        val soortnaam: String,
+        val tilename: String,
+        val sortering: String? = null,
+        val aliases: List<String> = emptyList()
+    )
+
+    @Serializable
+    data class ManifestIndexEntry(
+        val path: String,
+        val sha256: String,
+        val size: String,
+        val aliases_count: String? = null,
+        val species_count: String? = null
+    )
+
+    @Serializable
+    data class Manifest(
+        val version: String,
+        val generated_at: String,
+        val sources: Map<String, Map<String, String>>,
+        val indexes: Map<String, ManifestIndexEntry>,
+        val counts: Map<String, Int>,
+        val notes: String
+    )
+
+    data class Result(
+        val safAliasJsonPath: String?,
+        val safCborPath: String?,
+        val safSpeciesCborPath: String?,
+        val safManifestPath: String?,
+        val safSchemas: List<String>,
+        val safExportLog: String?,
         val aliasCount: Int,
         val messages: List<String>
     )
 
     /**
-     * Inspect SAF and packaged/internal assets for presence of source files.
+     * Preflight check for SAF-only inputs.
      */
-    fun preflightCheck(context: Context, saf: SaFStorageHelper): List<String> {
+    fun preflightCheckSafOnly(context: Context, saf: SaFStorageHelper): List<String> {
         val out = mutableListOf<String>()
-        val vt5Dir = saf.getVt5DirIfExists()
-        if (vt5Dir == null) {
-            out += "SAF VT5 root: NOT SET"
-        } else {
-            out += "SAF VT5 root: set"
-            val assets = vt5Dir.findFile(SAF_ASSETS_DIR)
-            if (assets != null && assets.isDirectory) {
-                out += " - SAF assets exists"
-                val c = assets.findFile(CSV_NAME)
-                out += if (c != null && c.isFile) "   - $CSV_NAME found in SAF assets" else "   - $CSV_NAME NOT found in SAF assets"
-            } else out += " - SAF assets missing"
-
-            val serverdata = vt5Dir.findFile(SAF_SERVERDATA_DIR)
-            if (serverdata != null && serverdata.isDirectory) {
-                val list = serverdata.listFiles().mapNotNull { it.name }.sorted()
-                out += " - SAF serverdata dir present, contains: ${if (list.isEmpty()) "(empty)" else list.joinToString(", ")}"
-            } else out += " - SAF serverdata missing"
+        val vt5 = saf.getVt5DirIfExists()
+        if (vt5 == null) {
+            out += "SAF Documents/VT5 NOT set. Kies 'Kies documenten' en selecteer Documents/VT5."
+            return out
         }
+        out += "SAF Documents/VT5 root: set"
+        val assets = vt5.findFile(ASSETS)?.takeIf { it.isDirectory }
+        out += if (assets != null) " - assets present" else " - assets missing"
+        val csv = assets?.findFile(CSV_NAME)
+        out += if (csv != null && csv.isFile) " - $CSV_NAME FOUND in assets" else " - $CSV_NAME MISSING in assets"
 
-        val internalAsset = runCatching { context.assets.open(CSV_NAME).use { true } }.getOrNull() ?: false
-        out += "Packaged app asset $CSV_NAME present: $internalAsset"
-
-        val internalFilesCsv = File(File(context.filesDir, "assets"), CSV_NAME)
-        out += "Internal filesDir asset $CSV_NAME present: ${internalFilesCsv.exists()} (path: ${internalFilesCsv.absolutePath})"
-
+        val server = vt5.findFile(SERVERDATA)?.takeIf { it.isDirectory }
+        out += if (server != null) " - serverdata present" else " - serverdata missing"
+        if (server != null) {
+            val species = server.findFile("species.json")
+            val site = server.findFile("site_species.json")
+            out += if (species != null && species.isFile) "   - species.json FOUND" else "   - species.json MISSING"
+            out += if (site != null && site.isFile) "   - site_species.json FOUND" else "   - site_species.json MISSING"
+        }
         return out
     }
 
     /**
-     * Build the alias index, write internal copies and attempt writing SAF copies.
-     * Also writes a human-readable export log to internal filesDir/exports and to Documents/VT5/exports (SAF) if available.
+     * Main SAF-only ensure function.
      */
     @OptIn(ExperimentalSerializationApi::class)
-    suspend fun ensureComputedDetailed(
-        context: Context,
-        saf: SaFStorageHelper,
-        q: Int = 3,
-        minhashK: Int = 64
-    ): EnsureResult {
+    suspend fun ensureComputedSafOnly(context: Context, saf: SaFStorageHelper, q: Int = 3, minhashK: Int = 8): Result {
         val messages = mutableListOf<String>()
-        val binDir = File(context.filesDir, BIN_DIR).apply { mkdirs() }
-
-        // Try SAF CSV first
-        val csvBytesFromSaf: ByteArray? = runCatching {
-            val vt5Dir: DocumentFile? = saf.getVt5DirIfExists()
-            val assetsDir = vt5Dir?.findFile(SAF_ASSETS_DIR)?.takeIf { it.isDirectory }
-            val csvDoc = assetsDir?.findFile(CSV_NAME)?.takeIf { it.isFile }
-            csvDoc?.uri?.let { uri ->
-                context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            }
-        }.getOrNull()
-
-        if (csvBytesFromSaf != null) messages += "Found $CSV_NAME in SAF assets" else messages += "$CSV_NAME not found in SAF assets"
-
-        // Try internal filesDir assets
-        val csvBytesFromFiles: ByteArray? = runCatching {
-            val localAssets = File(File(context.filesDir, "assets"), CSV_NAME)
-            if (localAssets.exists() && localAssets.isFile) localAssets.readBytes() else null
-        }.getOrNull()
-        if (csvBytesFromFiles != null) messages += "Found $CSV_NAME in internal filesDir/assets" else messages += "$CSV_NAME not found in internal filesDir/assets"
-
-        // Try packaged app assets
-        val csvBytesFromAppAssets: ByteArray? = runCatching {
-            context.assets.open(CSV_NAME).use { it.readBytes() }
-        }.getOrNull()
-        if (csvBytesFromAppAssets != null) messages += "Found packaged app asset $CSV_NAME" else messages += "$CSV_NAME not found in packaged app assets"
-
-        val csvBytes = csvBytesFromSaf ?: csvBytesFromFiles ?: csvBytesFromAppAssets
-        if (csvBytes == null || csvBytes.isEmpty()) {
-            messages += "ERROR: No source CSV available. Aborting precompute."
-            return EnsureResult(null, null, false, false, false, null, null, 0, messages)
+        val vt5 = saf.getVt5DirIfExists()
+        if (vt5 == null) {
+            messages += "SAF root NOT set. Kies 'Kies documenten' en selecteer Documents/VT5."
+            return Result(null, null, null, null, emptyList(), null, 0, messages)
         }
 
-        // Inform about serverdata presence in SAF (informational)
-        val vt5Dir = saf.getVt5DirIfExists()
-        if (vt5Dir != null) {
-            val srv = vt5Dir.findFile(SAF_SERVERDATA_DIR)
-            if (srv != null && srv.isDirectory) {
-                val entries = srv.listFiles().mapNotNull { it.name }.sorted()
-                messages += "SAF serverdata contains: ${if (entries.isEmpty()) "(empty)" else entries.joinToString(", ")}"
-            } else messages += "SAF serverdata missing"
-        } else messages += "SAF root not set; cannot inspect SAF serverdata"
+        // Validate inputs
+        val assetsDir = vt5.findFile(ASSETS)?.takeIf { it.isDirectory }
+        val csvDoc = assetsDir?.findFile(CSV_NAME)?.takeIf { it.isFile }
+        if (csvDoc == null) {
+            messages += "Required: Documents/VT5/$ASSETS/$CSV_NAME missing."
+            return Result(null, null, null, null, emptyList(), null, 0, messages)
+        }
+        val serverDir = vt5.findFile(SERVERDATA)?.takeIf { it.isDirectory }
+        if (serverDir == null) {
+            messages += "Required: Documents/VT5/$SERVERDATA missing."
+            return Result(null, null, null, null, emptyList(), null, 0, messages)
+        }
+        val speciesDoc = serverDir.findFile("species.json")?.takeIf { it.isFile }
+        val siteSpeciesDoc = serverDir.findFile("site_species.json")?.takeIf { it.isFile }
+        if (speciesDoc == null || siteSpeciesDoc == null) {
+            messages += "Required: species.json and/or site_species.json missing in Documents/VT5/$SERVERDATA."
+            return Result(null, null, null, null, emptyList(), null, 0, messages)
+        }
 
-        // Build index
+        // Read input files
+        val csvBytes = runCatching {
+            context.contentResolver.openInputStream(csvDoc.uri)?.use { it.readBytes() }
+        }.getOrNull()
+        if (csvBytes == null || csvBytes.isEmpty()) {
+            messages += "Failed to read $CSV_NAME from SAF."
+            return Result(null, null, null, null, emptyList(), null, 0, messages)
+        }
+        messages += "Read Documents/VT5/$ASSETS/$CSV_NAME"
+
+        val speciesBytes = runCatching {
+            context.contentResolver.openInputStream(speciesDoc.uri)?.use { it.readBytes() }
+        }.getOrNull()
+        val siteSpeciesBytes = runCatching {
+            context.contentResolver.openInputStream(siteSpeciesDoc.uri)?.use { it.readBytes() }
+        }.getOrNull()
+        if (speciesBytes == null || siteSpeciesBytes == null) {
+            messages += "Failed to read species/site_species from SAF."
+            return Result(null, null, null, null, emptyList(), null, 0, messages)
+        }
+        messages += "Read Documents/VT5/$SERVERDATA/species.json and site_species.json"
+
+        // Build alias index
         val csvText = csvBytes.toString(Charsets.UTF_8)
-        val index = try {
+        val aliasIndex = try {
             PrecomputeAliasIndex.buildFromCsv(csvText, q, minhashK)
         } catch (ex: Exception) {
-            messages += "ERROR building index: ${ex.message}"
-            return EnsureResult(null, null, false, false, false, null, null, 0, messages)
+            messages += "Error building alias index: ${ex.message}"
+            return Result(null, null, null, null, emptyList(), null, 0, messages)
         }
-        messages += "Built index in memory with ${index.json.size} alias records"
+        val aliasCount = aliasIndex.json.size
+        messages += "Built alias index: $aliasCount records"
 
-        // Serialize
-        val aliasesJsonText = PrecomputeAliasIndex.toPrettyJson(index)
-        val aliasesJsonBytes = aliasesJsonText.toByteArray(Charsets.UTF_8)
-        val aliasesCborBytes = PrecomputeAliasIndex.toCborBytes(index)
+        // Build species_master list by extracting minimal fields from species.json
+        val speciesJsonElement = Json.parseToJsonElement(speciesBytes.toString(Charsets.UTF_8))
+        val speciesArray = speciesJsonElement.jsonObject["json"]?.jsonArray ?: JsonArray(emptyList())
+        val speciesMapById = speciesArray.associateBy { it.jsonObject["soortid"]?.jsonPrimitive?.content ?: "" }
 
-        // Write internal gz files
-        val internalJsonGzFile = File(binDir, JSON_GZ_NAME)
-        val internalCborGzFile = File(binDir, CBOR_GZ_NAME)
-        try {
-            atomicWrite(internalJsonGzFile, gzip(aliasesJsonBytes))
-            atomicWrite(internalCborGzFile, gzip(aliasesCborBytes))
-            messages += "Wrote internal gz files: ${internalJsonGzFile.absolutePath}, ${internalCborGzFile.absolutePath}"
-        } catch (ex: Exception) {
-            messages += "ERROR writing internal gz files: ${ex.message}"
-            return EnsureResult(null, null, false, false, false, null, null, index.json.size, messages)
+        val speciesIdsInIndex = aliasIndex.json.map { it.speciesid }.toSet()
+        val simpleSpeciesList = speciesIdsInIndex.map { sid ->
+            val entry = speciesMapById[sid]
+            val soortnaam = entry?.jsonObject?.get("soortnaam")?.jsonPrimitive?.content ?: sid
+            val soortkey = entry?.jsonObject?.get("soortkey")?.jsonPrimitive?.content ?: soortnaam
+            SimpleSpecies(speciesId = sid, soortnaam = soortnaam, tilename = soortkey)
         }
 
-        // SAF writes
-        var safJsonOk = false
-        var safCborOk = false
-        try {
-            safJsonOk = writeBytesToSaF(context, saf, SAF_ASSETS_DIR, JSON_GZ_NAME, gzip(aliasesJsonBytes), "application/gzip")
-            safCborOk = writeBytesToSaF(context, saf, BIN_DIR, CBOR_GZ_NAME, gzip(aliasesCborBytes), "application/gzip")
-            messages += "Attempted SAF writes: json=$safJsonOk, cbor=$safCborOk"
-        } catch (ex: Exception) {
-            messages += "Exception while copying to SAF (non-fatal): ${ex.message}"
+        // Build phonetic_map (code -> list of aliasIds)
+        val phoneticMap = mutableMapOf<String, MutableList<String>>()
+        aliasIndex.json.forEach { a ->
+            a.cologne?.let { code -> phoneticMap.getOrPut("cologne:$code") { mutableListOf() }.add(a.aliasid) }
+            a.dmetapho?.forEach { dm -> phoneticMap.getOrPut("dmetaphone:$dm") { mutableListOf() }.add(a.aliasid) }
+            a.beidermorse?.forEach { bm -> phoneticMap.getOrPut("beider:$bm") { mutableListOf() }.add(a.aliasid) }
         }
 
-        // Write export log (both internal exports folder and SAF exports folder)
+        // Map AliasRecord -> AliasJsonEntry (explicit DTO) excluding simhash64
+        val aliasJsonList = aliasIndex.json.map { a ->
+            AliasJsonEntry(
+                aliasid = a.aliasid,
+                speciesid = a.speciesid,
+                canonical = a.canonical,
+                tilename = a.tilename,
+                alias = a.alias,
+                norm = a.norm,
+                cologne = a.cologne,
+                dmetapho = a.dmetapho ?: emptyList(),
+                beidermorse = a.beidermorse ?: emptyList(),
+                phonemes = a.phonemes,
+                ngrams = a.ngrams ?: emptyMap(),
+                minhash64 = a.minhash64 ?: emptyList(),
+                weight = a.weight
+            )
+        }
+
+        // Serialize JSON and CBOR with explicit serializers
+        val aliasJsonText = jsonPretty.encodeToString(ListSerializer(AliasJsonEntry.serializer()), aliasJsonList)
+        val aliasJsonBytes = aliasJsonText.toByteArray(Charsets.UTF_8)
+        val aliasCborBytes = Cbor.encodeToByteArray(AliasIndex.serializer(), aliasIndex)
+
+        val speciesMasterJsonText = jsonPretty.encodeToString(ListSerializer(SimpleSpecies.serializer()), simpleSpeciesList)
+        val speciesMasterBytes = speciesMasterJsonText.toByteArray(Charsets.UTF_8)
+        val speciesMasterCborBytes = Cbor.encodeToByteArray(ListSerializer(SimpleSpecies.serializer()), simpleSpeciesList)
+
+        val phoneticJsonText = jsonPretty.encodeToString(MapSerializer(String.serializer(), ListSerializer(String.serializer())), phoneticMap)
+        val phoneticBytes = phoneticJsonText.toByteArray(Charsets.UTF_8)
+
+        // Build manifest object and serialize
+        val sources = mapOf(
+            "aliasmapping.csv" to mapOf(
+                "sha256" to sha256OfBytes(csvBytes),
+                "size" to csvBytes.size.toString()
+            )
+        )
+        val indexes = mapOf(
+            "aliases_flat" to ManifestIndexEntry(
+                path = "Documents/VT5/$BINARIES/$ALIASES_CBOR_GZ",
+                sha256 = sha256OfBytes(aliasCborBytes),
+                size = aliasCborBytes.size.toString(),
+                aliases_count = aliasCount.toString(),
+                species_count = null
+            ),
+            "species_master" to ManifestIndexEntry(
+                path = "Documents/VT5/$BINARIES/$SPECIES_CBOR_GZ",
+                sha256 = sha256OfBytes(speciesMasterCborBytes),
+                size = speciesMasterCborBytes.size.toString(),
+                aliases_count = null,
+                species_count = speciesIdsInIndex.size.toString()
+            )
+        )
+        val manifest = Manifest(
+            version = "v1",
+            generated_at = Instant.now().toString(),
+            sources = sources,
+            indexes = indexes,
+            counts = mapOf("aliases" to aliasCount, "species" to speciesIdsInIndex.size),
+            notes = "Generated on-device (SAF-only)"
+        )
+        val manifestBytes = jsonPretty.encodeToString(Manifest.serializer(), manifest).toByteArray(Charsets.UTF_8)
+
+        // Write all outputs to SAF (overwrite semantics)
+        val aliasJsonOk = writeBytesToSaFOverwrite(context, saf, ASSETS, ALIAS_JSON_NAME, aliasJsonBytes, "application/json")
+        val aliasJsonGzOk = writeBytesToSaFOverwrite(context, saf, ASSETS, ALIAS_JSON_GZ_NAME, gzip(aliasJsonBytes), "application/gzip")
+        val aliasCborOk = writeBytesToSaFOverwrite(context, saf, BINARIES, ALIASES_CBOR_GZ, gzip(aliasCborBytes), "application/gzip")
+        val speciesCborOk = writeBytesToSaFOverwrite(context, saf, BINARIES, SPECIES_CBOR_GZ, gzip(speciesMasterCborBytes), "application/gzip")
+        val speciesSchemaOk = writeBytesToSaFOverwrite(context, saf, SERVERDATA, SPECIES_SCHEMA, speciesMasterBytes, "application/json")
+        val aliasesSchemaOk = writeBytesToSaFOverwrite(context, saf, SERVERDATA, ALIASES_SCHEMA, aliasJsonBytes, "application/json")
+        val phoneticOk = writeBytesToSaFOverwrite(context, saf, SERVERDATA, PHONETIC_SCHEMA, phoneticBytes, "application/json")
+        val manifestOk = writeBytesToSaFOverwrite(context, saf, SERVERDATA, MANIFEST, manifestBytes, "application/json")
+
+        messages += "SAF writes: aliasJson=$aliasJsonOk, aliasJsonGz=$aliasJsonGzOk, aliasCbor=$aliasCborOk, speciesCbor=$speciesCborOk"
+        messages += "Serverdata writes: speciesSchema=$speciesSchemaOk, aliasesSchema=$aliasesSchemaOk, phonetic=$phoneticOk, manifest=$manifestOk"
+
+        // Export log
         val timestamp = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss").withZone(ZoneOffset.UTC).format(Instant.now())
         val exportFilename = "alias_precompute_log_$timestamp.txt"
         val logText = buildString {
             append("Alias precompute log - $timestamp (UTC)\n\n")
-            append("Summary:\n")
-            append(" - aliases_count: ${index.json.size}\n")
-            append(" - internalJsonGz: ${internalJsonGzFile.absolutePath}\n")
-            append(" - internalCborGz: ${internalCborGzFile.absolutePath}\n")
-            append("\nDetails:\n")
+            append("aliases_count: $aliasCount\n")
+            append("safWrites:\n")
             messages.forEach { append(" - $it\n") }
         }
+        val exportOk = writeStringToSaFOverwrite(context, saf, EXPORTS, exportFilename, logText, "text/plain")
+        val exportPath = if (exportOk) "Documents/VT5/$EXPORTS/$exportFilename" else null
+        if (exportOk) messages += "Wrote export log: $exportPath" else messages += "Failed to write export log"
 
-        // internal exports
-        val internalExportsDir = File(context.filesDir, "exports").apply { mkdirs() }
-        val internalExportFile = File(internalExportsDir, exportFilename)
-        var internalExportPath: String? = null
-        try {
-            internalExportFile.writeText(logText, Charsets.UTF_8)
-            internalExportPath = internalExportFile.absolutePath
-            messages += "Wrote internal export log: $internalExportPath"
-        } catch (ex: Exception) {
-            messages += "Failed to write internal export log: ${ex.message}"
-        }
-
-        // SAF exports
-        var safExportPath: String? = null
-        try {
-            val wrote = writeStringToSaF(context, saf, SAF_EXPORTS_DIR, exportFilename, logText, "text/plain")
-            if (wrote) {
-                safExportPath = "Documents/VT5/$SAF_EXPORTS_DIR/$exportFilename"
-                messages += "Wrote SAF export log: $safExportPath"
-            } else {
-                messages += "Did not write SAF export log (SAF not set or write failed)"
-            }
-        } catch (ex: Exception) {
-            messages += "Exception writing export log to SAF: ${ex.message}"
-        }
-
-        // Build manifest internal
-        val manifestObj = buildJsonObject {
-            put("version", JsonPrimitive("v1"))
-            put("generated_at", JsonPrimitive(Instant.now().toString()))
-            put("sources", buildJsonObject {
-                put("aliasmapping.csv", buildJsonObject {
-                    put("sha256", JsonPrimitive(sha256OfBytes(csvBytes)))
-                    put("size", JsonPrimitive(csvBytes.size.toString()))
-                })
-                put("species.json", buildJsonObject { put("sha256", JsonPrimitive("0")); put("size", JsonPrimitive("0")) })
-                put("site_species.json", buildJsonObject { put("sha256", JsonPrimitive("0")); put("size", JsonPrimitive("0")) })
-            })
-            put("indexes", buildJsonObject {
-                put("aliases_flat", buildJsonObject {
-                    put("path", JsonPrimitive(internalJsonGzFile.absolutePath))
-                    put("sha256", JsonPrimitive(sha256OfFileBytes(internalJsonGzFile)))
-                    put("size", JsonPrimitive(internalJsonGzFile.length().toString()))
-                    put("aliases_count", JsonPrimitive(index.json.size.toString()))
-                })
-                put("species_master", buildJsonObject {
-                    put("path", JsonPrimitive(internalCborGzFile.absolutePath))
-                    put("sha256", JsonPrimitive(sha256OfFileBytes(internalCborGzFile)))
-                    put("size", JsonPrimitive(internalCborGzFile.length().toString()))
-                    put("species_count", JsonPrimitive(index.json.map { it.speciesid }.distinct().size.toString()))
-                })
-            })
-            put("counts", buildJsonObject {
-                put("aliases", JsonPrimitive(index.json.size))
-                put("species", JsonPrimitive(index.json.map { it.speciesid }.distinct().size))
-            })
-            put("notes", JsonPrimitive("Generated on-device"))
-        }
-        atomicWrite(File(binDir, "manifest.json"), jsonPretty.encodeToString(JsonObject.serializer(), manifestObj).toByteArray(Charsets.UTF_8))
-
-        return EnsureResult(
-            internalJsonGzPath = internalJsonGzFile.absolutePath,
-            internalCborGzPath = internalCborGzFile.absolutePath,
-            internalWritten = true,
-            safJsonWritten = safJsonOk,
-            safCborWritten = safCborOk,
-            exportLogInternalPath = internalExportPath,
-            exportLogSafPath = safExportPath,
-            aliasCount = index.json.size,
-            messages = messages
+        val aliasJsonPath = "Documents/VT5/$ASSETS/$ALIAS_JSON_NAME"
+        val aliasCborPath = "Documents/VT5/$BINARIES/$ALIASES_CBOR_GZ"
+        val speciesCborPath = "Documents/VT5/$BINARIES/$SPECIES_CBOR_GZ"
+        val schemas = listOf(
+            "Documents/VT5/$SERVERDATA/$ALIASES_SCHEMA",
+            "Documents/VT5/$SERVERDATA/$SPECIES_SCHEMA",
+            "Documents/VT5/$SERVERDATA/$PHONETIC_SCHEMA",
+            "Documents/VT5/$SERVERDATA/$MANIFEST"
         )
+
+        return Result(aliasJsonPath, aliasCborPath, speciesCborPath, "Documents/VT5/$SERVERDATA/$MANIFEST", schemas, exportPath, aliasCount, messages)
     }
 
-    // Helpers -----------------------------------------------------
-
-    private fun atomicWrite(file: File, bytes: ByteArray) {
-        val tmp = File(file.parentFile, file.name + ".tmp")
-        tmp.writeBytes(bytes)
-        if (file.exists()) {
-            val bak = File(file.parentFile, file.name + ".bak")
-            try { file.renameTo(bak) } catch (_: Throwable) { /* ignore */ }
-        }
-        tmp.renameTo(file)
-    }
-
-    private fun gzip(data: ByteArray): ByteArray {
-        val bos = ByteArrayOutputStream(data.size)
-        GZIPOutputStream(bos).use { gz -> gz.write(data) }
-        return bos.toByteArray()
-    }
-
-    private fun writeBytesToSaF(context: Context, saf: SaFStorageHelper, subDirName: String, filename: String, bytes: ByteArray, mimeType: String = "application/octet-stream"): Boolean {
-        val vt5Dir = saf.getVt5DirIfExists() ?: run {
-            Log.w(TAG, "No SAF VT5 root set - skipping SAF write for $filename")
+    // Helpers: overwrite via SAF
+    private fun writeBytesToSaFOverwrite(context: Context, saf: SaFStorageHelper, subDirName: String, filename: String, bytes: ByteArray, mimeType: String = "application/octet-stream"): Boolean {
+        val vt5 = saf.getVt5DirIfExists() ?: run {
+            Log.w(TAG, "SAF root not set; cannot write $filename")
             return false
         }
-
-        val subdir = vt5Dir.findFile(subDirName)?.takeIf { it.isDirectory } ?: run {
-            val created = vt5Dir.createDirectory(subDirName)
-            if (created == null) {
-                Log.w(TAG, "Could not create SAF subdir $subDirName")
-                return false
-            }
-            created
+        val subdir = vt5.findFile(subDirName)?.takeIf { it.isDirectory } ?: vt5.createDirectory(subDirName) ?: run {
+            Log.w(TAG, "Could not create SAF subdir $subDirName")
+            return false
         }
-
         subdir.findFile(filename)?.delete()
         val created = subdir.createFile(mimeType, filename) ?: run {
             Log.w(TAG, "Could not create SAF file $filename in $subDirName")
             return false
         }
-
         return try {
             context.contentResolver.openOutputStream(created.uri)?.use { os ->
                 os.write(bytes)
@@ -315,14 +372,14 @@ object AliasIndexWriter {
         }
     }
 
-    private fun writeStringToSaF(context: Context, saf: SaFStorageHelper, subDirName: String, filename: String, content: String, mimeType: String = "text/plain"): Boolean {
-        return writeBytesToSaF(context, saf, subDirName, filename, content.toByteArray(Charsets.UTF_8), mimeType)
+    private fun writeStringToSaFOverwrite(context: Context, saf: SaFStorageHelper, subDirName: String, filename: String, content: String, mimeType: String = "text/plain"): Boolean {
+        return writeBytesToSaFOverwrite(context, saf, subDirName, filename, content.toByteArray(Charsets.UTF_8), mimeType)
     }
 
-    private fun sha256OfFileBytes(file: File): String {
-        return runCatching {
-            sha256OfBytes(file.readBytes())
-        }.getOrElse { "0" }
+    private fun gzip(data: ByteArray): ByteArray {
+        val bos = ByteArrayOutputStream(data.size)
+        GZIPOutputStream(bos).use { gz -> gz.write(data) }
+        return bos.toByteArray()
     }
 
     private fun sha256OfBytes(bytes: ByteArray): String {
@@ -330,6 +387,6 @@ object AliasIndexWriter {
             val md = MessageDigest.getInstance("SHA-256")
             md.update(bytes)
             md.digest().joinToString("") { "%02x".format(it) }
-        }.getOrElse { "0" }
+        }.getOrDefault("0")
     }
 }
