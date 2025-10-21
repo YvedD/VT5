@@ -69,8 +69,10 @@ dependencies {
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
-}
 
+    // WorkManager (toegevoegd)
+    implementation("androidx.work:work-runtime-ktx:2.8.1")
+}
 // Tests uit
 tasks.matching {
     it.name.startsWith("test", true) || it.name.startsWith("connectedAndroidTest", true)

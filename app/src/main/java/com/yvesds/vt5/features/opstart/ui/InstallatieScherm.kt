@@ -10,10 +10,18 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.Observer
+import androidx.work.Data
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.core.secure.CredentialsStore
 import com.yvesds.vt5.databinding.SchermInstallatieBinding
 import com.yvesds.vt5.features.alias.AliasIndexWriter
+import com.yvesds.vt5.features.alias.AliasPrecomputeWorker
 import com.yvesds.vt5.features.metadata.ui.MetadataScherm
 import com.yvesds.vt5.features.opstart.usecases.ServerJsonDownloader
 import com.yvesds.vt5.features.opstart.usecases.TrektellenAuth
@@ -24,6 +32,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+
 
 /**
  * XML Installatie-scherm (AppCompat + ViewBinding).
@@ -31,12 +41,7 @@ import kotlinx.coroutines.withContext
  * - Credentials bewaren/wissen
  * - Login testen (Basic Auth) -> popup + checkuser.json wegschrijven
  * - Serverdata downloaden (.json + .bin)
- * - Aliassen pré-computen (assets -> binaries)
- *
- * Prestatie-optimalisaties:
- * - Preloading van data voor snellere schermovergangen
- * - Parallelle verwerking waar mogelijk
- * - Vermijden van blokkerende I/O op de main thread
+ * - Aliassen pr\u00e9-computen (assets -> binaries) via WorkManager
  */
 class InstallatieScherm : AppCompatActivity() {
     companion object {
@@ -282,33 +287,94 @@ class InstallatieScherm : AppCompatActivity() {
     }
 
     private fun doAliasPrecompute() {
-        // Gebruik de ProgressDialogHelper
-        val dlg = ProgressDialogHelper.show(this, "Pré-computen van aliassen...")
+        // First run a quick preflight check and show results to the user. If OK, start worker.
+        val preflight = AliasIndexWriter.preflightCheck(this, saf)
+        val msg = preflight.joinToString("\n")
+        AlertDialog.Builder(this)
+            .setTitle("Preflight controle")
+            .setMessage(msg + "\n\nVoortzetten met pré-computen?")
+            .setPositiveButton("Ja") { _, _ ->
+                // enqueue WorkManager job
+                val request = OneTimeWorkRequestBuilder<com.yvesds.vt5.features.alias.AliasPrecomputeWorker>()
+                    .addTag("alias-precompute")
+                    .build()
+                WorkManager.getInstance(applicationContext).enqueueUniqueWork("alias_precompute", ExistingWorkPolicy.REPLACE, request)
 
-        uiScope.launch {
-            val msg = withContext(Dispatchers.Default) {
-                runCatching {
-                    val (jsonGz, cborGz) = AliasIndexWriter.ensureComputed(
-                        context = this@InstallatieScherm,
-                        saf = saf,
-                        q = 3,
-                        minhashK = 64
-                    )
-                    val index = AliasIndexWriter.loadIndexFromBinaries(this@InstallatieScherm)
-                    val cnt = index?.json?.size ?: 0
-                    "Aliassen pré-computed en geladen.\n" +
-                            "- Records: $cnt\n" +
-                            "- JSON.gz: $jsonGz\n" +
-                            "- CBOR.gz: $cborGz"
-                }.getOrElse { e ->
-                    "Pré-compute aliassen — fout:\n${e.message ?: e.toString()}"
-                }
+                val dlg = ProgressDialogHelper.show(this, "Pré-computen van aliassen...")
+                WorkManager.getInstance(applicationContext).getWorkInfoByIdLiveData(request.id).observe(this, Observer { info: WorkInfo? ->
+                    if (info == null) return@Observer
+                    val progress = info.progress
+                    val percent = progress.getInt("progress", -1)
+                    val message = progress.getString("message") ?: "Bezig..."
+                    ProgressDialogHelper.updateMessage(dlg, message)
+                    if (info.state.isFinished) {
+                        dlg.dismiss()
+                        if (info.state == WorkInfo.State.SUCCEEDED) {
+                            val out = info.outputData
+                            val summary = out.getString("summary") ?: "Index succesvol bijgewerkt"
+                            val messagesJson = out.getString("messages") ?: "[]"
+                            AlertDialog.Builder(this)
+                                .setTitle("Resultaat")
+                                .setMessage(summary + "\n\nDetails:\n" + messagesJson)
+                                .setPositiveButton("OK", null)
+                                .show()
+                        } else {
+                            val err = info.outputData.getString("error") ?: "Onbekende fout"
+                            AlertDialog.Builder(this).setTitle("Fout").setMessage(err).setPositiveButton("OK", null).show()
+                        }
+                    }
+                })
             }
-            dlg.dismiss()
-            showInfoDialog(getString(com.yvesds.vt5.R.string.dlg_titel_result), msg)
-        }
+            .setNegativeButton("Nee", null)
+            .show()
     }
-    /* -------------------- Helpers -------------------- */
+
+    // Temporary debug helper to inspect internal filesDir/binaries and SAF VT5 assets/binaries
+    private fun verifyOutputsAndShowDialog() {
+        uiScope.launch {
+            val sb = StringBuilder()
+            val binDir = File(filesDir, "binaries")
+            if (binDir.exists() && binDir.isDirectory) {
+                sb.append("Internal binaries (${binDir.absolutePath}):\n")
+                binDir.listFiles()?.forEach { f ->
+                    sb.append(" - ${f.name}  (${f.length()} bytes)\n")
+                } ?: sb.append(" - (empty)\n")
+            } else {
+                sb.append("Internal binaries: NOT FOUND\n")
+            }
+
+            val vt5Dir = saf.getVt5DirIfExists()
+            if (vt5Dir == null) {
+                sb.append("\nSAF VT5 root: NOT SET\n")
+            } else {
+                sb.append("\nSAF VT5 root found. Listing:\n")
+                fun listDir(doc: DocumentFile?, prefix: String) {
+                    if (doc == null) { sb.append(" - $prefix: (not present)\n"); return }
+                    try {
+                        val files = doc.listFiles()
+                        if (files.isEmpty()) sb.append(" - $prefix: (empty)\n")
+                        else {
+                            sb.append(" - $prefix:\n")
+                            files.forEach { d -> sb.append("    * ${d.name}  (isDir=${d.isDirectory})\n") }
+                        }
+                    } catch (ex: Exception) {
+                        sb.append(" - $prefix: error reading: ${ex.message}\n")
+                    }
+                }
+                listDir(vt5Dir.findFile("assets"), "assets")
+                listDir(vt5Dir.findFile("binaries"), "binaries")
+                listDir(vt5Dir.findFile("serverdata"), "serverdata")
+            }
+
+            runOnUiThread {
+                AlertDialog.Builder(this@InstallatieScherm)
+                    .setTitle("Debug: outputs & SAF")
+                    .setMessage(sb.toString())
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
+        }
+    }    /* -------------------- Helpers -------------------- */
 
     private fun saveCheckUserJson(prettyText: String) {
         val vt5Dir = saf.getVt5DirIfExists() ?: return
