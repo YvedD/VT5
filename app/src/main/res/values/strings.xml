@@ -11,9 +11,7 @@
     <!-- Installatie -->
     <string name="titel_install">(Her)Installatie</string>
     <string name="install_uitleg">
-        Deze toepassing moet bestanden kunnen inlezen en wegschrijven.\n
-        Bevestig het gebruik van de map ‘Documents’ in de volgende stap (kies ‘Deze map gebruiken’).\n
-        Alle mappen/bestanden worden aangemaakt indien nodig. Bij herinstallatie wordt niets overschreven.
+        Deze toepassing moet bestanden kunnen inlezen en wegschrijven. Bevestig het gebruik van de map ‘Documents’ in de volgende stap (kies ‘Deze map gebruiken’). Alle mappen/bestanden worden aangemaakt indien nodig. Bij herinstallatie wordt niets overschreven.
     </string>
 
     <string name="btn_kies_documents">Map ‘Documents’ kiezen</string>

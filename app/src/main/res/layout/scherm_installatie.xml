@@ -25,11 +25,12 @@
                 android:id="@+id/etUitleg"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:inputType="textMultiLine"
                 android:enabled="false"
+                android:inputType="textMultiLine"
+                android:minLines="3"
                 android:text="@string/install_uitleg"
                 android:textColor="@color/vt5_on_surface"
-                android:minLines="3" />
+                android:textSize="12dp" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <!-- SAF -->
