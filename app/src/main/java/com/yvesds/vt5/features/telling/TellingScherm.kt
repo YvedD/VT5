@@ -5,6 +5,9 @@ import android.content.Intent
 import android.os.Bundle
 import android.text.InputFilter
 import android.text.InputType
+import android.view.GestureDetector
+import android.view.KeyEvent
+import android.view.MotionEvent
 import android.widget.EditText
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -12,36 +15,35 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.google.android.flexbox.AlignItems
 import com.google.android.flexbox.FlexDirection
 import com.google.android.flexbox.FlexWrap
 import com.google.android.flexbox.FlexboxLayoutManager
 import com.google.android.flexbox.JustifyContent
+import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.core.ui.ProgressDialogHelper
 import com.yvesds.vt5.databinding.SchermTellingBinding
 import com.yvesds.vt5.features.alias.AliasRepository
 import com.yvesds.vt5.features.recent.RecentSpeciesStore
 import com.yvesds.vt5.features.serverdata.model.ServerDataCache
 import com.yvesds.vt5.features.soort.ui.SoortSelectieScherm
+import com.yvesds.vt5.features.speech.SpeechRecognitionManager
+import com.yvesds.vt5.features.speech.VolumeKeyHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.yvesds.vt5.features.speech.SpeechRecognitionManager
-import com.yvesds.vt5.features.speech.VolumeKeyHandler
 import android.Manifest
 import android.content.pm.PackageManager
 import android.util.Log
-import android.view.KeyEvent
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 
 /**
  * TellingScherm - Hoofdscherm voor het tellen van soorten met spraakherkenning.
- * Geoptimaliseerd met:
- * - lifecycleScope voor coroutines gekoppeld aan de activity lifecycle
- * - Verbeterde caching en UI-updates
- * - Meer efficiënte spraakherkenning integratie
- * - Alias ondersteuning voor betere spraakherkenning
+ * - inline alias-toewijzing via tapping op raw ASR logregels
+ * - in-memory buffering van user aliassen (AliasEditor) en persist naar user_aliases.csv (merge)
+ * - hot-reload: nieuwe aliassen worden direct toegevoegd aan AliasRepository in memory (indien beschikbaar)
  */
 class TellingScherm : AppCompatActivity() {
 
@@ -66,11 +68,20 @@ class TellingScherm : AppCompatActivity() {
     // Alias repository
     private val aliasRepository by lazy { AliasRepository.getInstance(this) }
 
+    // Alias editor (buffer + persist helper)
+    private lateinit var aliasEditor: AliasEditor
+
     // Datamodellen
     data class SoortRow(val soortId: String, val naam: String, val count: Int = 0)
     data class SpeechLogRow(val ts: Long, val tekst: String, val bron: String)
 
-    // Activity Result Launcher voor soortenselectie
+    // For species chooser in AddAliasDialog: flattened "id||name"
+    private var availableSpeciesFlat: List<String> = emptyList()
+
+    // Keep last raw partial (optional)
+    private var lastRawPartial: String? = null
+
+    // Activity Result Launcher for soortenselectie
     private val addSoortenLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { res ->
@@ -113,7 +124,10 @@ class TellingScherm : AppCompatActivity() {
         binding = SchermTellingBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Log-venster setup met efficient recycler view
+        // Init alias editor (SAF)
+        aliasEditor = AliasEditor(this, SaFStorageHelper(this))
+
+        // Log-venster setup with RecyclerView and inline alias tap
         setupLogRecyclerView()
 
         // Tiles setup met flexbox voor adaptieve layout
@@ -141,8 +155,6 @@ class TellingScherm : AppCompatActivity() {
                     Log.d(TAG, "Aliases preloaded successfully")
                 } else {
                     Log.w(TAG, "Failed to preload aliases")
-
-                    // Probeer CSV naar JSON te converteren als laden mislukt
                     tryConvertCsvToJson()
                 }
             } catch (e: Exception) {
@@ -151,16 +163,12 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
-    /**
-     * Probeer CSV naar JSON te converteren
-     */
     private fun tryConvertCsvToJson() {
         lifecycleScope.launch {
             try {
                 val success = aliasRepository.convertCsvToJson()
                 if (success) {
                     Log.d(TAG, "Successfully converted CSV to JSON")
-                    // Probeer opnieuw te laden
                     aliasRepository.loadAliasData()
                 }
             } catch (e: Exception) {
@@ -176,6 +184,63 @@ class TellingScherm : AppCompatActivity() {
         binding.recyclerViewSpeechLog.setHasFixedSize(true)
         logAdapter = SpeechLogAdapter()
         binding.recyclerViewSpeechLog.adapter = logAdapter
+
+        // Inline alias assignment: tap on a log item with bron == "raw" to open AddAliasDialog.
+        val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onSingleTapUp(e: MotionEvent): Boolean {
+                val child = binding.recyclerViewSpeechLog.findChildViewUnder(e.x, e.y)
+                if (child != null) {
+                    val pos = binding.recyclerViewSpeechLog.getChildAdapterPosition(child)
+                    if (pos != RecyclerView.NO_POSITION) {
+                        val row = logAdapter.currentList.getOrNull(pos)
+                        if (row != null && row.bron == "raw" && row.tekst.isNotBlank()) {
+                            // open AddAliasDialog inline with this partial
+                            if (availableSpeciesFlat.isEmpty()) {
+                                Toast.makeText(this@TellingScherm, "Soortenlijst nog niet beschikbaar", Toast.LENGTH_SHORT).show()
+                                return true
+                            }
+                            val dlg = AddAliasDialog.newInstance(listOf(row.tekst), availableSpeciesFlat)
+                            dlg.listener = object : AddAliasDialog.AddAliasListener {
+                                override fun onAliasAssigned(speciesId: String, aliasText: String) {
+                                    lifecycleScope.launch {
+                                        val added = aliasEditor.addAliasInMemory(speciesId, aliasText)
+                                        if (added) {
+                                            try {
+                                                // hot-reload to AliasRepository as well
+                                                aliasRepository.addAliasInMemory(speciesId, aliasText)
+                                                addLog("Alias toegevoegd in-memory: $aliasText -> $speciesId", "alias")
+                                            } catch (ex: Exception) {
+                                                Log.w(TAG, "AliasRepository.addAliasInMemory failed: ${ex.message}")
+                                                addLog("Alias toegevoegd in buffer: $aliasText -> $speciesId", "alias")
+                                            }
+                                            Toast.makeText(this@TellingScherm, "Alias toegevoegd voor soort $speciesId", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            Toast.makeText(this@TellingScherm, "Alias niet toegevoegd (duplicaat of ongeldig)", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                }
+                            }
+                            dlg.show(supportFragmentManager, "addAlias")
+                        }
+                    }
+                }
+                return true
+            }
+        })
+
+        binding.recyclerViewSpeechLog.addOnItemTouchListener(object : RecyclerView.OnItemTouchListener {
+            override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
+                return gestureDetector.onTouchEvent(e)
+            }
+
+            override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) {
+                // no-op
+            }
+
+            override fun onRequestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {
+                // no-op
+            }
+        })
     }
 
     private fun setupSpeciesTilesRecyclerView() {
@@ -198,31 +263,51 @@ class TellingScherm : AppCompatActivity() {
     private fun setupButtons() {
         binding.btnAddSoorten.setOnClickListener { openSoortSelectieForAdd() }
 
-        // Normaal gedrag
         binding.btnAfronden.setOnClickListener {
             Toast.makeText(this, "Afronden (batch-upload) volgt later.", Toast.LENGTH_LONG).show()
         }
 
-        // Long click voor conversie van CSV naar JSON (voor admins)
         binding.btnAfronden.setOnLongClickListener {
             tryConvertCsvToJson()
             Toast.makeText(this, "CSV naar JSON conversie gestart...", Toast.LENGTH_SHORT).show()
             true
+        }
+
+        // Save & close button (Afsluiten / Opslaan)
+        binding.btnSaveClose.setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("Data opslaan?")
+                .setMessage("Wil je de toegevoegde aliassen opslaan en terugkeren naar Metadata?")
+                .setPositiveButton("Opslaan") { _, _ ->
+                    lifecycleScope.launch {
+                        val ok = aliasEditor.persistUserAliasesSaf()
+                        if (ok) {
+                            Toast.makeText(this@TellingScherm, "Aliassen opgeslagen", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(this@TellingScherm, "Opslaan mislukt", Toast.LENGTH_LONG).show()
+                        }
+                        // Navigeer daarna naar MetadataScherm
+                        startActivity(Intent(this@TellingScherm, com.yvesds.vt5.features.metadata.ui.MetadataScherm::class.java).apply { flags = Intent.FLAG_ACTIVITY_CLEAR_TOP })
+                        finish()
+                    }
+                }
+                .setNegativeButton("Annuleren", null)
+                .show()
         }
     }
 
     private fun loadPreselection() {
         lifecycleScope.launch {
             try {
-                // Toon progressdialog
                 val dialog = ProgressDialogHelper.show(this@TellingScherm, "Soorten laden...")
-
                 try {
-                    // Load data in background
                     val (snapshot, initial) = withContext(Dispatchers.IO) {
                         val snapshot = ServerDataCache.getOrLoad(this@TellingScherm)
                         val pre = TellingSessionManager.preselectState.value
                         val ids = pre.selectedSoortIds
+
+                        // Build flat species list for dialog search (id||name)
+                        availableSpeciesFlat = snapshot.speciesById.map { (id, s) -> "$id||${s.soortnaam}" }.toList()
 
                         if (ids.isEmpty()) {
                             return@withContext null to emptyList()
@@ -244,15 +329,12 @@ class TellingScherm : AppCompatActivity() {
                         return@launch
                     }
 
-                    // Update UI on main thread
                     tilesAdapter.submitList(initial)
                     addLog("Telling gestart met ${initial.size} soorten.", "systeem")
                     dialog.dismiss()
 
-                    // Controleer en vraag permissies voor spraakherkenning
                     checkAndRequestPermissions()
                 } finally {
-                    // Zorg ervoor dat dialog altijd gesloten wordt
                     dialog.dismiss()
                 }
             } catch (e: Exception) {
@@ -263,9 +345,6 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
-    /**
-     * Controleert en vraagt microfoon permissies aan
-     */
     private fun checkAndRequestPermissions() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED) {
@@ -273,45 +352,39 @@ class TellingScherm : AppCompatActivity() {
                 arrayOf(Manifest.permission.RECORD_AUDIO),
                 PERMISSION_REQUEST_RECORD_AUDIO)
         } else {
-            // Permissies zijn al toegekend, initialiseer spraakherkenning
             initializeSpeechRecognition()
             initializeVolumeKeyHandler()
         }
     }
 
-    /**
-     * Initialiseert de spraakherkenning
-     */
     private fun initializeSpeechRecognition() {
         try {
             speechRecognitionManager = SpeechRecognitionManager(this)
             speechRecognitionManager.initialize()
 
-            // Vul de map met beschikbare soorten
             updateSelectedSpeciesMap()
 
-            // Laad aliassen in de spraakherkenningsmanager
             lifecycleScope.launch {
                 speechRecognitionManager.loadAliases()
             }
 
-            // Stel de callback in voor als een soort wordt herkend met aantal
+            // Callback for parsed species counts
             speechRecognitionManager.setOnSpeciesCountListener { soortId, name, count ->
-                // Tel deze soort met het opgegeven aantal
                 runOnUiThread {
                     updateSoortCount(soortId, count)
                     addLog("Herkend: $name $count", "spraak")
                 }
             }
 
-            // Voeg een debug callback toe voor ruwe ASR-resultaten
+            // Raw ASR callback: capture last partial / raw best match (don't prefix with "ASR:")
             speechRecognitionManager.setOnRawResultListener { rawText ->
                 runOnUiThread {
-                    addLog("ASR: $rawText", "raw")
+                    // store raw partial (cleaned)
+                    lastRawPartial = rawText
+                    addLog(rawText, "raw")
                 }
             }
 
-            // Log dat spraakherkenning is geïnitialiseerd
             addLog("Spraakherkenning geactiveerd - protocol: 'Soortnaam Aantal'", "systeem")
             speechInitialized = true
 
@@ -326,7 +399,6 @@ class TellingScherm : AppCompatActivity() {
         try {
             volumeKeyHandler = VolumeKeyHandler(this)
             volumeKeyHandler.setOnVolumeUpListener {
-                // Start spraakherkenning wanneer volume-up wordt ingedrukt
                 startSpeechRecognition()
             }
             volumeKeyHandler.register()
@@ -337,26 +409,16 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
-    /**
-     * Start de spraakherkenning met visuele feedback
-     */
     private fun startSpeechRecognition() {
         if (speechInitialized && !speechRecognitionManager.isCurrentlyListening()) {
-            // Zorg ervoor dat de soorten-map up-to-date is vóór elke luistersessie
             updateSelectedSpeciesMap()
-
             speechRecognitionManager.startListening()
-
-            // Visuele feedback dat spraakherkenning actief is
             addLog("Luisteren...", "systeem")
 
-            // Start een timer om automatic timeout te simuleren
             lifecycleScope.launch {
-                kotlinx.coroutines.delay(8000) // 8 seconden timeout
+                kotlinx.coroutines.delay(8000)
                 if (speechInitialized && speechRecognitionManager.isCurrentlyListening()) {
                     speechRecognitionManager.stopListening()
-
-                    // Update UI op main thread
                     withContext(Dispatchers.Main) {
                         addLog("Timeout na 8 seconden", "systeem")
                     }
@@ -367,16 +429,12 @@ class TellingScherm : AppCompatActivity() {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (::volumeKeyHandler.isInitialized && volumeKeyHandler.isVolumeUpEvent(keyCode)) {
-            // Start spraakherkenning
             startSpeechRecognition()
-            return true // Consumeer het event
+            return true
         }
         return super.onKeyDown(keyCode, event)
     }
 
-    /**
-     * Update de map met beschikbare soorten voor spraakherkenning
-     */
     private fun updateSelectedSpeciesMap() {
         selectedSpeciesMap.clear()
 
@@ -386,9 +444,7 @@ class TellingScherm : AppCompatActivity() {
             return
         }
 
-        // Itereer over de soorten en vul de map
         for (soort in soorten) {
-            // Sla zowel de originele naam als een lowercase versie op voor case-insensitive matching
             selectedSpeciesMap[soort.naam] = soort.soortId
             selectedSpeciesMap[soort.naam.lowercase()] = soort.soortId
         }
@@ -398,10 +454,6 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
-    /**
-     * Telt het opgegeven aantal bij bij het huidige aantal voor een soort
-     * Geoptimaliseerd voor snelheid en betere UI-updates
-     */
     private fun updateSoortCount(soortId: String, count: Int) {
         val currentList = tilesAdapter.currentList
         val position = currentList.indexOfFirst { it.soortId == soortId }
@@ -415,25 +467,15 @@ class TellingScherm : AppCompatActivity() {
         val oldCount = item.count
         val newCount = oldCount + count
 
-        // Create a new list with the updated item
-        val updatedList = ArrayList(currentList) // More efficient than toMutableList()
+        val updatedList = ArrayList(currentList)
         updatedList[position] = item.copy(count = newCount)
 
-        // Mark as recently used
         RecentSpeciesStore.recordUse(this, soortId, maxEntries = 25)
 
-        // Use a diff-based approach for updating the adapter
         lifecycleScope.launch(Dispatchers.Main.immediate) {
-            // First submit null to force a complete refresh
             tilesAdapter.submitList(null)
-
-            // Then submit the new list
             tilesAdapter.submitList(updatedList)
-
-            // Force notification for the specific item
             tilesAdapter.notifyItemChanged(position)
-
-            // Log the update
             addLog("Bijgewerkt: ${item.naam} $oldCount → $newCount", "spraak")
         }
     }
@@ -448,11 +490,9 @@ class TellingScherm : AppCompatActivity() {
         when (requestCode) {
             PERMISSION_REQUEST_RECORD_AUDIO -> {
                 if ((grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED)) {
-                    // Permissie toegekend, initialiseer spraakherkenning
                     initializeSpeechRecognition()
                     initializeVolumeKeyHandler()
                 } else {
-                    // Permissie geweigerd, toon een bericht aan de gebruiker
                     Toast.makeText(this,
                         "Spraakherkenning werkt niet zonder microfoonrechten",
                         Toast.LENGTH_LONG).show()
@@ -484,15 +524,10 @@ class TellingScherm : AppCompatActivity() {
                 if (n == null || n < 0) {
                     Toast.makeText(this, "Ongeldig aantal.", Toast.LENGTH_SHORT).show()
                 } else {
-                    // Create a new list directly
                     val updated = ArrayList(current)
                     updated[position] = row.copy(count = n)
-
-                    // Submit the update
                     tilesAdapter.submitList(updated)
                     addLog("Set ${row.naam} = $n", "manueel")
-
-                    // Mark as recently used
                     RecentSpeciesStore.recordUse(this, row.soortId, maxEntries = 25)
                 }
             }
@@ -506,11 +541,23 @@ class TellingScherm : AppCompatActivity() {
         addSoortenLauncher.launch(intent)
     }
 
-    private fun addLog(msg: String, bron: String) {
+    /**
+     * AddLog cleans messages for raw ASR entries:
+     *  - removes leading "asr:" (case-insensitive)
+     *  - removes trailing numeric tokens (counts) for raw entries
+     */
+    private fun addLog(msgIn: String, bron: String) {
+        var msg = msgIn
+        // clean any leading "asr:" (case-insensitive)
+        msg = msg.replace(Regex("(?i)^\\s*asr:\\s*"), "")
+        if (bron == "raw") {
+            // remove trailing numeric tokens (e.g. "warmsteis 3" -> "warmsteis")
+            msg = msg.replace(Regex("\\s+\\d+(?:[.,]\\d+)?$"), "")
+            msg = msg.trim()
+        }
         val now = System.currentTimeMillis() / 1000L
         val newRow = SpeechLogRow(ts = now, tekst = msg, bron = bron)
 
-        // Use efficient list update with pre-allocation
         val currentSize = logAdapter.currentList.size
         val newList = ArrayList<SpeechLogRow>(currentSize + 1)
         newList.addAll(logAdapter.currentList)
@@ -521,7 +568,6 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
-    // Lifecycle methodes
     override fun onPause() {
         super.onPause()
         if (speechInitialized) {

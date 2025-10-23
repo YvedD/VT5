@@ -20,7 +20,7 @@
     <!-- Card met afgeronde hoeken + stroke in lichtblauw -->
     <com.google.android.material.card.MaterialCardView
         android:layout_width="match_parent"
-        android:layout_height="140dp"
+        android:layout_height="240dp"
         android:layout_marginBottom="8dp"
         app:cardCornerRadius="8dp"
         app:cardUseCompatPadding="true"
@@ -31,28 +31,37 @@
             android:id="@+id/recyclerViewSpeechLog"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:padding="6dp"
-            android:background="#111111" />
+            android:background="#111111"
+            android:padding="6dp" />
     </com.google.android.material.card.MaterialCardView>
 
     <!-- Actieknoppen -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="end"
+        android:gravity="center_horizontal"
         android:orientation="horizontal"
         android:padding="4dp">
+
+        <Button
+            android:id="@+id/btnSaveClose"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_margin="5dp"
+            android:text="Opslaan" />
 
         <Button
             android:id="@+id/btnAddSoorten"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Soorten toevoegen" />
+            android:layout_margin="5dp"
+            android:text="Toevoegen" />
 
         <Button
             android:id="@+id/btnAfronden"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_margin="5dp"
             android:layout_marginStart="8dp"
             android:text="Afronden" />
     </LinearLayout>

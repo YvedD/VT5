@@ -1,8 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- app/src/main/res/values/dimens.xml -->
 <resources>
+    <!-- Bestaande waarden -->
     <dimen name="vt5_btn_corner">6dp</dimen>
     <dimen name="vt5_btn_stroke">1dp</dimen>
     <dimen name="vt5_card_margin_vertical">30dp</dimen>
     <dimen name="vt5_padding">16dp</dimen>
+
+    <!-- Toegevoegd: padding waarden gebruikt door item_speech_log.xml -->
+    <dimen name="padding_small">8dp</dimen>
+    <dimen name="padding_micro">4dp</dimen>
 </resources>

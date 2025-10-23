@@ -14,10 +14,13 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Repository voor het beheren van alias-data voor soorten
+ *
+ * Uitbreiding: addAliasInMemory() cleans input (removes "asr:" and trailing numbers) defensively.
  */
 class AliasRepository(private val context: Context) {
 
@@ -84,7 +87,7 @@ class AliasRepository(private val context: Context) {
     fun findSpeciesIdByAlias(text: String): String? {
         if (!isDataLoaded) return null
 
-        val normalizedText = text.trim().lowercase()
+        val normalizedText = text.trim().lowercase(Locale.getDefault())
         return aliasToSpeciesIdMap[normalizedText]
     }
 
@@ -170,13 +173,13 @@ class AliasRepository(private val context: Context) {
                         if (parts.size < 3) continue
 
                         val soortId = parts[0].trim()
-                        val canonicalName = parts[1].trim().lowercase()
+                        val canonicalName = parts[1].trim().lowercase(Locale.getDefault())
                         val displayName = parts[2].trim()
 
                         val aliases = if (parts.size > 3) {
                             parts.subList(3, parts.size)
                                 .filter { it.isNotBlank() }
-                                .map { it.trim().lowercase() }
+                                .map { it.trim().lowercase(Locale.getDefault()) }
                         } else {
                             emptyList()
                         }
@@ -202,11 +205,10 @@ class AliasRepository(private val context: Context) {
         aliasToSpeciesIdMap.clear()
 
         for ((soortId, entry) in aliasCache) {
-            // Voeg canonical name toe
-            aliasToSpeciesIdMap[entry.canonicalName] = soortId
-
+            // Voeg canonical name toe (already lowercased)
+            entry.canonicalName.takeIf { it.isNotBlank() }?.let { aliasToSpeciesIdMap[it] = soortId }
             // Voeg displayName toe (lowercase)
-            aliasToSpeciesIdMap[entry.displayName.lowercase()] = soortId
+            entry.displayName.takeIf { it.isNotBlank() }?.let { aliasToSpeciesIdMap[it.lowercase(Locale.getDefault())] = soortId }
 
             // Voeg alle aliassen toe
             for (alias in entry.aliases) {
@@ -257,6 +259,66 @@ class AliasRepository(private val context: Context) {
             Log.e(TAG, "Error converting CSV to JSON", e)
             return@withContext false
         }
+    }
+
+    /**
+     * Voeg een alias toe aan de in-memory structures (hot-reload).
+     * - Als soort bestaat: voeg alias toe aan bestaande AliasEntry
+     * - Als soort niet bestaat: maak nieuwe AliasEntry met canonical = soortId (fallback)
+     *
+     * Returns true als nieuw alias toegevoegd werd, false als alias al bestond of ongeldig was.
+     */
+    fun addAliasInMemory(soortId: String, aliasRaw: String): Boolean {
+        try {
+            // defensive cleaning like AliasEditor
+            var alias = aliasRaw.trim()
+            alias = alias.replace(Regex("(?i)^\\s*asr:\\s*"), "")
+            alias = alias.replace("/", " of ")
+            alias = alias.replace(";", " ")
+            alias = alias.replace(Regex("(?:\\s+\\d+)+\\s*$"), "")
+            alias = alias.replace(Regex("\\s+"), " ").trim()
+            alias = alias.lowercase(Locale.getDefault())
+            if (alias.isBlank()) return false
+
+            // atomic update using synchronization on aliasCache
+            synchronized(aliasCache) {
+                val existing = aliasCache[soortId]
+                val currentAliases = existing?.aliases?.toMutableList() ?: mutableListOf()
+
+                // Prevent duplicates
+                if (currentAliases.any { it.equals(alias, ignoreCase = true) }) return false
+
+                currentAliases.add(alias)
+                val canonical = existing?.canonicalName ?: soortId
+                val display = existing?.displayName ?: canonical
+
+                // Replace with new AliasEntry (immutable data class)
+                aliasCache[soortId] = AliasEntry(soortId, canonical, display, currentAliases.toList())
+
+                // Update reverse mapping with normalized alias
+                val norm = normalizeForKey(alias)
+                if (norm.isNotBlank()) {
+                    aliasToSpeciesIdMap[norm] = soortId
+                }
+            }
+
+            Log.d(TAG, "addAliasInMemory: added alias '$alias' for species $soortId")
+            return true
+        } catch (ex: Exception) {
+            Log.w(TAG, "addAliasInMemory failed: ${ex.message}", ex)
+            return false
+        }
+    }
+
+    /**
+     * Helper normalizer to keep consistent behaviour with precompute normalizer
+     */
+    private fun normalizeForKey(input: String): String {
+        val lower = input.lowercase(Locale.getDefault())
+        val decomposed = java.text.Normalizer.normalize(lower, java.text.Normalizer.Form.NFD)
+        val noDiacritics = decomposed.replace("\\p{Mn}+".toRegex(), "")
+        val cleaned = noDiacritics.replace("[^\\p{L}\\p{Nd}]+".toRegex(), " ").trim()
+        return cleaned.replace("\\s+".toRegex(), " ")
     }
 }
 

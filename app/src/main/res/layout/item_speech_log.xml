@@ -1,22 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:orientation="horizontal"
+    android:id="@+id/item_speech_log_root"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:paddingBottom="2dp">
-
+    android:background="?android:attr/selectableItemBackground"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="2dp"
+    android:paddingTop="0dp"
+    android:paddingEnd="2dp"
+    android:paddingBottom="0dp">
+    <!-- Timestamp -->
     <TextView
         android:id="@+id/tvTime"
-        android:layout_width="wrap_content"
+        android:layout_width="65dp"
         android:layout_height="wrap_content"
-        android:text="12:34:56"
-        android:textColor="#bbbbbb"
-        android:paddingEnd="8dp" />
-
+        android:layout_marginEnd="@dimen/padding_small"
+        android:ellipsize="end"
+        android:gravity="center_vertical"
+        android:maxLines="1"
+        android:textAppearance="?android:attr/textAppearanceSmall"
+        android:textColor="@color/vt5_light_blue"
+        android:textSize="10dp" />
+    <!-- Message / parsed summary -->
     <TextView
         android:id="@+id/tvMsg"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:text="Logregel" />
+        android:ellipsize="end"
+        android:maxLines="2"
+        android:textAppearance="?android:attr/textAppearanceMedium"
+        android:textColor="@color/vt5_light_blue"
+        android:textSize="11sp" />
 </LinearLayout>

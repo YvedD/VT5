@@ -4,6 +4,9 @@
     <color name="vt5_black">#121212</color>
     <color name="vt5_white">#FFFFFF</color>
 
+    <!-- Alias / compatibel met layouts die @color/black gebruiken -->
+    <color name="black">#121212</color>
+
     <!-- Accent (lichtblauwe rand) -->
     <color name="vt5_light_blue">#117CAF</color>
     <color name="vt5_light_gray">#5D748C</color>

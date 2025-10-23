@@ -8,6 +8,7 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
 import com.yvesds.vt5.features.alias.AliasRepository
+import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -16,13 +17,20 @@ import java.util.regex.Pattern
 import kotlin.math.min
 
 /**
- * Verbeterde spraakherkenningsmanager met fonetische indexering voor nauwkeurigere matching
- * Geoptimaliseerd voor performance met:
- * - Efficiënte HashMap pre-allocaties
- * - Minder garbage collection door objecten te hergebruiken
- * - Directe regex matching voor standaard patronen
- * - Cache van fonetische indexering
- * - Alias ondersteuning voor betere herkenning van varianten
+ * Verbeterde spraakherkenningsmanager met partials-logging en langere silence timeout.
+ *
+ * Belangrijke wijzigingen (t.o.v. origineel):
+ * - Partial results worden nu verzameld in een interne buffer (asrPartials).
+ * - Bij final result wordt AliasSpeechParser aangeroepen met de verzamelde partials zodat
+ *   de parser die voor logging/training kan opnemen.
+ * - Extra instellingen op het RecognizerIntent om stilte-timeouts te verlengen zodat
+ *   langere gecombineerde zinnen niet vroeg afgebroken worden.
+ * - Toggle `enablePartialsLogging` (default = true) zodat je partials-logging via code kunt aan/uitzetten.
+ *
+ * Hoe te gebruiken:
+ * - StartListening() zoals voorheen. De manager verzamelt partials en op final resultaat
+ *   worden parsed items teruggegeven via onSpeciesCountListener.
+ * - Als parser geen items vindt, valt de manager terug op de bestaande regex / parseSpeciesWithCounts logica.
  */
 class SpeechRecognitionManager(private val activity: Activity) {
 
@@ -80,6 +88,16 @@ class SpeechRecognitionManager(private val activity: Activity) {
     // Status van alias loading
     private var aliasesLoaded = false
 
+    // Toggle: enable/disable partials logging (kan in code op true/false gezet worden)
+    // Documentatie: zet dit op false als je tijdens testen geen partials in de NDJSON logs wilt.
+    var enablePartialsLogging: Boolean = true
+
+    // Internal partials buffer (keeps recent partials in chronological order)
+    private val asrPartials = ArrayList<String>(32)
+
+    // SaF helper (voor logs) - lazy init
+    private val safHelper: SaFStorageHelper by lazy { SaFStorageHelper(activity.applicationContext) }
+
     /**
      * Data class die een herkende soort met aantal voorstelt
      */
@@ -133,8 +151,15 @@ class SpeechRecognitionManager(private val activity: Activity) {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "nl")
                 putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, true)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, MAX_RESULTS)
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true) // enable partials
+                // Increase silence timeouts (ms) to allow longer utterances before timeout
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2500L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1000L)
             }
+
+            // Clear previous partials
+            synchronized(asrPartials) { asrPartials.clear() }
 
             isListening = true
             speechRecognizer?.startListening(intent)
@@ -215,6 +240,7 @@ class SpeechRecognitionManager(private val activity: Activity) {
             speechRecognizer?.destroy()
             speechRecognizer = null
             parsingBuffer.clear()
+            synchronized(asrPartials) { asrPartials.clear() }
         } catch (e: Exception) {
             Log.e(TAG, "Error destroying speech recognizer: ${e.message}", e)
         }
@@ -240,7 +266,7 @@ class SpeechRecognitionManager(private val activity: Activity) {
 
             override fun onEndOfSpeech() {
                 Log.d(TAG, "End of speech")
-                isListening = false
+                // Keep isListening state handled by onResults/onError
             }
 
             override fun onError(error: Int) {
@@ -258,6 +284,8 @@ class SpeechRecognitionManager(private val activity: Activity) {
                 }
                 Log.e(TAG, "Error during speech recognition: $errorMessage ($error)")
                 isListening = false
+                // Clear partials when error occurs
+                synchronized(asrPartials) { asrPartials.clear() }
             }
 
             override fun onResults(results: Bundle?) {
@@ -273,46 +301,65 @@ class SpeechRecognitionManager(private val activity: Activity) {
                     // Stuur ruwe tekst door voor debugging
                     onRawResultListener?.invoke(bestMatch)
 
-                    // Probeer eerst directe regex matching voor "Soortnaam Aantal" patroon
-                    val matchResult = SPECIES_COUNT_PATTERN.matcher(bestMatch)
-                    if (matchResult.find()) {
-                        // Veilig ophalen van groepen met null-check
-                        val speciesNameRaw = matchResult.group(1)
-                        val countText = matchResult.group(2)
+                    // Copy partials for this final
+                    val partialsCopy: List<String> = synchronized(asrPartials) {
+                        val copy = ArrayList(asrPartials)
+                        asrPartials.clear()
+                        copy
+                    }
 
-                        if (speciesNameRaw != null && countText != null) {
-                            val speciesName = speciesNameRaw.trim()
-                            val count = countText.toIntOrNull() ?: 1
+                    // First attempt: use AliasSpeechParser which uses the precomputed indices
+                    CoroutineScope(Dispatchers.Main).launch {
+                        try {
+                            val parser = AliasSpeechParser(activity.applicationContext, SaFStorageHelper(activity.applicationContext))
+                            val parseResult = parser.parseSpoken(bestMatch, if (enablePartialsLogging) partialsCopy else emptyList())
 
-                            // Zoek de soortId op basis van de naam - eerst directe match
-                            val speciesId = findSpeciesIdEfficient(speciesName)
-
-                            if (speciesId != null) {
-                                onSpeciesCountListener?.invoke(speciesId, speciesName, count)
+                            if (parseResult.success && parseResult.items.isNotEmpty()) {
+                                // Fire species count events for parsed items
+                                for (item in parseResult.items) {
+                                    val sid = item.chosenSpeciesId ?: continue
+                                    val sname = item.chosenAliasText ?: item.normalized
+                                    val cnt = item.amount
+                                    onSpeciesCountListener?.invoke(sid, sname, cnt)
+                                }
                             } else {
-                                // Als directe match mislukt, probeer complexe parsing
-                                val recognizedItems = parseSpeciesWithCounts(bestMatch)
-                                if (recognizedItems.isNotEmpty()) {
-                                    for (item in recognizedItems) {
-                                        onSpeciesCountListener?.invoke(item.speciesId, item.speciesName, item.count)
+                                // Fallback to existing parsing logic (regex + heuristic)
+                                val matchResult = SPECIES_COUNT_PATTERN.matcher(bestMatch)
+                                if (matchResult.find()) {
+                                    val speciesNameRaw = matchResult.group(1)
+                                    val countText = matchResult.group(2)
+                                    if (speciesNameRaw != null && countText != null) {
+                                        val speciesName = speciesNameRaw.trim()
+                                        val count = countText.toIntOrNull() ?: 1
+                                        val speciesId = findSpeciesIdEfficient(speciesName)
+                                        if (speciesId != null) {
+                                            onSpeciesCountListener?.invoke(speciesId, speciesName, count)
+                                        } else {
+                                            val recognizedItems = parseSpeciesWithCounts(bestMatch)
+                                            if (recognizedItems.isNotEmpty()) {
+                                                for (item in recognizedItems) {
+                                                    onSpeciesCountListener?.invoke(item.speciesId, item.speciesName, item.count)
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    val recognizedItems = parseSpeciesWithCounts(bestMatch)
+                                    if (recognizedItems.isNotEmpty()) {
+                                        for (item in recognizedItems) {
+                                            onSpeciesCountListener?.invoke(item.speciesId, item.speciesName, item.count)
+                                        }
                                     }
                                 }
                             }
-                        } else {
-                            // Als regex groepen null zijn, val terug op complexe parsing
+                        } catch (ex: Exception) {
+                            Log.w(TAG, "Parser invocation failed, falling back: ${ex.message}", ex)
+                            // Fallback existing logic
                             val recognizedItems = parseSpeciesWithCounts(bestMatch)
                             if (recognizedItems.isNotEmpty()) {
                                 for (item in recognizedItems) {
                                     onSpeciesCountListener?.invoke(item.speciesId, item.speciesName, item.count)
                                 }
-                            }
-                        }
-                    } else {
-                        // Als regex niet matcht, probeer complexe parsing
-                        val recognizedItems = parseSpeciesWithCounts(bestMatch)
-                        if (recognizedItems.isNotEmpty()) {
-                            for (item in recognizedItems) {
-                                onSpeciesCountListener?.invoke(item.speciesId, item.speciesName, item.count)
                             }
                         }
                     }
@@ -322,7 +369,26 @@ class SpeechRecognitionManager(private val activity: Activity) {
             }
 
             override fun onPartialResults(partialResults: Bundle?) {
-                // Niet gebruikt in deze implementatie
+                if (!enablePartialsLogging) return
+
+                val partials = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) ?: emptyList()
+                if (partials.isNotEmpty()) {
+                    // Keep only recent partials (avoid unbounded growth)
+                    synchronized(asrPartials) {
+                        for (p in partials) {
+                            val normalized = p.trim()
+                            if (normalized.isNotBlank()) {
+                                asrPartials.add(normalized)
+                                if (asrPartials.size > 40) {
+                                    // keep the tail (most recent)
+                                    while (asrPartials.size > 40) asrPartials.removeAt(0)
+                                }
+                            }
+                        }
+                    }
+                    // Notify UI about latest partial (best one)
+                    onRawResultListener?.invoke(partials[0])
+                }
             }
 
             override fun onEvent(eventType: Int, params: Bundle?) {
