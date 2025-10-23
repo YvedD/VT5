@@ -38,12 +38,15 @@ import android.content.pm.PackageManager
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import java.util.Locale
 
 /**
  * TellingScherm - Hoofdscherm voor het tellen van soorten met spraakherkenning.
  * - inline alias-toewijzing via tapping op raw ASR logregels
  * - in-memory buffering van user aliassen (AliasEditor) en persist naar user_aliases.csv (merge)
  * - hot-reload: nieuwe aliassen worden direct toegevoegd aan AliasRepository in memory (indien beschikbaar)
+ * - wanneer een herkende soort nog niet in de tiles staat, wordt de gebruiker gevraagd of de soort
+ *   toegevoegd moet worden en meteen het herkende aantal moet krijgen
  */
 class TellingScherm : AppCompatActivity() {
 
@@ -104,7 +107,7 @@ class TellingScherm : AppCompatActivity() {
                         .toList()
 
                     if (additions.isNotEmpty()) {
-                        val merged = (existing + additions).sortedBy { it.naam.lowercase() }
+                        val merged = (existing + additions).sortedBy { it.naam.lowercase(Locale.getDefault()) }
                         tilesAdapter.submitList(merged)
                         addLog("Soorten toegevoegd: ${additions.size}", "manueel")
                         Toast.makeText(this@TellingScherm, "Toegevoegd: ${additions.size}", Toast.LENGTH_SHORT).show()
@@ -317,7 +320,7 @@ class TellingScherm : AppCompatActivity() {
                         val initialList = ids.mapNotNull { sid ->
                             val naam = speciesById[sid]?.soortnaam ?: return@mapNotNull null
                             SoortRow(sid, naam, 0)
-                        }.sortedBy { it.naam.lowercase() }
+                        }.sortedBy { it.naam.lowercase(Locale.getDefault()) }
 
                         snapshot to initialList
                     }
@@ -371,8 +374,27 @@ class TellingScherm : AppCompatActivity() {
             // Callback for parsed species counts
             speechRecognitionManager.setOnSpeciesCountListener { soortId, name, count ->
                 runOnUiThread {
-                    updateSoortCount(soortId, count)
-                    addLog("Herkend: $name $count", "spraak")
+                    // If species exists in tiles, use existing behavior
+                    val current = tilesAdapter.currentList
+                    val pos = current.indexOfFirst { it.soortId == soortId }
+                    if (pos != -1) {
+                        updateSoortCount(soortId, count)
+                        addLog("Herkend: ${name.ifBlank { soortId }} $count", "spraak")
+                    } else {
+                        // Species not in tiles yet — ask user whether to add it
+                        val prettyName = name.ifBlank { soortId }
+                        val msg = "Soort \"$prettyName\" werd herkend met aantal $count maar staat nog niet in de lijst.\n\nWil je deze soort toevoegen en meteen $count noteren?"
+                        AlertDialog.Builder(this@TellingScherm)
+                            .setTitle("Soort toevoegen?")
+                            .setMessage(msg)
+                            .setPositiveButton("Ja") { _, _ ->
+                                addSpeciesToTiles(soortId, prettyName, count)
+                            }
+                            .setNegativeButton("Nee") { _, _ ->
+                                addLog("Gebruiker weigerde toevoegen: $prettyName", "systeem")
+                            }
+                            .show()
+                    }
                 }
             }
 
@@ -392,6 +414,68 @@ class TellingScherm : AppCompatActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing speech recognition", e)
             Toast.makeText(this, "Kon spraakherkenning niet initialiseren: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun addSpeciesToTiles(soortId: String, naam: String, initialCount: Int) {
+        lifecycleScope.launch {
+            try {
+                // Try to obtain a canonical name from serverdata if available
+                val snapshot = withContext(Dispatchers.IO) { ServerDataCache.getOrLoad(this@TellingScherm) }
+                val canonical = snapshot.speciesById[soortId]?.soortnaam ?: naam
+
+                // Prevent duplicates (race)
+                val current = tilesAdapter.currentList
+                if (current.any { it.soortId == soortId }) {
+                    // already present (race condition), just update count
+                    updateSoortCount(soortId, initialCount)
+                    return@launch
+                }
+
+                val newRow = SoortRow(soortId, canonical, initialCount)
+                val updated = ArrayList(current)
+                updated.add(newRow)
+
+                // Submit list on main thread
+                lifecycleScope.launch(Dispatchers.Main) {
+                    tilesAdapter.submitList(updated)
+                    // update recognition map so it recognizes next time
+                    updateSelectedSpeciesMap()
+                    // mark recent
+                    RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
+                    addLog("Soort toegevoegd: $canonical ($initialCount)", "systeem")
+                }
+            } catch (ex: Exception) {
+                Log.w(TAG, "addSpeciesToTiles failed: ${ex.message}", ex)
+                addLog("Fout bij toevoegen soort ${naam}", "systeem")
+            }
+        }
+    }
+
+    /**
+     * AddLog cleans messages for raw ASR entries:
+     *  - removes leading "asr:" (case-insensitive)
+     *  - removes trailing numeric tokens (counts) for raw entries
+     */
+    private fun addLog(msgIn: String, bron: String) {
+        var msg = msgIn
+        // clean any leading "asr:" (case-insensitive)
+        msg = msg.replace(Regex("(?i)^\\s*asr:\\s*"), "")
+        if (bron == "raw") {
+            // remove trailing numeric tokens (e.g. "warmsteis 3" -> "warmsteis")
+            msg = msg.replace(Regex("\\s+\\d+(?:[.,]\\d+)?$"), "")
+            msg = msg.trim()
+        }
+        val now = System.currentTimeMillis() / 1000L
+        val newRow = SpeechLogRow(ts = now, tekst = msg, bron = bron)
+
+        val currentSize = logAdapter.currentList.size
+        val newList = ArrayList<SpeechLogRow>(currentSize + 1)
+        newList.addAll(logAdapter.currentList)
+        newList.add(newRow)
+
+        logAdapter.submitList(newList) {
+            binding.recyclerViewSpeechLog.scrollToPosition(newList.size - 1)
         }
     }
 
@@ -446,7 +530,7 @@ class TellingScherm : AppCompatActivity() {
 
         for (soort in soorten) {
             selectedSpeciesMap[soort.naam] = soort.soortId
-            selectedSpeciesMap[soort.naam.lowercase()] = soort.soortId
+            selectedSpeciesMap[soort.naam.lowercase(Locale.getDefault())] = soort.soortId
         }
 
         if (speechInitialized) {
@@ -539,33 +623,6 @@ class TellingScherm : AppCompatActivity() {
         val intent = Intent(this, SoortSelectieScherm::class.java)
             .putExtra(SoortSelectieScherm.EXTRA_TELPOST_ID, telpostId)
         addSoortenLauncher.launch(intent)
-    }
-
-    /**
-     * AddLog cleans messages for raw ASR entries:
-     *  - removes leading "asr:" (case-insensitive)
-     *  - removes trailing numeric tokens (counts) for raw entries
-     */
-    private fun addLog(msgIn: String, bron: String) {
-        var msg = msgIn
-        // clean any leading "asr:" (case-insensitive)
-        msg = msg.replace(Regex("(?i)^\\s*asr:\\s*"), "")
-        if (bron == "raw") {
-            // remove trailing numeric tokens (e.g. "warmsteis 3" -> "warmsteis")
-            msg = msg.replace(Regex("\\s+\\d+(?:[.,]\\d+)?$"), "")
-            msg = msg.trim()
-        }
-        val now = System.currentTimeMillis() / 1000L
-        val newRow = SpeechLogRow(ts = now, tekst = msg, bron = bron)
-
-        val currentSize = logAdapter.currentList.size
-        val newList = ArrayList<SpeechLogRow>(currentSize + 1)
-        newList.addAll(logAdapter.currentList)
-        newList.add(newRow)
-
-        logAdapter.submitList(newList) {
-            binding.recyclerViewSpeechLog.scrollToPosition(newList.size - 1)
-        }
     }
 
     override fun onPause() {
