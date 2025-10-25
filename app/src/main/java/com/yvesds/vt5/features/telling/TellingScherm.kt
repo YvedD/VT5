@@ -30,6 +30,10 @@ import com.yvesds.vt5.features.serverdata.model.ServerDataCache
 import com.yvesds.vt5.features.soort.ui.SoortSelectieScherm
 import com.yvesds.vt5.features.speech.SpeechRecognitionManager
 import com.yvesds.vt5.features.speech.VolumeKeyHandler
+import com.yvesds.vt5.features.speech.AliasSpeechParser
+import com.yvesds.vt5.features.speech.MatchContext
+import com.yvesds.vt5.features.speech.MatchResult
+import com.yvesds.vt5.features.speech.Candidate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -42,11 +46,14 @@ import java.util.Locale
 
 /**
  * TellingScherm - Hoofdscherm voor het tellen van soorten met spraakherkenning.
- * - inline alias-toewijzing via tapping op raw ASR logregels
- * - in-memory buffering van user aliassen (AliasEditor) en persist naar user_aliases.csv (merge)
- * - hot-reload: nieuwe aliassen worden direct toegevoegd aan AliasRepository in memory (indien beschikbaar)
- * - wanneer een herkende soort nog niet in de tiles staat, wordt de gebruiker gevraagd of de soort
- *   toegevoegd moet worden en meteen het herkende aantal moet krijgen
+ *
+ * UPDATED voor AliasPriorityMatcher integratie:
+ * - Bouwt MatchContext met tiles/site/recents
+ * - Gebruikt AliasSpeechParser.parseSpokenWithContext()
+ * - Handelt MatchResult types af (AutoAccept, AutoAcceptAddPopup, SuggestionList, NoMatch)
+ * - Inline alias-toewijzing via tapping op raw ASR logregels
+ * - In-memory buffering van user aliassen (AliasEditor) en persist naar user_aliases.csv (merge)
+ * - Hot-reload: nieuwe aliassen worden direct toegevoegd aan AliasRepository in memory
  */
 class TellingScherm : AppCompatActivity() {
 
@@ -58,7 +65,7 @@ class TellingScherm : AppCompatActivity() {
     // Spraakherkenning componenten
     private lateinit var speechRecognitionManager: SpeechRecognitionManager
     private lateinit var volumeKeyHandler: VolumeKeyHandler
-    private val selectedSpeciesMap = HashMap<String, String>(100) // Pre-allocate capacity
+    private val selectedSpeciesMap = HashMap<String, String>(100)
     private var speechInitialized = false
 
     // UI componenten
@@ -142,7 +149,7 @@ class TellingScherm : AppCompatActivity() {
         // Voorselectie inladen
         loadPreselection()
 
-        // Preload aliassen voor spraakherkenning (nieuw)
+        // Preload aliassen voor spraakherkenning
         preloadAliases()
     }
 
@@ -188,7 +195,7 @@ class TellingScherm : AppCompatActivity() {
         logAdapter = SpeechLogAdapter()
         binding.recyclerViewSpeechLog.adapter = logAdapter
 
-        // Inline alias assignment: tap on a log item with bron == "raw" to open AddAliasDialog.
+        // Inline alias assignment: tap on a log item with bron == "raw" to open AddAliasDialog
         val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onSingleTapUp(e: MotionEvent): Boolean {
                 val child = binding.recyclerViewSpeechLog.findChildViewUnder(e.x, e.y)
@@ -197,7 +204,6 @@ class TellingScherm : AppCompatActivity() {
                     if (pos != RecyclerView.NO_POSITION) {
                         val row = logAdapter.currentList.getOrNull(pos)
                         if (row != null && row.bron == "raw" && row.tekst.isNotBlank()) {
-                            // open AddAliasDialog inline with this partial
                             if (availableSpeciesFlat.isEmpty()) {
                                 Toast.makeText(this@TellingScherm, "Soortenlijst nog niet beschikbaar", Toast.LENGTH_SHORT).show()
                                 return true
@@ -209,7 +215,6 @@ class TellingScherm : AppCompatActivity() {
                                         val added = aliasEditor.addAliasInMemory(speciesId, aliasText)
                                         if (added) {
                                             try {
-                                                // hot-reload to AliasRepository as well
                                                 aliasRepository.addAliasInMemory(speciesId, aliasText)
                                                 addLog("Alias toegevoegd in-memory: $aliasText -> $speciesId", "alias")
                                             } catch (ex: Exception) {
@@ -236,13 +241,8 @@ class TellingScherm : AppCompatActivity() {
                 return gestureDetector.onTouchEvent(e)
             }
 
-            override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) {
-                // no-op
-            }
-
-            override fun onRequestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {
-                // no-op
-            }
+            override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) {}
+            override fun onRequestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {}
         })
     }
 
@@ -255,7 +255,7 @@ class TellingScherm : AppCompatActivity() {
         }
         binding.recyclerViewSpecies.layoutManager = flm
         binding.recyclerViewSpecies.setHasFixedSize(true)
-        binding.recyclerViewSpecies.itemAnimator?.changeDuration = 0 // Disable animations for better performance
+        binding.recyclerViewSpecies.itemAnimator?.changeDuration = 0
 
         tilesAdapter = SpeciesTileAdapter(
             onTileClick = { pos -> showNumberInputDialog(pos) }
@@ -276,7 +276,6 @@ class TellingScherm : AppCompatActivity() {
             true
         }
 
-        // Save & close button (Afsluiten / Opslaan)
         binding.btnSaveClose.setOnClickListener {
             AlertDialog.Builder(this)
                 .setTitle("Data opslaan?")
@@ -289,8 +288,9 @@ class TellingScherm : AppCompatActivity() {
                         } else {
                             Toast.makeText(this@TellingScherm, "Opslaan mislukt", Toast.LENGTH_LONG).show()
                         }
-                        // Navigeer daarna naar MetadataScherm
-                        startActivity(Intent(this@TellingScherm, com.yvesds.vt5.features.metadata.ui.MetadataScherm::class.java).apply { flags = Intent.FLAG_ACTIVITY_CLEAR_TOP })
+                        startActivity(Intent(this@TellingScherm, com.yvesds.vt5.features.metadata.ui.MetadataScherm::class.java).apply {
+                            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        })
                         finish()
                     }
                 }
@@ -309,7 +309,6 @@ class TellingScherm : AppCompatActivity() {
                         val pre = TellingSessionManager.preselectState.value
                         val ids = pre.selectedSoortIds
 
-                        // Build flat species list for dialog search (id||name)
                         availableSpeciesFlat = snapshot.speciesById.map { (id, s) -> "$id||${s.soortnaam}" }.toList()
 
                         if (ids.isEmpty()) {
@@ -360,6 +359,37 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
+    /**
+     * NEW: Build MatchContext met tiles/site/recents voor AliasPriorityMatcher
+     */
+    private suspend fun buildMatchContext(): MatchContext = withContext(Dispatchers.IO) {
+        val snapshot = ServerDataCache.getOrLoad(this@TellingScherm)
+
+        // Tiles species IDs
+        val tiles = tilesAdapter.currentList.map { it.soortId }.toSet()
+
+        // Site allowed species IDs
+        val telpostId = TellingSessionManager.preselectState.value.telpostId
+        val siteAllowed = telpostId?.let { id ->
+            snapshot.siteSpeciesBySite[id]?.map { it.soortid }?.toSet() ?: emptySet()
+        } ?: snapshot.speciesById.keys
+
+        // Recent species IDs
+        val recents = RecentSpeciesStore.getRecents(this@TellingScherm).map { it.first }.toSet()
+
+        // Species lookup map
+        val speciesById = snapshot.speciesById.mapValues { (_, sp) ->
+            sp.soortnaam to sp.soortkey
+        }
+
+        MatchContext(
+            tilesSpeciesIds = tiles,
+            siteAllowedIds = siteAllowed,
+            recentIds = recents,
+            speciesById = speciesById
+        )
+    }
+
     private fun initializeSpeechRecognition() {
         try {
             speechRecognitionManager = SpeechRecognitionManager(this)
@@ -371,37 +401,78 @@ class TellingScherm : AppCompatActivity() {
                 speechRecognitionManager.loadAliases()
             }
 
-            // Callback for parsed species counts
+            // UPDATED: Callback gebruikt nieuwe MatchResult flow
             speechRecognitionManager.setOnSpeciesCountListener { soortId, name, count ->
                 runOnUiThread {
-                    // If species exists in tiles, use existing behavior
-                    val current = tilesAdapter.currentList
-                    val pos = current.indexOfFirst { it.soortId == soortId }
-                    if (pos != -1) {
-                        updateSoortCount(soortId, count)
-                        addLog("Herkend: ${name.ifBlank { soortId }} $count", "spraak")
-                    } else {
-                        // Species not in tiles yet — ask user whether to add it
-                        val prettyName = name.ifBlank { soortId }
-                        val msg = "Soort \"$prettyName\" werd herkend met aantal $count maar staat nog niet in de lijst.\n\nWil je deze soort toevoegen en meteen $count noteren?"
-                        AlertDialog.Builder(this@TellingScherm)
-                            .setTitle("Soort toevoegen?")
-                            .setMessage(msg)
-                            .setPositiveButton("Ja") { _, _ ->
-                                addSpeciesToTiles(soortId, prettyName, count)
+                    lifecycleScope.launch {
+                        try {
+                            val matchContext = buildMatchContext()
+                            val parser = AliasSpeechParser(this@TellingScherm, SaFStorageHelper(this@TellingScherm))
+
+                            // Reconstruct hypothesis from callback
+                            val hypothesis = "$name $count"
+                            val result = parser.parseSpokenWithContext(hypothesis, matchContext, emptyList())
+
+                            when (result) {
+                                is MatchResult.AutoAccept -> {
+                                    // Species in tiles → increment count directly
+                                    updateSoortCount(result.candidate.speciesId, count)
+                                    addLog("Herkend: ${result.candidate.displayName} $count", "spraak")
+                                    RecentSpeciesStore.recordUse(this@TellingScherm, result.candidate.speciesId, maxEntries = 25)
+                                }
+                                is MatchResult.AutoAcceptAddPopup -> {
+                                    // Species not in tiles → show popup "Toevoegen aan telbord?"
+                                    val msg = "Soort \"${result.candidate.displayName}\" werd herkend met aantal $count maar staat nog niet in de lijst.\n\nWil je deze soort toevoegen en meteen $count noteren?"
+                                    AlertDialog.Builder(this@TellingScherm)
+                                        .setTitle("Soort toevoegen?")
+                                        .setMessage(msg)
+                                        .setPositiveButton("Ja") { _, _ ->
+                                            addSpeciesToTiles(result.candidate.speciesId, result.candidate.displayName, count)
+                                        }
+                                        .setNegativeButton("Nee") { _, _ ->
+                                            addLog("Gebruiker weigerde toevoegen: ${result.candidate.displayName}", "systeem")
+                                        }
+                                        .show()
+                                }
+                                is MatchResult.SuggestionList -> {
+                                    // Show bottom-sheet with top 3–5 suggestions
+                                    showSuggestionBottomSheet(result.candidates, count)
+                                }
+                                is MatchResult.NoMatch -> {
+                                    // Log as raw partial, user can tap to add alias
+                                    addLog(hypothesis, "raw")
+                                }
                             }
-                            .setNegativeButton("Nee") { _, _ ->
-                                addLog("Gebruiker weigerde toevoegen: $prettyName", "systeem")
+                        } catch (ex: Exception) {
+                            Log.w(TAG, "parseSpokenWithContext failed: ${ex.message}", ex)
+                            // Fallback: oude gedrag
+                            val current = tilesAdapter.currentList
+                            val pos = current.indexOfFirst { it.soortId == soortId }
+                            if (pos != -1) {
+                                updateSoortCount(soortId, count)
+                                addLog("Herkend: ${name.ifBlank { soortId }} $count", "spraak")
+                            } else {
+                                val prettyName = name.ifBlank { soortId }
+                                val msg = "Soort \"$prettyName\" werd herkend met aantal $count maar staat nog niet in de lijst.\n\nWil je deze soort toevoegen en meteen $count noteren?"
+                                AlertDialog.Builder(this@TellingScherm)
+                                    .setTitle("Soort toevoegen?")
+                                    .setMessage(msg)
+                                    .setPositiveButton("Ja") { _, _ ->
+                                        addSpeciesToTiles(soortId, prettyName, count)
+                                    }
+                                    .setNegativeButton("Nee") { _, _ ->
+                                        addLog("Gebruiker weigerde toevoegen: $prettyName", "systeem")
+                                    }
+                                    .show()
                             }
-                            .show()
+                        }
                     }
                 }
             }
 
-            // Raw ASR callback: capture last partial / raw best match (don't prefix with "ASR:")
+            // Raw ASR callback: capture last partial / raw best match
             speechRecognitionManager.setOnRawResultListener { rawText ->
                 runOnUiThread {
-                    // store raw partial (cleaned)
                     lastRawPartial = rawText
                     addLog(rawText, "raw")
                 }
@@ -417,17 +488,44 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
+    /**
+     * NEW: Show bottom-sheet with suggestion list (top 3–5 candidates)
+     */
+    private fun showSuggestionBottomSheet(candidates: List<Candidate>, count: Int) {
+        val items = candidates.map { "${it.displayName} (score: ${"%.2f".format(it.score)})" }.toTypedArray()
+
+        AlertDialog.Builder(this)
+            .setTitle("Kies soort")
+            .setItems(items) { _, which ->
+                val chosen = candidates[which]
+                if (chosen.isInTiles) {
+                    updateSoortCount(chosen.speciesId, count)
+                    addLog("Geselecteerd: ${chosen.displayName} $count", "spraak")
+                } else {
+                    val msg = "Soort \"${chosen.displayName}\" toevoegen en $count noteren?"
+                    AlertDialog.Builder(this)
+                        .setTitle("Soort toevoegen?")
+                        .setMessage(msg)
+                        .setPositiveButton("Ja") { _, _ ->
+                            addSpeciesToTiles(chosen.speciesId, chosen.displayName, count)
+                        }
+                        .setNegativeButton("Nee", null)
+                        .show()
+                }
+                RecentSpeciesStore.recordUse(this, chosen.speciesId, maxEntries = 25)
+            }
+            .setNegativeButton("Annuleer", null)
+            .show()
+    }
+
     private fun addSpeciesToTiles(soortId: String, naam: String, initialCount: Int) {
         lifecycleScope.launch {
             try {
-                // Try to obtain a canonical name from serverdata if available
                 val snapshot = withContext(Dispatchers.IO) { ServerDataCache.getOrLoad(this@TellingScherm) }
                 val canonical = snapshot.speciesById[soortId]?.soortnaam ?: naam
 
-                // Prevent duplicates (race)
                 val current = tilesAdapter.currentList
                 if (current.any { it.soortId == soortId }) {
-                    // already present (race condition), just update count
                     updateSoortCount(soortId, initialCount)
                     return@launch
                 }
@@ -436,12 +534,9 @@ class TellingScherm : AppCompatActivity() {
                 val updated = ArrayList(current)
                 updated.add(newRow)
 
-                // Submit list on main thread
                 lifecycleScope.launch(Dispatchers.Main) {
                     tilesAdapter.submitList(updated)
-                    // update recognition map so it recognizes next time
                     updateSelectedSpeciesMap()
-                    // mark recent
                     RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
                     addLog("Soort toegevoegd: $canonical ($initialCount)", "systeem")
                 }
@@ -452,17 +547,10 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
-    /**
-     * AddLog cleans messages for raw ASR entries:
-     *  - removes leading "asr:" (case-insensitive)
-     *  - removes trailing numeric tokens (counts) for raw entries
-     */
     private fun addLog(msgIn: String, bron: String) {
         var msg = msgIn
-        // clean any leading "asr:" (case-insensitive)
         msg = msg.replace(Regex("(?i)^\\s*asr:\\s*"), "")
         if (bron == "raw") {
-            // remove trailing numeric tokens (e.g. "warmsteis 3" -> "warmsteis")
             msg = msg.replace(Regex("\\s+\\d+(?:[.,]\\d+)?$"), "")
             msg = msg.trim()
         }

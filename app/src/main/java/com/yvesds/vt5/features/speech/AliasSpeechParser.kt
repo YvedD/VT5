@@ -11,19 +11,17 @@ import java.time.Instant
 import java.util.Locale
 
 /**
- * AliasSpeechParser
+ * AliasSpeechParser (UPDATED voor AliasPriorityMatcher integratie)
  *
  * Implements the protocol:
  *  - input is a free text ASR result containing one or more occurrences of "<soortnaam> [<aantal>]"
- *    in sequence (soort first, optional amount following)
  *  - default amount = 1
  *  - multiple pairs in a single utterance are supported (sliding window)
  *
- * Behavior:
- *  - fast path: exact match against alias strings (from aliases_flat.cbor.gz). Exact match is guaranteed.
- *  - fuzzy fallback: tries normalized Levenshtein match across aliases and accepts high-confidence candidates
- *
- * This implementation aims for correctness first; performance: index is loaded in memory and maps are used for O(1) exact lookup.
+ * NEW:
+ *  - Uses AliasPriorityMatcher.match() for 9-step priority cascade
+ *  - Accepts MatchContext parameter with tiles/site/recents
+ *  - Returns MatchResult instead of ParseResult
  */
 
 class AliasSpeechParser(
@@ -50,25 +48,55 @@ class AliasSpeechParser(
     }
 
     /**
-     * Public API: parse spoken raw ASR string and return ParseResult.
-     * Optional parameter partials (ASR intermediate partials) can be provided; if omitted parser will log an empty partials list.
-     * This function is suspend and performs IO (loads index) on Dispatchers.IO.
+     * Public API: parse spoken raw ASR string with full context and return MatchResult.
+     * NEW: Accepts MatchContext parameter for priority cascade matching.
      */
-    suspend fun parseSpoken(rawAsr: String, partials: List<String> = emptyList()): ParseResult = withContext(Dispatchers.IO) {
+    suspend fun parseSpokenWithContext(
+        rawAsr: String,
+        matchContext: MatchContext,
+        partials: List<String> = emptyList()
+    ): MatchResult = withContext(Dispatchers.IO) {
         val t0 = System.currentTimeMillis()
 
-        // Filter out "Luisteren..." system prompt if ASR relays it as a partial/final
+        // Filter out "Luisteren..." system prompt
         val rawTrim = rawAsr.trim()
         val rawLowerNoPunct = normalizeLowerNoDiacritics(rawTrim)
-        if (rawLowerNoPunct.isBlank()) {
-            val resEmpty = ParseResult(success = false, rawInput = rawAsr, items = emptyList(), message = "Empty input")
-            writeLog(resEmpty, partials)
-            return@withContext resEmpty
+        if (rawLowerNoPunct.isBlank() || FILTER_WORDS.contains(rawLowerNoPunct)) {
+            Log.d(TAG, "parseSpokenWithContext ignored system prompt: '$rawAsr'")
+            return@withContext MatchResult.NoMatch(rawAsr)
         }
-        // If the raw (after normalization) equals any of the filter words, do not log it; return empty parse
-        if (FILTER_WORDS.contains(rawLowerNoPunct)) {
+
+        val normalizedInput = rawLowerNoPunct
+        val tokens = normalizedInput.split("\\s+".toRegex()).filter { it.isNotBlank() }
+        if (tokens.isEmpty()) {
+            return@withContext MatchResult.NoMatch(rawAsr)
+        }
+
+        // For simplicity: match entire hypothesis as single phrase (no sliding window for now)
+        // Future enhancement: sliding window with multi-species detection
+        val result = AliasPriorityMatcher.match(normalizedInput, matchContext, context, saf)
+
+        val t1 = System.currentTimeMillis()
+        Log.i(TAG, "parseSpokenWithContext finished: input='${rawAsr}' result=${result::class.simpleName} timeMs=${t1 - t0}")
+
+        // Write NDJSON log
+        writeMatchLog(rawAsr, result, partials)
+
+        return@withContext result
+    }
+
+    /**
+     * DEPRECATED: Old parseSpoken() method for backward compatibility.
+     * Use parseSpokenWithContext() instead.
+     */
+    @Deprecated("Use parseSpokenWithContext() with MatchContext", ReplaceWith("parseSpokenWithContext(rawAsr, matchContext, partials)"))
+    suspend fun parseSpoken(rawAsr: String, partials: List<String> = emptyList()): ParseResult = withContext(Dispatchers.IO) {
+        // Fallback to old behavior (no context, use AliasMatcher directly)
+        val t0 = System.currentTimeMillis()
+        val rawTrim = rawAsr.trim()
+        val rawLowerNoPunct = normalizeLowerNoDiacritics(rawTrim)
+        if (rawLowerNoPunct.isBlank() || FILTER_WORDS.contains(rawLowerNoPunct)) {
             val resFiltered = ParseResult(success = false, rawInput = rawAsr, items = emptyList(), message = "Filtered system prompt")
-            // Do not add to user-visible logs; still write a minimal line for diagnostics? We skip writing to exports here.
             Log.d(TAG, "parseSpoken ignored system prompt: '$rawAsr'")
             return@withContext resFiltered
         }
@@ -81,21 +109,19 @@ class AliasSpeechParser(
             return@withContext res
         }
 
-        // ensure alias index loaded
+        // Ensure alias index loaded
         AliasMatcher.ensureLoaded(context, saf)
 
         val items = mutableListOf<ParsedItem>()
         var i = 0
         while (i < tokens.size) {
             var matched = false
-            // try longest windows first (max 6 tokens for species names)
             val maxWindow = minOf(6, tokens.size - i)
             var chosenWindowEnd = -1
             var chosenRecords: List<com.yvesds.vt5.features.alias.AliasRecord> = emptyList()
             var chosenPhrase = ""
             for (w in maxWindow downTo 1) {
                 val phrase = tokens.subList(i, i + w).joinToString(" ")
-                // try exact lookup
                 val exact = AliasMatcher.findExact(phrase, context, saf)
                 if (exact.isNotEmpty()) {
                     chosenRecords = exact
@@ -106,7 +132,6 @@ class AliasSpeechParser(
             }
 
             if (chosenWindowEnd >= 0) {
-                // found exact match
                 val nextIndex = chosenWindowEnd + 1
                 var amount = 1
                 if (nextIndex < tokens.size) {
@@ -121,7 +146,6 @@ class AliasSpeechParser(
                     i = nextIndex
                 }
 
-                // pick best record by weight (if multiple)
                 val record = chosenRecords.maxByOrNull { it.weight }!!
                 val candidate = CandidateScore(record.aliasid, record.speciesid, record.alias, 1.0, "exact")
                 val parsed = ParsedItem(
@@ -137,7 +161,6 @@ class AliasSpeechParser(
                 items += parsed
                 matched = true
             } else {
-                // no exact found: try fuzzy on windows (prefer longer windows)
                 var fuzzyFound: Pair<com.yvesds.vt5.features.alias.AliasRecord, Double>? = null
                 var fuzzyWindowPhrase: String? = null
                 for (w in maxWindow downTo 1) {
@@ -181,7 +204,6 @@ class AliasSpeechParser(
                     items += parsed
                     matched = true
                 } else {
-                    // no match for any window beginning at i: skip token i
                     i += 1
                 }
             }
@@ -196,8 +218,69 @@ class AliasSpeechParser(
     }
 
     /**
-     * Write NDJSON parse log. Accepts optional partials list (ordered, earliest-first).
-     * The file will be Documents/VT5/exports/parsing_log_<YYYYMMDD>.ndjson.
+     * Write NDJSON match log for MatchResult.
+     */
+    private suspend fun writeMatchLog(rawInput: String, result: MatchResult, partials: List<String>) = withContext(Dispatchers.IO) {
+        try {
+            val entry = mapOf(
+                "timestampIso" to Instant.now().toString(),
+                "rawInput" to rawInput,
+                "resultType" to result::class.simpleName,
+                "hypothesis" to result.hypothesis,
+                "candidate" to when (result) {
+                    is MatchResult.AutoAccept -> mapOf(
+                        "speciesId" to result.candidate.speciesId,
+                        "displayName" to result.candidate.displayName,
+                        "score" to result.candidate.score,
+                        "source" to result.source
+                    )
+                    is MatchResult.AutoAcceptAddPopup -> mapOf(
+                        "speciesId" to result.candidate.speciesId,
+                        "displayName" to result.candidate.displayName,
+                        "score" to result.candidate.score,
+                        "source" to result.source
+                    )
+                    is MatchResult.SuggestionList -> mapOf(
+                        "candidatesCount" to result.candidates.size,
+                        "topScore" to (result.candidates.firstOrNull()?.score ?: 0.0),
+                        "source" to result.source
+                    )
+                    is MatchResult.NoMatch -> null
+                },
+                "partials" to partials.filter { p ->
+                    val n = normalizeLowerNoDiacritics(p)
+                    !FILTER_WORDS.contains(n)
+                }
+            )
+            val logLine = json.encodeToString(entry)
+            val date = Instant.now().toString().substring(0, 10).replace("-", "")
+            val filename = "match_log_$date.ndjson"
+            val vt5 = saf.getVt5DirIfExists() ?: return@withContext
+            val exports = vt5.findFile("exports")?.takeIf { it.isDirectory } ?: vt5.createDirectory("exports") ?: return@withContext
+            var file = exports.findFile(filename)
+            if (file == null) {
+                file = exports.createFile("application/x-ndjson", filename) ?: return@withContext
+                context.contentResolver.openOutputStream(file.uri, "w")?.use { os ->
+                    os.write((logLine + "\n").toByteArray(Charsets.UTF_8))
+                    os.flush()
+                }
+            } else {
+                val existing = context.contentResolver.openInputStream(file.uri)?.use { it.readBytes() }?.toString(Charsets.UTF_8) ?: ""
+                val newContent = existing + logLine + "\n"
+                exports.findFile(filename)?.delete()
+                val created = exports.createFile("application/x-ndjson", filename) ?: return@withContext
+                context.contentResolver.openOutputStream(created.uri, "w")?.use { os ->
+                    os.write(newContent.toByteArray(Charsets.UTF_8))
+                    os.flush()
+                }
+            }
+        } catch (ex: Exception) {
+            Log.w(TAG, "Failed to write match log: ${ex.message}", ex)
+        }
+    }
+
+    /**
+     * Write NDJSON parse log (old format for backward compatibility).
      */
     suspend fun writeLog(result: ParseResult, partials: List<String> = emptyList()) = withContext(Dispatchers.IO) {
         try {
@@ -206,31 +289,25 @@ class AliasSpeechParser(
                 rawInput = result.rawInput,
                 parseResult = result,
                 partials = partials.filter { p ->
-                    // filter system prompts like "Luisteren..."
                     val n = normalizeLowerNoDiacritics(p)
                     !FILTER_WORDS.contains(n)
                 }
             )
             val logLine = json.encodeToString(entry)
-            // write to Documents/VT5/exports/parsing_log_<date>.ndjson (append)
             val date = Instant.now().toString().substring(0, 10).replace("-", "")
             val filename = "parsing_log_$date.ndjson"
             val vt5 = saf.getVt5DirIfExists() ?: return@withContext
             val exports = vt5.findFile("exports")?.takeIf { it.isDirectory } ?: vt5.createDirectory("exports") ?: return@withContext
-            // find or create file
             var file = exports.findFile(filename)
             if (file == null) {
                 file = exports.createFile("application/x-ndjson", filename) ?: return@withContext
-                // write initial line
                 context.contentResolver.openOutputStream(file.uri, "w")?.use { os ->
                     os.write((logLine + "\n").toByteArray(Charsets.UTF_8))
                     os.flush()
                 }
             } else {
-                // append: SAF lacks append. For small logs we rewrite whole file.
                 val existing = context.contentResolver.openInputStream(file.uri)?.use { it.readBytes() }?.toString(Charsets.UTF_8) ?: ""
                 val newContent = existing + logLine + "\n"
-                // overwrite
                 exports.findFile(filename)?.delete()
                 val created = exports.createFile("application/x-ndjson", filename) ?: return@withContext
                 context.contentResolver.openOutputStream(created.uri, "w")?.use { os ->

@@ -11,6 +11,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.Observer
+import androidx.lifecycle.lifecycleScope
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
@@ -62,6 +63,8 @@ import java.util.TimeZone
  *     - als aliasmapping.csv ontbreekt: user_aliases.csv bevat per soort 1 alias = canonical (lowercased)
  * - conflicten (genormaliseerde alias gekoppeld aan meerdere soortids) worden gedetecteerd en gerapporteerd
  * - resultaten worden weggeschreven naar Documents/VT5/assets/alias_merged.csv en assets/user_aliases.csv
+ *
+ * UPDATED: Trigger alias reindex na download (HIGH PRIORITY PATCH)
  */
 
 class InstallatieScherm : AppCompatActivity() {
@@ -237,6 +240,9 @@ class InstallatieScherm : AppCompatActivity() {
         }
     }
 
+    /**
+     * UPDATED: Trigger alias reindex na download (HIGH PRIORITY PATCH)
+     */
     private fun doDownloadServerData(username: String, password: String) {
         val vt5Dir: DFile? = saf.getVt5DirIfExists()
         if (vt5Dir == null) {
@@ -259,8 +265,24 @@ class InstallatieScherm : AppCompatActivity() {
                     versie = "1845"
                 )
             }
+
+            // Invalidate cache
             ServerDataCache.invalidate()
             dataPreloaded = false
+
+            // NEW: Trigger alias reindex na download
+            uiScope.launch {
+                try {
+                    val reindexDialog = ProgressDialogHelper.show(this@InstallatieScherm, "Alias index bijwerken...")
+                    val result = withContext(Dispatchers.IO) {
+                        AliasIndexWriter.ensureComputedSafOnly(this@InstallatieScherm, saf, q = 3, minhashK = 8)
+                    }
+                    reindexDialog.dismiss()
+                    Log.d(TAG, "Alias index updated: ${result.aliasCount} aliases")
+                } catch (ex: Exception) {
+                    Log.w(TAG, "Alias reindex failed: ${ex.message}", ex)
+                }
+            }
             preloadDataIfExists()
             dlg.dismiss()
             showInfoDialog(getString(R.string.dlg_titel_result), msgs.joinToString("\n"))
