@@ -12,6 +12,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.widget.EditText
 import android.widget.TextView
+import android.widget.SeekBar
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -48,7 +49,6 @@ import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import java.util.Locale
-import androidx.core.content.edit
 
 /**
  * TellingScherm - Hoofdscherm voor het tellen van soorten met spraakherkenning.
@@ -203,7 +203,7 @@ class TellingScherm : AppCompatActivity() {
                 override fun onStartTrackingTouch(slider: Slider) { /* no-op */ }
                 override fun onStopTrackingTouch(slider: Slider) {
                     val ms = slider.value.toInt()
-                    prefs.edit { putInt(PREF_ASR_SILENCE_MS, ms) }
+                    prefs.edit().putInt(PREF_ASR_SILENCE_MS, ms).apply()
                     // Ensure manager updated (in case slider was set before init)
                     if (speechInitialized) {
                         speechRecognitionManager.setSilenceStopMillis(ms.toLong())
