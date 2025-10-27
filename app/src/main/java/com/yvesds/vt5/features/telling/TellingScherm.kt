@@ -369,6 +369,7 @@ class TellingScherm : AppCompatActivity() {
             Toast.makeText(this, "Afronden (batch-upload) volgt later.", Toast.LENGTH_LONG).show()
         }
 
+        // Correcte aanroep
         binding.btnAfronden.setOnLongClickListener {
             tryConvertCsvToJson()
             Toast.makeText(this@TellingScherm, "CSV naar JSON conversie gestart...", Toast.LENGTH_SHORT).show()
@@ -501,16 +502,17 @@ class TellingScherm : AppCompatActivity() {
                 speechRecognitionManager.loadAliases()
             }
 
+            // Register hypotheses listener: iterate N-best hypotheses and call parser until a useable MatchResult is found
             speechRecognitionManager.setOnHypothesesListener { hypotheses, partials ->
                 lifecycleScope.launch {
-                    Log.d(TAG, "Hypotheses received: $hypotheses")  // <-- TOEVOEGEN: Debug wat ASR stuurt
+                    Log.d(TAG, "Hypotheses received: $hypotheses")  // Debug
                     try {
                         val matchContext = buildMatchContext()
                         val parser = AliasSpeechParser(this@TellingScherm, SaFStorageHelper(this@TellingScherm))
 
                         // Centralized N-best handling in parser:
                         val result = parser.parseSpokenWithHypotheses(hypotheses, matchContext, partials, asrWeight = 0.4)
-                        Log.d(TAG, "Parse result: $result")  // <-- TOEVOEGEN: Debug wat parser retourneert
+                        Log.d(TAG, "Parse result: $result")  // Debug
 
                         when (result) {
                             is MatchResult.AutoAccept -> {
