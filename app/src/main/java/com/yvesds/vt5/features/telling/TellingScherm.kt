@@ -25,7 +25,6 @@ import com.google.android.flexbox.FlexDirection
 import com.google.android.flexbox.FlexWrap
 import com.google.android.flexbox.FlexboxLayoutManager
 import com.google.android.flexbox.JustifyContent
-import com.google.android.material.slider.Slider
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.core.ui.ProgressDialogHelper
 import com.yvesds.vt5.databinding.SchermTellingBinding
@@ -138,9 +137,9 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
-    // Preferences and slider view
+    // Preferences and seekbar view
     private lateinit var prefs: SharedPreferences
-    private lateinit var sliderSilenceCompact: Slider
+    private lateinit var seekBarSilenceCompact: SeekBar
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -162,8 +161,8 @@ class TellingScherm : AppCompatActivity() {
         // Buttons setup
         setupButtons()
 
-        // Wire the compact horizontal slider (between log and buttons)
-        setupSilenceSlider()
+        // Wire the compact horizontal seekbar (between log and buttons)
+        setupSilenceSeekBar()
 
         // Voorselectie inladen
         loadPreselection()
@@ -173,45 +172,46 @@ class TellingScherm : AppCompatActivity() {
     }
 
     /**
-     * Setup the small horizontal slider (sliderSilenceCompact) placed between the log and buttons.
+     * Setup the small horizontal seekbar (seekBarSilenceCompact) placed between the log and buttons.
      * - Real-time: update SpeechRecognitionManager on every change
      * - Persist: save to SharedPreferences when user stops sliding (onStopTrackingTouch)
      */
-    private fun setupSilenceSlider() {
+    private fun setupSilenceSeekBar() {
         try {
-            sliderSilenceCompact = binding.seekBarSilenceCompact
+            // viewBinding: binding.seekBarSilenceCompact moet bestaan in layout
+            seekBarSilenceCompact = binding.seekBarSilenceCompact
 
-            // initialize from prefs (default 2000 ms)
+            // read saved ms (default 2000)
             val savedMs = prefs.getInt(PREF_ASR_SILENCE_MS, DEFAULT_SILENCE_MS)
-            sliderSilenceCompact.value = savedMs.toFloat()
+            val progress = ((savedMs - 2000) / 100).coerceIn(0, 30)
+            seekBarSilenceCompact.max = 30
+            seekBarSilenceCompact.progress = progress
 
-            // apply immediately if speech manager already initialized
+            // if SRM already initialized, apply immediately
             if (speechInitialized) {
                 speechRecognitionManager.setSilenceStopMillis(savedMs.toLong())
             }
 
-            // Real-time: update manager while sliding
-            sliderSilenceCompact.addOnChangeListener { _, value, _ ->
-                val ms = value.toInt()
-                if (speechInitialized) {
-                    speechRecognitionManager.setSilenceStopMillis(ms.toLong())
+            // realtime update during sliding
+            seekBarSilenceCompact.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    val ms = 2000 + progress * 100
+                    if (speechInitialized) {
+                        speechRecognitionManager.setSilenceStopMillis(ms.toLong())
+                    }
                 }
-            }
-
-            // Persist on stop tracking to reduce writes
-            sliderSilenceCompact.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
-                override fun onStartTrackingTouch(slider: Slider) { /* no-op */ }
-                override fun onStopTrackingTouch(slider: Slider) {
-                    val ms = slider.value.toInt()
+                override fun onStartTrackingTouch(seekBar: SeekBar?) { /* no-op */ }
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    val p = seekBar?.progress ?: 0
+                    val ms = 2000 + p * 100
                     prefs.edit().putInt(PREF_ASR_SILENCE_MS, ms).apply()
-                    // Ensure manager updated (in case slider was set before init)
                     if (speechInitialized) {
                         speechRecognitionManager.setSilenceStopMillis(ms.toLong())
                     }
                 }
             })
         } catch (ex: Exception) {
-            Log.w(TAG, "setupSilenceSlider failed: ${ex.message}", ex)
+            Log.w(TAG, "setupSilenceSeekBar failed: ${ex.message}", ex)
         }
     }
 

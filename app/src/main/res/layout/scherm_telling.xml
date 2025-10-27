@@ -67,7 +67,7 @@
             android:paddingEnd="6dp"/>
 
         <!-- SeekBar: progress 0..30 => maps to 2000 + progress*100 ms -->
-        <com.google.android.material.slider.Slider
+        <SeekBar
             android:id="@+id/seekBarSilenceCompact"
             android:layout_width="0dp"
             android:layout_height="match_parent"
