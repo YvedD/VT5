@@ -11,19 +11,17 @@ import java.time.Instant
 import java.util.Locale
 
 /**
- * AliasSpeechParser (UPDATED voor AliasPriorityMatcher integratie)
+ * AliasSpeechParser (UPDATED)
  *
- * Implements the protocol:
- *  - input is a free text ASR result containing one or more occurrences of "<soortnaam> [<aantal>]"
- *  - default amount = 1
- *  - multiple pairs in a single utterance are supported (sliding window)
+ * - parseSpokenWithContext(rawAsr, matchContext, partials) remains (single hypothesis).
+ * - NEW: parseSpokenWithHypotheses(hypotheses, matchContext, partials) accepts N-best from SRM
+ *   and chooses the best MatchResult by combining ASR confidence with matcher score.
  *
- * NEW:
- *  - Uses AliasPriorityMatcher.match() for 9-step priority cascade
- *  - Accepts MatchContext parameter with tiles/site/recents
- *  - Returns MatchResult instead of ParseResult
+ * Behavior:
+ * - If any hypothesis yields AliasPriorityMatcher.MatchResult.AutoAccept -> return immediately.
+ * - Otherwise compute combined score = asrWeight * asrConf + (1-asrWeight) * matcherScore and return
+ *   the MatchResult for the hypothesis with the highest combined score.
  */
-
 class AliasSpeechParser(
     private val context: Context,
     private val saf: SaFStorageHelper
@@ -49,7 +47,7 @@ class AliasSpeechParser(
 
     /**
      * Public API: parse spoken raw ASR string with full context and return MatchResult.
-     * NEW: Accepts MatchContext parameter for priority cascade matching.
+     * Use this for single-hypothesis parsing (backwards-compatible).
      */
     suspend fun parseSpokenWithContext(
         rawAsr: String,
@@ -63,26 +61,94 @@ class AliasSpeechParser(
         val rawLowerNoPunct = normalizeLowerNoDiacritics(rawTrim)
         if (rawLowerNoPunct.isBlank() || FILTER_WORDS.contains(rawLowerNoPunct)) {
             Log.d(TAG, "parseSpokenWithContext ignored system prompt: '$rawAsr'")
-            return@withContext MatchResult.NoMatch(rawAsr)
+            return@withContext MatchResult.NoMatch(rawAsr, "filtered-prompt")
         }
 
-        val normalizedInput = rawLowerNoPunct
-        val tokens = normalizedInput.split("\\s+".toRegex()).filter { it.isNotBlank() }
-        if (tokens.isEmpty()) {
-            return@withContext MatchResult.NoMatch(rawAsr)
-        }
+        try {
+            val result = AliasPriorityMatcher.match(rawLowerNoPunct, matchContext, context, saf)
+            val t1 = System.currentTimeMillis()
+            Log.i(TAG, "parseSpokenWithContext finished: input='${rawAsr}' result=${result::class.simpleName} timeMs=${t1 - t0}")
 
-        // For simplicity: match entire hypothesis as single phrase (no sliding window for now)
-        // Future enhancement: sliding window with multi-species detection
-        val result = AliasPriorityMatcher.match(normalizedInput, matchContext, context, saf)
+            // Write NDJSON log
+            writeMatchLog(rawAsr, result, partials)
+
+            return@withContext result
+        } catch (ex: Exception) {
+            Log.w(TAG, "parseSpokenWithContext failed: ${ex.message}", ex)
+            writeMatchLog(rawAsr, MatchResult.NoMatch(rawAsr, "exception"), partials)
+            return@withContext MatchResult.NoMatch(rawAsr, "exception")
+        }
+    }
+
+    /**
+     * NEW: Accept N-best hypotheses with ASR confidences, match each and pick best MatchResult.
+     *
+     * hypotheses: list of Pair(hypothesisText, asrConfidence[0..1]) ordered by ASR rank (best first)
+     * matchContext: MatchContext for AliasPriorityMatcher
+     * partials: partials list for logging/training
+     *
+     * Scoring: combine ASR confidence and matcher candidate score.
+     * - If any hypothesis yields AutoAccept -> return immediately.
+     * - Otherwise choose hypothesis with max combinedScore and return its MatchResult.
+     */
+    suspend fun parseSpokenWithHypotheses(
+        hypotheses: List<Pair<String, Float>>,
+        matchContext: MatchContext,
+        partials: List<String> = emptyList(),
+        asrWeight: Double = 0.4 // weight of ASR confidence vs matcher score
+    ): MatchResult = withContext(Dispatchers.IO) {
+        val t0 = System.currentTimeMillis()
+        if (hypotheses.isEmpty()) return@withContext MatchResult.NoMatch("", "empty-hypotheses")
+
+        var bestCombined = Double.NEGATIVE_INFINITY
+        var bestResult: MatchResult = MatchResult.NoMatch(hypotheses.first().first, "none")
+        var idx = 0
+
+        for ((hyp, asrConfFloat) in hypotheses) {
+            val rawTrim = hyp.trim()
+            val normalized = normalizeLowerNoDiacritics(rawTrim)
+            if (normalized.isBlank()) {
+                idx++; continue
+            }
+
+            try {
+                val mr = AliasPriorityMatcher.match(normalized, matchContext, context, saf)
+
+                // If matcher strongly auto-accepts, return immediately
+                if (mr is MatchResult.AutoAccept) {
+                    writeMatchLog(rawTrim, mr, partials)
+                    return@withContext mr
+                }
+
+                // Extract matcherScore: prefer candidate.score when available
+                val matcherScore = when (mr) {
+                    is MatchResult.AutoAccept -> mr.candidate.score
+                    is MatchResult.AutoAcceptAddPopup -> mr.candidate.score
+                    is MatchResult.SuggestionList -> mr.candidates.firstOrNull()?.score ?: 0.0
+                    is MatchResult.NoMatch -> 0.0
+                }
+
+                val asrConf = asrConfFloat.toDouble().coerceIn(0.0, 1.0)
+                val combined = asrWeight * asrConf + (1.0 - asrWeight) * matcherScore
+
+                if (combined > bestCombined) {
+                    bestCombined = combined
+                    bestResult = mr
+                }
+            } catch (ex: Exception) {
+                Log.w(TAG, "Error matching hypothesis #$idx '${hyp}': ${ex.message}", ex)
+            }
+
+            idx++
+        }
 
         val t1 = System.currentTimeMillis()
-        Log.i(TAG, "parseSpokenWithContext finished: input='${rawAsr}' result=${result::class.simpleName} timeMs=${t1 - t0}")
+        Log.i(TAG, "parseSpokenWithHypotheses finished: bestHyp='${bestResult.hypothesis}' type=${bestResult::class.simpleName} timeMs=${t1 - t0}")
 
-        // Write NDJSON log
-        writeMatchLog(rawAsr, result, partials)
+        // Log chosen result
+        writeMatchLog(hypotheses.firstOrNull()?.first ?: "", bestResult, partials)
 
-        return@withContext result
+        return@withContext bestResult
     }
 
     /**

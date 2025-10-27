@@ -9,9 +9,7 @@ import android.speech.SpeechRecognizer
 import android.util.Log
 import com.yvesds.vt5.features.alias.AliasRepository
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
 import java.util.Locale
 import java.util.regex.Pattern
 import kotlin.math.min
@@ -24,6 +22,7 @@ import kotlin.math.min
  * - Bij final result SRM bouwt een N-best hypotheses lijst en geeft die door via onHypothesesListener.
  * - Extra instellingen op het RecognizerIntent om stilte-timeouts te verlengen zodat
  *   langere gecombineerde zinnen niet vroeg afgebroken worden.
+ * - Optionele silence-watcher (rms-based) die bij aanhoudende stilte (default 1000 ms) stopListening() aanroept.
  *
  * Nieuwe callback:
  * - setOnHypothesesListener(listener: (List<Pair<String, Float>>, List<String>) -> Unit)
@@ -107,6 +106,39 @@ class SpeechRecognitionManager(private val activity: Activity) {
     // SaF helper (voor logs) - lazy init
     private val safHelper: SaFStorageHelper by lazy { SaFStorageHelper(activity.applicationContext) }
 
+    // --- Silence watcher configuration ---
+    // How long of sustained silence (ms) signals we should stop listening.
+    @Volatile
+    var silenceStopMillis: Long = 1000L
+        private set
+
+    // RMS threshold above which we consider "speech present"
+    @Volatile
+    var rmsSilenceThreshold: Float = 2.0f
+        private set
+
+    // Internal coroutine scope for the silence watcher
+    private val internalScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private var silenceJob: Job? = null
+    private var lastVoiceTimestamp: Long = 0L
+
+    /**
+     * Adjust silence timeout (milliseconds). Use this to set ~1000 for 1s.
+     */
+    fun setSilenceStopMillis(ms: Long) {
+        if (ms <= 0) return
+        silenceStopMillis = ms
+    }
+
+    /**
+     * Update function (not named setRmsSilenceThreshold to avoid JVM signature clash).
+     * Use this to update the RMS threshold for detecting "speech" (increase in noisy env).
+     */
+    fun updateRmsSilenceThreshold(threshold: Float) {
+        if (threshold < 0f) return
+        rmsSilenceThreshold = threshold
+    }
+
     /**
      * Data class die een herkende soort met aantal voorstelt
      */
@@ -161,14 +193,18 @@ class SpeechRecognitionManager(private val activity: Activity) {
                 putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, true)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, MAX_RESULTS)
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true) // enable partials
+
                 // Increase silence timeouts (ms) to allow longer utterances before timeout
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2500L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
-                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 1000L)
+                // Provide hints for platforms that respect them.
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, silenceStopMillis)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, (silenceStopMillis * 0.8).toLong())
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, (silenceStopMillis / 2).coerceAtLeast(250L))
             }
 
-            // Clear previous partials
+            // Clear previous partials & silence watcher state
             synchronized(asrPartials) { asrPartials.clear() }
+            cancelSilenceJob()
+            lastVoiceTimestamp = System.currentTimeMillis()
 
             isListening = true
             speechRecognizer?.startListening(intent)
@@ -189,6 +225,7 @@ class SpeechRecognitionManager(private val activity: Activity) {
                 Log.e(TAG, "Error stopping speech recognition: ${e.message}", e)
             } finally {
                 isListening = false
+                cancelSilenceJob()
             }
         }
     }
@@ -253,6 +290,8 @@ class SpeechRecognitionManager(private val activity: Activity) {
     fun destroy() {
         try {
             stopListening()
+            silenceJob?.cancel()
+            internalScope.cancel()
             speechRecognizer?.destroy()
             speechRecognizer = null
             parsingBuffer.clear()
@@ -270,10 +309,27 @@ class SpeechRecognitionManager(private val activity: Activity) {
 
             override fun onBeginningOfSpeech() {
                 Log.d(TAG, "Beginning of speech")
+                // reset last voice timestamp to now (speech started)
+                lastVoiceTimestamp = System.currentTimeMillis()
+                cancelSilenceJob()
             }
 
             override fun onRmsChanged(rmsdB: Float) {
-                // Optioneel: toon visuele feedback over geluidsniveau
+                // Update silence watcher: consider above-threshold as "speech"
+                try {
+                    val now = System.currentTimeMillis()
+                    if (rmsdB >= rmsSilenceThreshold) {
+                        lastVoiceTimestamp = now
+                        // cancel any pending stop job while voice detected
+                        cancelSilenceJob()
+                    } else {
+                        // schedule a silence check: if silenceStopMillis passes since lastVoiceTimestamp, stop listening
+                        scheduleSilenceStop()
+                    }
+                } catch (ex: Exception) {
+                    // Swallow to avoid breaking speech recognizer
+                    Log.w(TAG, "onRmsChanged watcher error: ${ex.message}", ex)
+                }
             }
 
             override fun onBufferReceived(buffer: ByteArray?) {
@@ -302,6 +358,7 @@ class SpeechRecognitionManager(private val activity: Activity) {
                 isListening = false
                 // Clear partials when error occurs
                 synchronized(asrPartials) { asrPartials.clear() }
+                cancelSilenceJob()
             }
 
             override fun onResults(results: Bundle?) {
@@ -391,6 +448,7 @@ class SpeechRecognitionManager(private val activity: Activity) {
                 }
 
                 isListening = false
+                cancelSilenceJob()
             }
 
             override fun onPartialResults(partialResults: Bundle?) {
@@ -787,5 +845,36 @@ class SpeechRecognitionManager(private val activity: Activity) {
         }
         if (word.endsWith("s")) return word.dropLast(1)
         return word
+    }
+
+    // --- silence watcher helpers ---
+
+    private fun scheduleSilenceStop() {
+        // Cancel previous job and schedule a new one to run after silenceStopMillis
+        cancelSilenceJob()
+        val now = System.currentTimeMillis()
+        val sinceLastVoice = now - lastVoiceTimestamp
+        val remaining = (silenceStopMillis - sinceLastVoice).coerceAtLeast(0L)
+        silenceJob = internalScope.launch {
+            try {
+                delay(remaining)
+                val now2 = System.currentTimeMillis()
+                if (now2 - lastVoiceTimestamp >= silenceStopMillis) {
+                    Log.d(TAG, "Silence detected for ${silenceStopMillis}ms -> stopping listening")
+                    stopListening()
+                }
+            } catch (ex: CancellationException) {
+                // cancelled, ignore
+            } catch (ex: Exception) {
+                Log.w(TAG, "Silence watcher error: ${ex.message}", ex)
+            }
+        }
+    }
+
+    private fun cancelSilenceJob() {
+        try {
+            silenceJob?.cancel()
+            silenceJob = null
+        } catch (_: Exception) { }
     }
 }

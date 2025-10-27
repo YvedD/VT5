@@ -440,52 +440,38 @@ class TellingScherm : AppCompatActivity() {
                         val matchContext = buildMatchContext()
                         val parser = AliasSpeechParser(this@TellingScherm, SaFStorageHelper(this@TellingScherm))
 
-                        var handled = false
-                        for ((hyp, conf) in hypotheses) {
-                            // Try parsing with context
-                            val result = parser.parseSpokenWithContext(hyp, matchContext, partials)
-                            when (result) {
-                                is MatchResult.AutoAccept -> {
-                                    // choose candidate (already chosen in MatchResult)
-                                    val cnt = extractCountFromHypothesis(hyp) ?: 1
-                                    updateSoortCount(result.candidate.speciesId, cnt)
-                                    addLog("Herkend: ${result.candidate.displayName} $cnt (auto)", "spraak")
-                                    RecentSpeciesStore.recordUse(this@TellingScherm, result.candidate.speciesId, maxEntries = 25)
-                                    handled = true
-                                    break
-                                }
-                                is MatchResult.AutoAcceptAddPopup -> {
-                                    val cnt = extractCountFromHypothesis(hyp) ?: 1
-                                    runOnUiThread {
-                                        val prettyName = result.candidate.displayName
-                                        val msg = "Soort \"$prettyName\" werd herkend met aantal $cnt maar staat nog niet in de lijst.\n\nWil je deze soort toevoegen en meteen $cnt noteren?"
-                                        AlertDialog.Builder(this@TellingScherm)
-                                            .setTitle("Soort toevoegen?")
-                                            .setMessage(msg)
-                                            .setPositiveButton("Ja") { _, _ ->
-                                                addSpeciesToTiles(result.candidate.speciesId, result.candidate.displayName, cnt)
-                                            }
-                                            .setNegativeButton("Nee", null)
-                                            .show()
-                                    }
-                                    handled = true
-                                    break
-                                }
-                                is MatchResult.SuggestionList -> {
-                                    val cnt = extractCountFromHypothesis(hyp) ?: 1
-                                    runOnUiThread { showSuggestionBottomSheet(result.candidates, cnt) }
-                                    handled = true
-                                    break
-                                }
-                                is MatchResult.NoMatch -> {
-                                    // try next hypothesis
+                        // Centralized N-best handling in parser:
+                        val result = parser.parseSpokenWithHypotheses(hypotheses, matchContext, partials, asrWeight = 0.4)
+
+                        when (result) {
+                            is MatchResult.AutoAccept -> {
+                                val cnt = extractCountFromHypothesis(result.hypothesis) ?: 1
+                                updateSoortCount(result.candidate.speciesId, cnt)
+                                addLog("Herkend: ${result.candidate.displayName} $cnt (auto)", "spraak")
+                                RecentSpeciesStore.recordUse(this@TellingScherm, result.candidate.speciesId, maxEntries = 25)
+                            }
+                            is MatchResult.AutoAcceptAddPopup -> {
+                                val cnt = extractCountFromHypothesis(result.hypothesis) ?: 1
+                                runOnUiThread {
+                                    val prettyName = result.candidate.displayName
+                                    val msg = "Soort \"$prettyName\" werd herkend met aantal $cnt maar staat nog niet in de lijst.\n\nWil je deze soort toevoegen en meteen $cnt noteren?"
+                                    AlertDialog.Builder(this@TellingScherm)
+                                        .setTitle("Soort toevoegen?")
+                                        .setMessage(msg)
+                                        .setPositiveButton("Ja") { _, _ ->
+                                            addSpeciesToTiles(result.candidate.speciesId, result.candidate.displayName, cnt)
+                                        }
+                                        .setNegativeButton("Nee", null)
+                                        .show()
                                 }
                             }
-                        }
-
-                        // If none handled, log first hypothesis as raw
-                        if (!handled && hypotheses.isNotEmpty()) {
-                            addLog(hypotheses.first().first, "raw")
+                            is MatchResult.SuggestionList -> {
+                                val cnt = extractCountFromHypothesis(result.hypothesis) ?: 1
+                                runOnUiThread { showSuggestionBottomSheet(result.candidates, cnt) }
+                            }
+                            is MatchResult.NoMatch -> {
+                                addLog(result.hypothesis, "raw")
+                            }
                         }
                     } catch (ex: Exception) {
                         Log.w(TAG, "Hypotheses handling failed: ${ex.message}", ex)
