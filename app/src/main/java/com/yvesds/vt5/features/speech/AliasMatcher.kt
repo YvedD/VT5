@@ -25,7 +25,7 @@ import kotlin.math.max
  * Extended:
  *  - reloadIndex(context, saf) to force reloading the CBOR from SAF
  *  - addAliasHotpatch(speciesId, aliasText, canonical, tilename) to add a minimal AliasRecord in-memory
- *  - OPTIMIZED: phoneticCache for fast phonetic encoding, firstCharBuckets for instant shortlist.
+ *  - OPTIMIZED: phoneticCache for fast phonetic encoding, firstCharBuckets for instant shortlist, bloomFilter for quick rejection.
  */
 internal object AliasMatcher {
     private const val TAG = "AliasMatcher"
@@ -49,6 +49,10 @@ internal object AliasMatcher {
     // OPTIMIZED: Buckets by first char for instant shortlist (char -> list of keys)
     @Volatile
     private var firstCharBuckets: Map<Char, List<String>>? = null
+
+    // OPTIMIZED: Bloom filter for quick rejection (set of hashes for keys)
+    @Volatile
+    private var bloomFilter: Set<Long>? = null
 
     @OptIn(ExperimentalSerializationApi::class)
     suspend fun ensureLoaded(context: Context, saf: SaFStorageHelper) = withContext(Dispatchers.IO) {
@@ -78,10 +82,11 @@ internal object AliasMatcher {
                 val idx = Cbor.decodeFromByteArray(RepoAliasIndex.serializer(), ungz)
                 loadedIndex = idx
 
-                // build aliasMap and phoneticCache and firstCharBuckets
+                // build aliasMap and phoneticCache and firstCharBuckets and bloomFilter
                 val map = mutableMapOf<String, MutableList<AliasRecord>>()
                 val phonCache = mutableMapOf<String, String>()
                 val buckets = mutableMapOf<Char, MutableList<String>>()
+                val bloomSet = mutableSetOf<Long>()
                 for (r in idx.json) {
                     // alias (explicit)
                     val key = r.alias.trim().lowercase()
@@ -92,6 +97,8 @@ internal object AliasMatcher {
                         // Cache phonetic for alias
                         val phonAlias = runCatching { ColognePhonetic.encode(normalizeLowerNoDiacritics(r.alias)) }.getOrDefault("")
                         phonCache[key] = phonAlias
+                        // Bloom: simple hash of key
+                        bloomSet.add(key.hashCode().toLong())
                     }
                     // canonical (non-null per AliasRecord definition)
                     val c = r.canonical
@@ -102,6 +109,7 @@ internal object AliasMatcher {
                         buckets.getOrPut(first) { mutableListOf() }.add(k2)
                         val phonCanon = runCatching { ColognePhonetic.encode(normalizeLowerNoDiacritics(c)) }.getOrDefault("")
                         phonCache[k2] = phonCanon
+                        bloomSet.add(k2.hashCode().toLong())
                     }
                     // norm (non-null)
                     val k3 = r.norm.trim().lowercase()
@@ -111,12 +119,14 @@ internal object AliasMatcher {
                         buckets.getOrPut(first) { mutableListOf() }.add(k3)
                         val phonNorm = runCatching { ColognePhonetic.encode(k3) }.getOrDefault("")
                         phonCache[k3] = phonNorm
+                        bloomSet.add(k3.hashCode().toLong())
                     }
                 }
                 aliasMap = map.mapValues { it.value.toList() }
                 phoneticCache = phonCache
                 firstCharBuckets = buckets.mapValues { it.value.toList() }
-                Log.i(TAG, "Loaded alias index: ${idx.json.size} records, aliasMap keys=${aliasMap!!.size}, phoneticCache=${phoneticCache!!.size}, buckets=${firstCharBuckets!!.size}")
+                bloomFilter = bloomSet
+                Log.i(TAG, "Loaded alias index: ${idx.json.size} records, aliasMap keys=${aliasMap!!.size}, phoneticCache=${phoneticCache!!.size}, buckets=${firstCharBuckets!!.size}, bloomFilter=${bloomFilter!!.size}")
             } catch (ex: Exception) {
                 Log.w(TAG, "Error loading alias index: ${ex.message}", ex)
             }
@@ -143,6 +153,7 @@ internal object AliasMatcher {
                     aliasMap = null
                     phoneticCache = null
                     firstCharBuckets = null
+                    bloomFilter = null
                     return@synchronized
                 }
 
@@ -153,6 +164,7 @@ internal object AliasMatcher {
                     aliasMap = null
                     phoneticCache = null
                     firstCharBuckets = null
+                    bloomFilter = null
                     return@synchronized
                 }
 
@@ -164,6 +176,7 @@ internal object AliasMatcher {
                 val map = mutableMapOf<String, MutableList<AliasRecord>>()
                 val phonCache = mutableMapOf<String, String>()
                 val buckets = mutableMapOf<Char, MutableList<String>>()
+                val bloomSet = mutableSetOf<Long>()
                 for (r in idx.json) {
                     val key = r.alias.trim().lowercase()
                     map.getOrPut(key) { mutableListOf() }.add(r)
@@ -172,6 +185,7 @@ internal object AliasMatcher {
                         buckets.getOrPut(first) { mutableListOf() }.add(key)
                         val phonAlias = runCatching { ColognePhonetic.encode(normalizeLowerNoDiacritics(r.alias)) }.getOrDefault("")
                         phonCache[key] = phonAlias
+                        bloomSet.add(key.hashCode().toLong())
                     }
                     val c = r.canonical
                     val k2 = c.trim().lowercase()
@@ -181,6 +195,7 @@ internal object AliasMatcher {
                         buckets.getOrPut(first) { mutableListOf() }.add(k2)
                         val phonCanon = runCatching { ColognePhonetic.encode(normalizeLowerNoDiacritics(c)) }.getOrDefault("")
                         phonCache[k2] = phonCanon
+                        bloomSet.add(k2.hashCode().toLong())
                     }
                     val k3 = r.norm.trim().lowercase()
                     if (k3.isNotBlank()) {
@@ -189,12 +204,14 @@ internal object AliasMatcher {
                         buckets.getOrPut(first) { mutableListOf() }.add(k3)
                         val phonNorm = runCatching { ColognePhonetic.encode(k3) }.getOrDefault("")
                         phonCache[k3] = phonNorm
+                        bloomSet.add(k3.hashCode().toLong())
                     }
                 }
                 aliasMap = map.mapValues { it.value.toList() }
                 phoneticCache = phonCache
                 firstCharBuckets = buckets.mapValues { it.value.toList() }
-                Log.i(TAG, "Reloaded alias index: ${idx.json.size} records, aliasMap keys=${aliasMap!!.size}, phoneticCache=${phoneticCache!!.size}, buckets=${firstCharBuckets!!.size}")
+                bloomFilter = bloomSet
+                Log.i(TAG, "Reloaded alias index: ${idx.json.size} records, aliasMap keys=${aliasMap!!.size}, phoneticCache=${phoneticCache!!.size}, buckets=${firstCharBuckets!!.size}, bloomFilter=${bloomFilter!!.size}")
             } catch (ex: Exception) {
                 Log.w(TAG, "Error reloading alias index: ${ex.message}", ex)
                 // keep previous loadedIndex if reload fails
@@ -212,7 +229,7 @@ internal object AliasMatcher {
      * Fuzzy candidate search using combined phonetic + normalized Levenshtein ratio across aliasMap keys.
      * Returns topN candidates with score in descending order.
      *
-     * OPTIMIZED: Use firstCharBuckets for instant shortlist.
+     * OPTIMIZED: Use firstCharBuckets for instant shortlist, bloomFilter for quick rejection.
      */
     suspend fun findFuzzyCandidates(
         phrase: String,
@@ -225,8 +242,15 @@ internal object AliasMatcher {
         ensureLoaded(context, saf)
         val map = aliasMap ?: return@withContext emptyList()
         val buckets = firstCharBuckets ?: return@withContext emptyList()
+        val bloom = bloomFilter ?: return@withContext emptyList()
         val p = phrase.trim().lowercase()
         if (p.isEmpty()) return@withContext emptyList()
+
+        // OPTIMIZED: Bloom filter quick rejection
+        if (p.hashCode().toLong() !in bloom) {
+            Log.d(TAG, "Bloom filter rejected: $p")
+            return@withContext emptyList()
+        }
 
         // OPTIMIZED: Shortlist by first char + length (drastically reduces candidates)
         val firstChar = if (p.isNotEmpty()) p[0] else return@withContext emptyList()
@@ -295,6 +319,7 @@ internal object AliasMatcher {
                 val currentMap = aliasMap?.mapValues { it.value.toMutableList() }?.toMutableMap() ?: mutableMapOf()
                 val currentPhon = phoneticCache?.toMutableMap() ?: mutableMapOf()
                 val currentBuckets = firstCharBuckets?.mapValues { it.value.toMutableList() }?.toMutableMap() ?: mutableMapOf()
+                val currentBloom = bloomFilter?.toMutableSet() ?: mutableSetOf()
                 // keys to update: aliasLower, canonical, norm
                 val keys = listOf(aliasLower, (record.canonical ?: "").trim().lowercase(), norm)
                 for (k in keys) {
@@ -305,11 +330,13 @@ internal object AliasMatcher {
                     if (k.isNotEmpty()) {
                         val first = k[0]
                         currentBuckets.getOrPut(first) { mutableListOf() }.add(k)
+                        currentBloom.add(k.hashCode().toLong())
                     }
                 }
                 aliasMap = currentMap.mapValues { it.value.toList() }.toMap()
                 phoneticCache = currentPhon
                 firstCharBuckets = currentBuckets.mapValues { it.value.toList() }.toMap()
+                bloomFilter = currentBloom
             }
 
             Log.d(TAG, "Hot-patched alias into aliasMap: '$aliasRaw' -> $speciesId")

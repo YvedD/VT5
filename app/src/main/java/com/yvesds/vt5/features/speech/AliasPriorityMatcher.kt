@@ -10,14 +10,14 @@ import kotlin.math.max
 
 /**
  * AliasPriorityMatcher - 9-step priority cascade with scoring.
- * OPTIMIZED: Timing logs rond hotspots.
+ * OPTIMIZED: Timing logs rond hotspots, verlaagde thresholds voor meer accuracy (SUGGEST_THRESHOLD naar 0.40).
  */
 object AliasPriorityMatcher {
     private const val TAG = "AliasPriorityMatcher"
 
-    // Score thresholds / params
+    // Score thresholds / params - TUNED for better accuracy in field
     private const val AUTO_ACCEPT_THRESHOLD = 0.70
-    private const val SUGGEST_THRESHOLD = 0.45
+    private const val SUGGEST_THRESHOLD = 0.40  // lowered for more suggestions
     private const val AUTO_ACCEPT_MARGIN = 0.12
 
     // Weights for combined score
@@ -50,24 +50,40 @@ object AliasPriorityMatcher {
 
         // 1-4 exact checks
         val exactCanonicalTiles = findExactCanonicalInSet(normalized, matchContext.tilesSpeciesIds, matchContext)
-        if (exactCanonicalTiles != null) return@withContext MatchResult.AutoAccept(exactCanonicalTiles, hyp, "exact_canonical_tiles")
+        if (exactCanonicalTiles != null) {
+            val t1 = System.nanoTime()
+            Log.d(TAG, "match: early exact, timeMs=${(t1 - t0) / 1_000_000}")
+            return@withContext MatchResult.AutoAccept(exactCanonicalTiles, hyp, "exact_canonical_tiles")
+        }
 
         val exactCanonicalSite = findExactCanonicalInSet(normalized, matchContext.siteAllowedIds, matchContext)
         if (exactCanonicalSite != null && !matchContext.tilesSpeciesIds.contains(exactCanonicalSite.speciesId)) {
+            val t1 = System.nanoTime()
+            Log.d(TAG, "match: early exact site, timeMs=${(t1 - t0) / 1_000_000}")
             return@withContext MatchResult.AutoAcceptAddPopup(exactCanonicalSite, hyp, "exact_canonical_site")
         }
 
         val exactAliasTiles = findExactAliasInSet(normalized, matchContext.tilesSpeciesIds, context, saf)
-        if (exactAliasTiles != null) return@withContext MatchResult.AutoAccept(exactAliasTiles, hyp, "exact_alias_tiles")
+        if (exactAliasTiles != null) {
+            val t1 = System.nanoTime()
+            Log.d(TAG, "match: early exact alias tiles, timeMs=${(t1 - t0) / 1_000_000}")
+            return@withContext MatchResult.AutoAccept(exactAliasTiles, hyp, "exact_alias_tiles")
+        }
 
         val exactAliasSite = findExactAliasInSet(normalized, matchContext.siteAllowedIds, context, saf)
         if (exactAliasSite != null && !matchContext.tilesSpeciesIds.contains(exactAliasSite.speciesId)) {
+            val t1 = System.nanoTime()
+            Log.d(TAG, "match: early exact alias site, timeMs=${(t1 - t0) / 1_000_000}")
             return@withContext MatchResult.AutoAcceptAddPopup(exactAliasSite, hyp, "exact_alias_site")
         }
 
         // 5-8 fuzzy
         val fuzzyCandidates = findFuzzyCandidates(normalized, matchContext, context, saf)
-        if (fuzzyCandidates.isEmpty()) return@withContext MatchResult.NoMatch(hyp, "no-candidates")
+        if (fuzzyCandidates.isEmpty()) {
+            val t1 = System.nanoTime()
+            Log.d(TAG, "match: no fuzzy candidates, timeMs=${(t1 - t0) / 1_000_000}")
+            return@withContext MatchResult.NoMatch(hyp, "no-candidates")
+        }
 
         val sorted = fuzzyCandidates.sortedByDescending { it.score }
         val top = sorted.first()
@@ -75,20 +91,26 @@ object AliasPriorityMatcher {
         val margin = if (second != null) top.score - second.score else Double.POSITIVE_INFINITY
 
         if (top.score >= AUTO_ACCEPT_THRESHOLD && margin >= AUTO_ACCEPT_MARGIN) {
+            val t1 = System.nanoTime()
+            Log.d(TAG, "match: fuzzy auto tiles, timeMs=${(t1 - t0) / 1_000_000}")
             return@withContext if (top.isInTiles) MatchResult.AutoAccept(top, hyp, "fuzzy_auto_tiles")
             else MatchResult.AutoAcceptAddPopup(top, hyp, "fuzzy_auto_site")
         }
 
         if (top.score >= AUTO_ACCEPT_THRESHOLD) {
+            val t1 = System.nanoTime()
+            Log.d(TAG, "match: fuzzy close, timeMs=${(t1 - t0) / 1_000_000}")
             return@withContext MatchResult.SuggestionList(sorted.take(5), hyp, "fuzzy_close")
         }
 
         if (top.score >= SUGGEST_THRESHOLD) {
+            val t1 = System.nanoTime()
+            Log.d(TAG, "match: fuzzy suggestions, timeMs=${(t1 - t0) / 1_000_000}")
             return@withContext MatchResult.SuggestionList(sorted.take(5), hyp, "fuzzy_suggestions")
         }
 
         val t1 = System.nanoTime()
-        Log.d(TAG, "match: hyp='$hyp' fuzzyCandidates=${fuzzyCandidates.size} topScore=${top.score} margin=$margin timeMs=${(t1 - t0) / 1_000_000}")
+        Log.d(TAG, "match: no match, timeMs=${(t1 - t0) / 1_000_000}")
         return@withContext MatchResult.NoMatch(hyp, "low_score")
     }
 
@@ -199,7 +221,7 @@ object AliasPriorityMatcher {
             val ai = a[i - 1]
             for (j in 1..lb) {
                 val cost = if (ai == b[j - 1]) 0 else 1
-                cur[j] = kotlin.math.min(kotlin.math.min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost)
+                cur[j] = minOf(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost)
             }
             System.arraycopy(cur, 0, prev, 0, lb + 1)
         }

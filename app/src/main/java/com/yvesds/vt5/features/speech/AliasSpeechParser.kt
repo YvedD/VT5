@@ -25,7 +25,7 @@ import java.util.Locale
  *
  * Logging:
  * - writeMatchLog now includes the ASR N-best hypotheses with confidences when provided.
- * - OPTIMIZED: Streaming append for NDJSON to avoid full-file read/write.
+ * - OPTIMIZED: Streaming append using OutputStream("wa") if available, else buffer smaller to avoid full-file read/write.
  */
 class AliasSpeechParser(
     private val context: Context,
@@ -292,7 +292,7 @@ class AliasSpeechParser(
     /**
      * Write NDJSON match log for MatchResult.
      *
-     * OPTIMIZED: Streaming append using OutputStream("wa") if available, else buffer smaller.
+     * OPTIMIZED: Streaming append using OutputStream("wa") if available, else buffer smaller to avoid full-file read/write.
      * Now includes optional ASR N-best hypotheses with confidences when provided.
      */
     private suspend fun writeMatchLog(rawInput: String, result: MatchResult, partials: List<String>, asrHypotheses: List<Pair<String, Float>>? = null) = withContext(Dispatchers.IO) {
