@@ -2,6 +2,7 @@ package com.yvesds.vt5.features.speech
 
 import android.content.Context
 import android.util.Log
+import android.widget.Toast
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -21,6 +22,9 @@ import java.util.Locale
  * - If any hypothesis yields AliasPriorityMatcher.MatchResult.AutoAccept -> return immediately.
  * - Otherwise compute combined score = asrWeight * asrConf + (1-asrWeight) * matcherScore and return
  *   the MatchResult for the hypothesis with the highest combined score.
+ *
+ * Logging:
+ * - writeMatchLog now includes the ASR N-best hypotheses + confidence array.
  */
 class AliasSpeechParser(
     private val context: Context,
@@ -69,13 +73,13 @@ class AliasSpeechParser(
             val t1 = System.currentTimeMillis()
             Log.i(TAG, "parseSpokenWithContext finished: input='${rawAsr}' result=${result::class.simpleName} timeMs=${t1 - t0}")
 
-            // Write NDJSON log
-            writeMatchLog(rawAsr, result, partials)
+            // Write NDJSON log (no ASR hypotheses provided for single-hypothesis calls)
+            writeMatchLog(rawAsr, result, partials, asrHypotheses = null)
 
             return@withContext result
         } catch (ex: Exception) {
             Log.w(TAG, "parseSpokenWithContext failed: ${ex.message}", ex)
-            writeMatchLog(rawAsr, MatchResult.NoMatch(rawAsr, "exception"), partials)
+            writeMatchLog(rawAsr, MatchResult.NoMatch(rawAsr, "exception"), partials, asrHypotheses = null)
             return@withContext MatchResult.NoMatch(rawAsr, "exception")
         }
     }
@@ -116,7 +120,8 @@ class AliasSpeechParser(
 
                 // If matcher strongly auto-accepts, return immediately
                 if (mr is MatchResult.AutoAccept) {
-                    writeMatchLog(rawTrim, mr, partials)
+                    // Log immediately with full ASR hypotheses
+                    writeMatchLog(rawTrim, mr, partials, asrHypotheses = hypotheses)
                     return@withContext mr
                 }
 
@@ -145,15 +150,15 @@ class AliasSpeechParser(
         val t1 = System.currentTimeMillis()
         Log.i(TAG, "parseSpokenWithHypotheses finished: bestHyp='${bestResult.hypothesis}' type=${bestResult::class.simpleName} timeMs=${t1 - t0}")
 
-        // Log chosen result
-        writeMatchLog(hypotheses.firstOrNull()?.first ?: "", bestResult, partials)
+        // Log chosen result including ASR N-best hypotheses
+        writeMatchLog(hypotheses.firstOrNull()?.first ?: "", bestResult, partials, asrHypotheses = hypotheses)
 
         return@withContext bestResult
     }
 
     /**
      * DEPRECATED: Old parseSpoken() method for backward compatibility.
-     * Use parseSpokenWithContext() instead.
+     * Use parseSpokenWithContext() with MatchContext
      */
     @Deprecated("Use parseSpokenWithContext() with MatchContext", ReplaceWith("parseSpokenWithContext(rawAsr, matchContext, partials)"))
     suspend fun parseSpoken(rawAsr: String, partials: List<String> = emptyList()): ParseResult = withContext(Dispatchers.IO) {
@@ -285,10 +290,12 @@ class AliasSpeechParser(
 
     /**
      * Write NDJSON match log for MatchResult.
+     *
+     * Now includes optional ASR N-best hypotheses with confidences when provided.
      */
-    private suspend fun writeMatchLog(rawInput: String, result: MatchResult, partials: List<String>) = withContext(Dispatchers.IO) {
+    private suspend fun writeMatchLog(rawInput: String, result: MatchResult, partials: List<String>, asrHypotheses: List<Pair<String, Float>>? = null) = withContext(Dispatchers.IO) {
         try {
-            val entry = mapOf(
+            val entry = mutableMapOf<String, Any?>(
                 "timestampIso" to Instant.now().toString(),
                 "rawInput" to rawInput,
                 "resultType" to result::class.simpleName,
@@ -318,6 +325,15 @@ class AliasSpeechParser(
                     !FILTER_WORDS.contains(n)
                 }
             )
+
+            // Attach ASR hypotheses if present
+            if (asrHypotheses != null) {
+                val hs = asrHypotheses.map { (text, conf) ->
+                    mapOf("text" to text, "confidence" to conf)
+                }
+                entry["asr_hypotheses"] = hs
+            }
+
             val logLine = json.encodeToString(entry)
             val date = Instant.now().toString().substring(0, 10).replace("-", "")
             val filename = "match_log_$date.ndjson"
@@ -331,6 +347,7 @@ class AliasSpeechParser(
                     os.flush()
                 }
             } else {
+                // Append safely: openOutputStream with "wa" not available on SAF, so read existing + append, then replace.
                 val existing = context.contentResolver.openInputStream(file.uri)?.use { it.readBytes() }?.toString(Charsets.UTF_8) ?: ""
                 val newContent = existing + logLine + "\n"
                 exports.findFile(filename)?.delete()

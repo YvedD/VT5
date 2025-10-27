@@ -1,16 +1,15 @@
 @file:OptIn(kotlinx.serialization.InternalSerializationApi::class)
 package com.yvesds.vt5.features.alias
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Log
-import androidx.documentfile.provider.DocumentFile
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
+import com.yvesds.vt5.features.speech.AliasMatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -21,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap
  * Repository voor het beheren van alias-data voor soorten
  *
  * Uitbreiding: addAliasInMemory() cleans input (removes "asr:" and trailing numbers) defensively.
+ * Toegevoegd: reloadMatcherIfNeeded(...) om AliasMatcher.reloadIndex() asynchroon te triggeren.
  */
 class AliasRepository(private val context: Context) {
 
@@ -29,7 +29,14 @@ class AliasRepository(private val context: Context) {
         private const val ALIAS_JSON_FILE = "aliases.json"
         private const val ALIAS_CSV_FILE = "aliasmapping.csv"
 
-        // Singleton instantie
+        // Broadcast actions for reload progress (UI can listen and show progressbar)
+        const val ACTION_ALIAS_RELOAD_STARTED = "com.yvesds.vt5.ALIAS_RELOAD_STARTED"
+        const val ACTION_ALIAS_RELOAD_COMPLETED = "com.yvesds.vt5.ALIAS_RELOAD_COMPLETED"
+        const val EXTRA_RELOAD_SUCCESS = "com.yvesds.vt5.EXTRA_RELOAD_SUCCESS"
+
+        // Singleton instance - we deliberately store applicationContext inside the repo.
+        // Storing applicationContext in a static field is acceptable; suppress the lint warning.
+        @SuppressLint("StaticFieldLeak")
         @Volatile private var INSTANCE: AliasRepository? = null
 
         fun getInstance(context: Context): AliasRepository {
@@ -38,6 +45,9 @@ class AliasRepository(private val context: Context) {
             }
         }
     }
+
+    // Store the application context explicitly (avoid accidental Activity/context leaks)
+    private val appContext: Context = context.applicationContext
 
     // In-memory cache voor aliassen
     private val aliasCache = ConcurrentHashMap<String, AliasEntry>()
@@ -91,11 +101,7 @@ class AliasRepository(private val context: Context) {
         return aliasToSpeciesIdMap[normalizedText]
     }
 
-    /**
-     * Geef alle aliassen voor een specifieke soortId
-     * @param soortId De soortId om te zoeken
-     * @return Een AliasEntry als gevonden, anders null
-     */
+    @Suppress("unused")
     fun getAliasesForSpecies(soortId: String): AliasEntry? {
         if (!isDataLoaded) return null
         return aliasCache[soortId]
@@ -113,7 +119,7 @@ class AliasRepository(private val context: Context) {
      */
     private fun loadFromJson(): Boolean {
         try {
-            val safHelper = SaFStorageHelper(context)
+            val safHelper = SaFStorageHelper(appContext)
             val vt5Dir = safHelper.getVt5DirIfExists() ?: return false
 
             val serverDataDir = vt5Dir.findFile("serverdata") ?: return false
@@ -124,11 +130,11 @@ class AliasRepository(private val context: Context) {
                 return false
             }
 
-            val inputStream = context.contentResolver.openInputStream(aliasFile.uri) ?: return false
+            val inputStream = appContext.contentResolver.openInputStream(aliasFile.uri) ?: return false
             val jsonString = inputStream.bufferedReader().use { it.readText() }
 
             // Parse JSON met kotlinx.serialization
-            val aliasData = Json.decodeFromString<AliasData>(jsonString)
+            val aliasData = Json.decodeFromString(AliasData.serializer(), jsonString)
 
             // Vul cache
             aliasData.aliases.forEach { entry ->
@@ -148,7 +154,7 @@ class AliasRepository(private val context: Context) {
      */
     private fun loadFromCsv(): Boolean {
         try {
-            val safHelper = SaFStorageHelper(context)
+            val safHelper = SaFStorageHelper(appContext)
             val vt5Dir = safHelper.getVt5DirIfExists() ?: return false
 
             val serverDataDir = vt5Dir.findFile("serverdata") ?: return false
@@ -159,7 +165,7 @@ class AliasRepository(private val context: Context) {
                 return false
             }
 
-            val inputStream = context.contentResolver.openInputStream(aliasFile.uri) ?: return false
+            val inputStream = appContext.contentResolver.openInputStream(aliasFile.uri) ?: return false
 
             inputStream.use { stream ->
                 BufferedReader(InputStreamReader(stream)).use { reader ->
@@ -229,7 +235,7 @@ class AliasRepository(private val context: Context) {
                 return@withContext false
             }
 
-            val safHelper = SaFStorageHelper(context)
+            val safHelper = SaFStorageHelper(appContext)
             val vt5Dir = safHelper.getVt5DirIfExists() ?: return@withContext false
 
             val serverDataDir = vt5Dir.findFile("serverdata") ?: return@withContext false
@@ -248,7 +254,7 @@ class AliasRepository(private val context: Context) {
             val outputFile = serverDataDir.createFile("application/json", ALIAS_JSON_FILE)
                 ?: return@withContext false
 
-            context.contentResolver.openOutputStream(outputFile.uri)?.use { stream ->
+            appContext.contentResolver.openOutputStream(outputFile.uri)?.use { stream ->
                 stream.write(jsonString.toByteArray())
                 stream.flush()
             } ?: return@withContext false
@@ -319,6 +325,23 @@ class AliasRepository(private val context: Context) {
         val noDiacritics = decomposed.replace("\\p{Mn}+".toRegex(), "")
         val cleaned = noDiacritics.replace("[^\\p{L}\\p{Nd}]+".toRegex(), " ").trim()
         return cleaned.replace("\\s+".toRegex(), " ")
+    }
+
+    /**
+     * Try to reload the heavy AliasMatcher index from SAF (if available).
+     * This is a low-priority helper that is safe to call after user alias persistence.
+     *
+     * Returns true when reload completed successfully, false otherwise.
+     */
+    suspend fun reloadMatcherIfNeeded(context: Context, saf: SaFStorageHelper): Boolean = withContext(Dispatchers.IO) {
+        try {
+            AliasMatcher.reloadIndex(context, saf)
+            Log.i(TAG, "AliasMatcher.reloadIndex completed")
+            return@withContext true
+        } catch (ex: Exception) {
+            Log.w(TAG, "AliasMatcher.reloadIndex failed: ${ex.message}", ex)
+            return@withContext false
+        }
     }
 }
 

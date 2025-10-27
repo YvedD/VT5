@@ -1,7 +1,9 @@
 package com.yvesds.vt5.features.telling
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.text.InputFilter
 import android.text.InputType
@@ -9,6 +11,7 @@ import android.view.GestureDetector
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.widget.EditText
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -21,6 +24,7 @@ import com.google.android.flexbox.FlexDirection
 import com.google.android.flexbox.FlexWrap
 import com.google.android.flexbox.FlexboxLayoutManager
 import com.google.android.flexbox.JustifyContent
+import com.google.android.material.slider.Slider
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.core.ui.ProgressDialogHelper
 import com.yvesds.vt5.databinding.SchermTellingBinding
@@ -44,6 +48,7 @@ import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import java.util.Locale
+import androidx.core.content.edit
 
 /**
  * TellingScherm - Hoofdscherm voor het tellen van soorten met spraakherkenning.
@@ -52,12 +57,18 @@ import java.util.Locale
  *  - N-best orchestration: listen to SRM hypotheses and iterate them via parser until a MatchResult
  *    is found (AutoAccept / AutoAcceptAddPopup / SuggestionList).
  *  - Hot-reload: when an alias is added, persist and hot-patch AliasMatcher so the alias is active immediately.
+ *  - ASR silence timeout slider wiring (real-time update + persist on stop).
  */
 class TellingScherm : AppCompatActivity() {
 
     companion object {
         private const val TAG = "TellingScherm"
         private const val PERMISSION_REQUEST_RECORD_AUDIO = 101
+
+        // SharedPreferences keys for ASR silence ms
+        private const val PREFS_NAME = "vt5_prefs"
+        private const val PREF_ASR_SILENCE_MS = "pref_asr_silence_ms"
+        private const val DEFAULT_SILENCE_MS = 2000
     }
 
     // Spraakherkenning componenten
@@ -127,10 +138,17 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
+    // Preferences and slider view
+    private lateinit var prefs: SharedPreferences
+    private lateinit var sliderSilenceCompact: Slider
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = SchermTellingBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Init prefs
+        prefs = this.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
         // Init alias editor (SAF)
         aliasEditor = AliasEditor(this, SaFStorageHelper(this))
@@ -138,21 +156,67 @@ class TellingScherm : AppCompatActivity() {
         // Log-venster setup with RecyclerView and inline alias tap
         setupLogRecyclerView()
 
-        // Tiles setup met flexbox voor adaptieve layout
+        // Tiles setup with flexbox for adaptieve layout
         setupSpeciesTilesRecyclerView()
 
         // Buttons setup
         setupButtons()
 
+        // Wire the compact horizontal slider (between log and buttons)
+        setupSilenceSlider()
+
         // Voorselectie inladen
         loadPreselection()
 
-        // Preload aliassen voor spraakherkenning
+        // Preload aliassen for spraakherkenning
         preloadAliases()
     }
 
     /**
-     * Preload aliassen voor betere spraakherkenning
+     * Setup the small horizontal slider (sliderSilenceCompact) placed between the log and buttons.
+     * - Real-time: update SpeechRecognitionManager on every change
+     * - Persist: save to SharedPreferences when user stops sliding (onStopTrackingTouch)
+     */
+    private fun setupSilenceSlider() {
+        try {
+            sliderSilenceCompact = binding.seekBarSilenceCompact
+
+            // initialize from prefs (default 2000 ms)
+            val savedMs = prefs.getInt(PREF_ASR_SILENCE_MS, DEFAULT_SILENCE_MS)
+            sliderSilenceCompact.value = savedMs.toFloat()
+
+            // apply immediately if speech manager already initialized
+            if (speechInitialized) {
+                speechRecognitionManager.setSilenceStopMillis(savedMs.toLong())
+            }
+
+            // Real-time: update manager while sliding
+            sliderSilenceCompact.addOnChangeListener { _, value, _ ->
+                val ms = value.toInt()
+                if (speechInitialized) {
+                    speechRecognitionManager.setSilenceStopMillis(ms.toLong())
+                }
+            }
+
+            // Persist on stop tracking to reduce writes
+            sliderSilenceCompact.addOnSliderTouchListener(object : Slider.OnSliderTouchListener {
+                override fun onStartTrackingTouch(slider: Slider) { /* no-op */ }
+                override fun onStopTrackingTouch(slider: Slider) {
+                    val ms = slider.value.toInt()
+                    prefs.edit { putInt(PREF_ASR_SILENCE_MS, ms) }
+                    // Ensure manager updated (in case slider was set before init)
+                    if (speechInitialized) {
+                        speechRecognitionManager.setSilenceStopMillis(ms.toLong())
+                    }
+                }
+            })
+        } catch (ex: Exception) {
+            Log.w(TAG, "setupSilenceSlider failed: ${ex.message}", ex)
+        }
+    }
+
+    /**
+     * Preload aliassen for better speech recognition
      */
     private fun preloadAliases() {
         lifecycleScope.launch {
@@ -307,7 +371,7 @@ class TellingScherm : AppCompatActivity() {
 
         binding.btnAfronden.setOnLongClickListener {
             tryConvertCsvToJson()
-            Toast.makeText(this, "CSV naar JSON conversie gestart...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@TellingScherm, "CSV naar JSON conversie gestart...", Toast.LENGTH_SHORT).show()
             true
         }
 
@@ -426,6 +490,10 @@ class TellingScherm : AppCompatActivity() {
         try {
             speechRecognitionManager = SpeechRecognitionManager(this)
             speechRecognitionManager.initialize()
+
+            // Apply saved silence ms if present
+            val savedMs = prefs.getInt(PREF_ASR_SILENCE_MS, DEFAULT_SILENCE_MS)
+            speechRecognitionManager.setSilenceStopMillis(savedMs.toLong())
 
             updateSelectedSpeciesMap()
 

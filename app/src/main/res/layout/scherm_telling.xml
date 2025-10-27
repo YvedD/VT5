@@ -7,7 +7,7 @@
     android:layout_height="match_parent"
     android:padding="8dp">
 
-    <!-- Log-venster -->
+    <!-- Titel -->
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -17,10 +17,11 @@
         android:textSize="11sp"
         android:textStyle="bold" />
 
-    <!-- Card met afgeronde hoeken + stroke in lichtblauw -->
+    <!-- Log-venster (breed) -->
     <com.google.android.material.card.MaterialCardView
+        android:id="@+id/textview1"
         android:layout_width="match_parent"
-        android:layout_height="240dp"
+        android:layout_height="280dp"
         android:layout_marginBottom="8dp"
         app:cardCornerRadius="8dp"
         app:cardUseCompatPadding="true"
@@ -35,8 +36,60 @@
             android:padding="6dp" />
     </com.google.android.material.card.MaterialCardView>
 
+    <!-- Label (piepklein) boven de sliderZone -->
+    <TextView
+        android:id="@+id/tvOpnameGevoeligheidLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="start"
+        android:paddingBottom="4dp"
+        android:text="Stilte trigger"
+        android:textSize="10sp"
+        android:textStyle="bold" />
+
+    <!-- sliderZone: exact 20dp hoog, bevat HORIZONTALE SeekBar mapped 2s..5s -->
+    <LinearLayout
+        android:id="@+id/sliderZone"
+        android:layout_width="match_parent"
+        android:layout_height="20dp"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="8dp">
+
+        <!-- Min label (2 sec) -->
+        <TextView
+            android:id="@+id/tvSilenceMinSmall"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:text="2s"
+            android:textSize="10sp"
+            android:paddingEnd="6dp"/>
+
+        <!-- SeekBar: progress 0..30 => maps to 2000 + progress*100 ms -->
+        <com.google.android.material.slider.Slider
+            android:id="@+id/seekBarSilenceCompact"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:max="30"
+            android:progress="0"
+            android:splitTrack="false" />
+
+        <!-- Max label (5 sec) -->
+        <TextView
+            android:id="@+id/tvSilenceMaxSmall"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:text="5s"
+            android:textSize="10sp"
+            android:paddingStart="6dp"/>
+    </LinearLayout>
+
     <!-- Actieknoppen -->
     <LinearLayout
+        android:id="@+id/knoppenBalk1"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_horizontal"
@@ -48,6 +101,9 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_margin="5dp"
+            android:paddingLeft="3dp"
+            android:paddingTop="3dp"
+            android:paddingRight="3dp"
             android:text="Opslaan" />
 
         <Button
@@ -55,6 +111,9 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_margin="5dp"
+            android:paddingLeft="3dp"
+            android:paddingTop="3dp"
+            android:paddingRight="3dp"
             android:text="Toevoegen" />
 
         <Button
@@ -63,6 +122,9 @@
             android:layout_height="wrap_content"
             android:layout_margin="5dp"
             android:layout_marginStart="8dp"
+            android:paddingLeft="3dp"
+            android:paddingTop="3dp"
+            android:paddingRight="3dp"
             android:text="Afronden" />
     </LinearLayout>
 
