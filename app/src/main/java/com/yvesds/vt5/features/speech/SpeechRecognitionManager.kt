@@ -21,16 +21,19 @@ import kotlin.math.min
  *
  * Belangrijke wijzigingen (t.o.v. origineel):
  * - Partial results worden nu verzameld in een interne buffer (asrPartials).
- * - Bij final result wordt AliasSpeechParser aangeroepen met de verzamelde partials zodat
- *   de parser die voor logging/training kan opnemen.
+ * - Bij final result SRM bouwt een N-best hypotheses lijst en geeft die door via onHypothesesListener.
  * - Extra instellingen op het RecognizerIntent om stilte-timeouts te verlengen zodat
  *   langere gecombineerde zinnen niet vroeg afgebroken worden.
- * - Toggle `enablePartialsLogging` (default = true) zodat je partials-logging via code kunt aan/uitzetten.
+ *
+ * Nieuwe callback:
+ * - setOnHypothesesListener(listener: (List<Pair<String, Float>>, List<String>) -> Unit)
+ *   wordt aangeroepen met de N-best hypotheses (string + score) en de partials (chronologisch).
  *
  * Hoe te gebruiken:
- * - StartListening() zoals voorheen. De manager verzamelt partials en op final resultaat
- *   worden parsed items teruggegeven via onSpeciesCountListener.
- * - Als parser geen items vindt, valt de manager terug op de bestaande regex / parseSpeciesWithCounts logica.
+ * - TellingScherm registreert op setOnHypothesesListener(..) en gebruikt parseSpokenWithContext(...)
+ *   om context-aware matching te doen (tiles/site/recents).
+ * - Backward-compat: als er géén hypotheses-listener aanwezig is, probeert SRM de eenvoudige
+ *   regex/heuristische fallback via parseSpeciesWithCounts en roept onSpeciesCountListener.
  */
 class SpeechRecognitionManager(private val activity: Activity) {
 
@@ -77,6 +80,13 @@ class SpeechRecognitionManager(private val activity: Activity) {
     private var onSpeciesCountListener: ((soortId: String, name: String, count: Int) -> Unit)? = null
     private var onRawResultListener: ((rawText: String) -> Unit)? = null
 
+    /**
+     * Nieuwe callback: N-best hypotheses + partials.
+     * hypotheses: List of Pair(hypothesisText, scoreFloat[0..1])
+     * partials: chronological list of partial strings (may be empty)
+     */
+    private var onHypothesesListener: ((List<Pair<String, Float>>, List<String>) -> Unit)? = null
+
     // Herbruikbare StringBuilder voor normalisatie om GC-druk te verminderen
     private val normalizeStringBuilder = StringBuilder(100)
 
@@ -89,7 +99,6 @@ class SpeechRecognitionManager(private val activity: Activity) {
     private var aliasesLoaded = false
 
     // Toggle: enable/disable partials logging (kan in code op true/false gezet worden)
-    // Documentatie: zet dit op false als je tijdens testen geen partials in de NDJSON logs wilt.
     var enablePartialsLogging: Boolean = true
 
     // Internal partials buffer (keeps recent partials in chronological order)
@@ -232,6 +241,13 @@ class SpeechRecognitionManager(private val activity: Activity) {
         onRawResultListener = listener
     }
 
+    /**
+     * Nieuwe callback setter voor N-best hypotheses + partials.
+     */
+    fun setOnHypothesesListener(listener: (hypotheses: List<Pair<String, Float>>, partials: List<String>) -> Unit) {
+        onHypothesesListener = listener
+    }
+
     fun isCurrentlyListening(): Boolean = isListening
 
     fun destroy() {
@@ -308,41 +324,49 @@ class SpeechRecognitionManager(private val activity: Activity) {
                         copy
                     }
 
-                    // First attempt: use AliasSpeechParser which uses the precomputed indices
-                    CoroutineScope(Dispatchers.Main).launch {
-                        try {
-                            val parser = AliasSpeechParser(activity.applicationContext, SaFStorageHelper(activity.applicationContext))
-                            val parseResult = parser.parseSpoken(bestMatch, if (enablePartialsLogging) partialsCopy else emptyList())
-
-                            if (parseResult.success && parseResult.items.isNotEmpty()) {
-                                // Fire species count events for parsed items
-                                for (item in parseResult.items) {
-                                    val sid = item.chosenSpeciesId ?: continue
-                                    val sname = item.chosenAliasText ?: item.normalized
-                                    val cnt = item.amount
-                                    onSpeciesCountListener?.invoke(sid, sname, cnt)
+                    // Build N-best hypotheses with confidences if available
+                    val hypotheses: List<Pair<String, Float>> = run {
+                        val confArray = results?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
+                        if (confArray != null && confArray.isNotEmpty()) {
+                            matches.mapIndexed { idx, m ->
+                                val score = confArray.getOrNull(idx)?.coerceIn(0.0f, 1.0f) ?: (1.0f - idx * 0.25f).coerceAtLeast(0.0f)
+                                m to score
+                            }
+                        } else {
+                            // Fallback scores when confidences are not provided
+                            matches.mapIndexed { idx, m ->
+                                val score = when (idx) {
+                                    0 -> 1.0f
+                                    1 -> 0.65f
+                                    2 -> 0.45f
+                                    3 -> 0.25f
+                                    else -> 0.10f
                                 }
-                            } else {
-                                // Fallback to existing parsing logic (regex + heuristic)
-                                val matchResult = SPECIES_COUNT_PATTERN.matcher(bestMatch)
-                                if (matchResult.find()) {
-                                    val speciesNameRaw = matchResult.group(1)
-                                    val countText = matchResult.group(2)
-                                    if (speciesNameRaw != null && countText != null) {
-                                        val speciesName = speciesNameRaw.trim()
-                                        val count = countText.toIntOrNull() ?: 1
-                                        val speciesId = findSpeciesIdEfficient(speciesName)
-                                        if (speciesId != null) {
-                                            onSpeciesCountListener?.invoke(speciesId, speciesName, count)
-                                        } else {
-                                            val recognizedItems = parseSpeciesWithCounts(bestMatch)
-                                            if (recognizedItems.isNotEmpty()) {
-                                                for (item in recognizedItems) {
-                                                    onSpeciesCountListener?.invoke(item.speciesId, item.speciesName, item.count)
-                                                }
-                                            }
-                                        }
-                                    }
+                                m to score
+                            }
+                        }
+                    }
+
+                    // Notify hypotheses listener (if any) so caller can score/choose across N-best
+                    try {
+                        onHypothesesListener?.invoke(hypotheses, partialsCopy)
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "onHypothesesListener failed: ${ex.message}", ex)
+                    }
+
+                    // If there's no hypotheses listener, fall back to simple parsing logic and callbacks
+                    if (onHypothesesListener == null) {
+                        // Try simple regex first (explicit "soort aantal" pattern)
+                        val matchResult = SPECIES_COUNT_PATTERN.matcher(bestMatch)
+                        if (matchResult.find()) {
+                            val speciesNameRaw = matchResult.group(1)
+                            val countText = matchResult.group(2)
+                            if (speciesNameRaw != null && countText != null) {
+                                val speciesName = speciesNameRaw.trim()
+                                val count = countText.toIntOrNull() ?: 1
+                                val speciesId = findSpeciesIdEfficient(speciesName)
+                                if (speciesId != null) {
+                                    onSpeciesCountListener?.invoke(speciesId, speciesName, count)
                                 } else {
                                     val recognizedItems = parseSpeciesWithCounts(bestMatch)
                                     if (recognizedItems.isNotEmpty()) {
@@ -352,14 +376,15 @@ class SpeechRecognitionManager(private val activity: Activity) {
                                     }
                                 }
                             }
-                        } catch (ex: Exception) {
-                            Log.w(TAG, "Parser invocation failed, falling back: ${ex.message}", ex)
-                            // Fallback existing logic
+                        } else {
                             val recognizedItems = parseSpeciesWithCounts(bestMatch)
                             if (recognizedItems.isNotEmpty()) {
                                 for (item in recognizedItems) {
                                     onSpeciesCountListener?.invoke(item.speciesId, item.speciesName, item.count)
                                 }
+                            } else {
+                                // If nothing matched, log raw (caller can tap and add alias)
+                                onRawResultListener?.invoke(bestMatch)
                             }
                         }
                     }

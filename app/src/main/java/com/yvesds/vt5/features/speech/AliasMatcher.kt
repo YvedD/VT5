@@ -20,13 +20,12 @@ import kotlin.math.max
  * Responsibilities:
  *  - load aliases_flat.cbor.gz (SAF Documents/VT5/binaries/aliases_flat.cbor.gz) and keep in-memory index
  *  - provide fast exact lookup by alias text
- *  - provide a simple fuzzy fallback using normalized Levenshtein ratio
+ *  - provide a fuzzy fallback using combined phonetic + normalized Levenshtein ratio
  *
- * Notes:
- *  - This first implementation focuses on correctness and field performance (load into memory once).
- *  - Later optimization may add on-disk indexing or LRU per-record caching.
+ * Extended:
+ *  - reloadIndex(context, saf) to force reloading the CBOR from SAF
+ *  - addAliasHotpatch(speciesId, aliasText, canonical, tilename) to add a minimal AliasRecord in-memory
  */
-
 internal object AliasMatcher {
     private const val TAG = "AliasMatcher"
     private const val ALIASES_CBOR_GZ = "aliases_flat.cbor.gz"
@@ -92,6 +91,59 @@ internal object AliasMatcher {
         }
     }
 
+    /**
+     * Force reload the index from SAF (useful after recompute or if you want to drop current index).
+     */
+    @OptIn(ExperimentalSerializationApi::class)
+    suspend fun reloadIndex(context: Context, saf: SaFStorageHelper) = withContext(Dispatchers.IO) {
+        synchronized(this@AliasMatcher) {
+            try {
+                val vt5 = saf.getVt5DirIfExists() ?: run {
+                    Log.w(TAG, "SAF VT5 root not set; cannot reload aliases")
+                    return@synchronized
+                }
+                val binaries = vt5.findFile(BINARIES)?.takeIf { it.isDirectory }
+                val cborDoc = binaries?.findFile(ALIASES_CBOR_GZ)
+                if (cborDoc == null) {
+                    Log.w(TAG, "aliases cbor not found in Documents/VT5/$BINARIES during reload")
+                    // clear loaded index to avoid stale state
+                    loadedIndex = null
+                    aliasMap = null
+                    return@synchronized
+                }
+
+                val bytes = context.contentResolver.openInputStream(cborDoc.uri)?.use { it.readBytes() }
+                if (bytes == null || bytes.isEmpty()) {
+                    Log.w(TAG, "Failed to read aliases cbor bytes during reload")
+                    loadedIndex = null
+                    aliasMap = null
+                    return@synchronized
+                }
+
+                val ungz = gunzip(bytes)
+                val idx = Cbor.decodeFromByteArray(RepoAliasIndex.serializer(), ungz)
+                loadedIndex = idx
+
+                // build aliasMap
+                val map = mutableMapOf<String, MutableList<AliasRecord>>()
+                for (r in idx.json) {
+                    val key = r.alias.trim().lowercase()
+                    map.getOrPut(key) { mutableListOf() }.add(r)
+                    val c = r.canonical
+                    val k2 = c.trim().lowercase()
+                    map.getOrPut(k2) { mutableListOf() }.add(r)
+                    val k3 = r.norm.trim().lowercase()
+                    if (k3.isNotBlank()) map.getOrPut(k3) { mutableListOf() }.add(r)
+                }
+                aliasMap = map.mapValues { it.value.toList() }
+                Log.i(TAG, "Reloaded alias index: ${idx.json.size} records, aliasMap keys=${aliasMap!!.size}")
+            } catch (ex: Exception) {
+                Log.w(TAG, "Error reloading alias index: ${ex.message}", ex)
+                // keep previous loadedIndex if reload fails
+            }
+        }
+    }
+
     suspend fun findExact(aliasPhrase: String, context: Context, saf: SaFStorageHelper): List<AliasRecord> = withContext(Dispatchers.Default) {
         ensureLoaded(context, saf)
         val map = aliasMap ?: return@withContext emptyList()
@@ -99,15 +151,22 @@ internal object AliasMatcher {
     }
 
     /**
-     * Simple fuzzy candidate search using normalized Levenshtein ratio across aliasMap keys.
+     * Fuzzy candidate search using combined phonetic + normalized Levenshtein ratio across aliasMap keys.
      * Returns topN candidates with score in descending order.
+     *
+     * Scoring:
+     *   phonSim = ColognePhonetic.similarity(query, key) (0..1)
+     *   levSim   = normalizedLevenshteinRatio(query, key) (0..1)
+     *   final    = wP * phonSim + wL * levSim
+     *
+     * We choose weights favouring phonetic similarity but keep lev distance as tiebreaker.
      */
     suspend fun findFuzzyCandidates(
         phrase: String,
         context: Context,
         saf: SaFStorageHelper,
         topN: Int = 5,
-        threshold: Double = 0.55
+        threshold: Double = 0.50
     ): List<Pair<AliasRecord, Double>> = withContext(Dispatchers.Default) {
         ensureLoaded(context, saf)
         val map = aliasMap ?: return@withContext emptyList()
@@ -124,17 +183,70 @@ internal object AliasMatcher {
             }
 
         val scored = mutableListOf<Pair<AliasRecord, Double>>()
+
         for (k in shortlist) {
-            val ratio = normalizedLevenshteinRatio(p, k)
-            if (ratio >= threshold) {
+            // normalized levenshtein ratio
+            val levRatio = normalizedLevenshteinRatio(p, k)
+
+            // phonetic similarity using ColognePhonetic on surface forms (this handles Dutch tweaks)
+            val phonSim = runCatching { ColognePhonetic.similarity(p, k) }.getOrDefault(0.0)
+
+            // Combine scores (weights chosen experimentally)
+            val finalScore = (0.65 * phonSim + 0.35 * levRatio).coerceIn(0.0, 1.0)
+
+            if (finalScore >= threshold) {
                 val records = map[k] ?: continue
                 for (r in records) {
-                    scored += Pair(r, ratio)
+                    scored += Pair(r, finalScore)
                 }
             }
         }
+
         scored.sortByDescending { it.second }
         return@withContext scored.take(topN)
+    }
+
+    // Hot-patch: add a minimal AliasRecord in-memory so new alias is immediately visible
+    fun addAliasHotpatch(speciesId: String, aliasRaw: String, canonical: String? = null, tilename: String? = null) {
+        try {
+            val norm = normalizeLowerNoDiacritics(aliasRaw)
+            if (norm.isBlank()) return
+
+            val aliasLower = aliasRaw.trim().lowercase()
+            val col = runCatching { ColognePhonetic.encode(norm) }.getOrNull()
+            val record = AliasRecord(
+                aliasid = "hotpatch_${System.nanoTime()}",
+                speciesid = speciesId,
+                canonical = (canonical ?: aliasLower),
+                tilename = tilename,
+                alias = aliasLower,
+                norm = norm,
+                cologne = col,
+                dmetapho = null,
+                beidermorse = null,
+                phonemes = null,
+                ngrams = mapOf("q" to "3"),
+                minhash64 = emptyList(),
+                simhash64 = "0x0",
+                weight = 1.0
+            )
+
+            synchronized(this) {
+                val currentMap = aliasMap?.mapValues { it.value.toMutableList() }?.toMutableMap() ?: mutableMapOf()
+                // keys to update: aliasLower, canonical, norm
+                val keys = listOf(aliasLower, (record.canonical ?: "").trim().lowercase(), norm)
+                for (k in keys) {
+                    if (k.isBlank()) continue
+                    val list = currentMap.getOrPut(k) { mutableListOf() }
+                    list.add(record)
+                }
+                aliasMap = currentMap.mapValues { it.value.toList() }.toMap()
+            }
+
+            Log.d(TAG, "Hot-patched alias into aliasMap: '$aliasRaw' -> $speciesId")
+        } catch (ex: Exception) {
+            Log.w(TAG, "addAliasHotpatch failed: ${ex.message}", ex)
+        }
     }
 
     // ---------- Helpers ----------
@@ -176,5 +288,13 @@ internal object AliasMatcher {
             System.arraycopy(cur, 0, prev, 0, lb + 1)
         }
         return prev[lb]
+    }
+
+    private fun normalizeLowerNoDiacritics(input: String): String {
+        val lower = input.lowercase()
+        val decomposed = java.text.Normalizer.normalize(lower, java.text.Normalizer.Form.NFD)
+        val noDiacritics = decomposed.replace("\\p{Mn}+".toRegex(), "")
+        val cleaned = noDiacritics.replace("[^\\p{L}\\p{Nd}]+".toRegex(), " ").trim()
+        return cleaned.replace("\\s+".toRegex(), " ")
     }
 }
