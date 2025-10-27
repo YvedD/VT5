@@ -10,6 +10,7 @@ import kotlin.math.max
 
 /**
  * AliasPriorityMatcher - 9-step priority cascade with scoring.
+ * OPTIMIZED: Timing logs rond hotspots.
  */
 object AliasPriorityMatcher {
     private const val TAG = "AliasPriorityMatcher"
@@ -35,6 +36,7 @@ object AliasPriorityMatcher {
         context: Context,
         saf: SaFStorageHelper
     ): MatchResult = withContext(Dispatchers.Default) {
+        val t0 = System.nanoTime()
         val hyp = hypothesis.trim()
         if (hyp.isBlank()) return@withContext MatchResult.NoMatch(hyp, "empty")
 
@@ -85,6 +87,8 @@ object AliasPriorityMatcher {
             return@withContext MatchResult.SuggestionList(sorted.take(5), hyp, "fuzzy_suggestions")
         }
 
+        val t1 = System.nanoTime()
+        Log.d(TAG, "match: hyp='$hyp' fuzzyCandidates=${fuzzyCandidates.size} topScore=${top.score} margin=$margin timeMs=${(t1 - t0) / 1_000_000}")
         return@withContext MatchResult.NoMatch(hyp, "low_score")
     }
 
@@ -195,7 +199,7 @@ object AliasPriorityMatcher {
             val ai = a[i - 1]
             for (j in 1..lb) {
                 val cost = if (ai == b[j - 1]) 0 else 1
-                cur[j] = minOf(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost)
+                cur[j] = kotlin.math.min(kotlin.math.min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost)
             }
             System.arraycopy(cur, 0, prev, 0, lb + 1)
         }

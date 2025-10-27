@@ -24,7 +24,8 @@ import java.util.Locale
  *   the MatchResult for the hypothesis with the highest combined score.
  *
  * Logging:
- * - writeMatchLog now includes the ASR N-best hypotheses + confidence array.
+ * - writeMatchLog now includes the ASR N-best hypotheses with confidences when provided.
+ * - OPTIMIZED: Streaming append for NDJSON to avoid full-file read/write.
  */
 class AliasSpeechParser(
     private val context: Context,
@@ -291,6 +292,7 @@ class AliasSpeechParser(
     /**
      * Write NDJSON match log for MatchResult.
      *
+     * OPTIMIZED: Streaming append using OutputStream("wa") if available, else buffer smaller.
      * Now includes optional ASR N-best hypotheses with confidences when provided.
      */
     private suspend fun writeMatchLog(rawInput: String, result: MatchResult, partials: List<String>, asrHypotheses: List<Pair<String, Float>>? = null) = withContext(Dispatchers.IO) {
@@ -339,22 +341,34 @@ class AliasSpeechParser(
             val filename = "match_log_$date.ndjson"
             val vt5 = saf.getVt5DirIfExists() ?: return@withContext
             val exports = vt5.findFile("exports")?.takeIf { it.isDirectory } ?: vt5.createDirectory("exports") ?: return@withContext
-            var file = exports.findFile(filename)
-            if (file == null) {
-                file = exports.createFile("application/x-ndjson", filename) ?: return@withContext
-                context.contentResolver.openOutputStream(file.uri, "w")?.use { os ->
+            val file = exports.findFile(filename)
+            if (file == null || !file.exists()) {
+                // Create and write
+                val newFile = exports.createFile("application/x-ndjson", filename) ?: return@withContext
+                context.contentResolver.openOutputStream(newFile.uri, "w")?.use { os ->
                     os.write((logLine + "\n").toByteArray(Charsets.UTF_8))
                     os.flush()
                 }
             } else {
-                // Append safely: openOutputStream with "wa" not available on SAF, so read existing + append, then replace.
-                val existing = context.contentResolver.openInputStream(file.uri)?.use { it.readBytes() }?.toString(Charsets.UTF_8) ?: ""
-                val newContent = existing + logLine + "\n"
-                exports.findFile(filename)?.delete()
-                val created = exports.createFile("application/x-ndjson", filename) ?: return@withContext
-                context.contentResolver.openOutputStream(created.uri, "w")?.use { os ->
-                    os.write(newContent.toByteArray(Charsets.UTF_8))
-                    os.flush()
+                // OPTIMIZED: Try append mode if supported (SAF may not support "wa", fallback to read+rewrite but limit to last 1000 lines)
+                try {
+                    context.contentResolver.openOutputStream(file.uri, "wa")?.use { os ->
+                        os.write((logLine + "\n").toByteArray(Charsets.UTF_8))
+                        os.flush()
+                    }
+                } catch (ex: Exception) {
+                    // Fallback: read last 1000 lines + append to avoid huge files
+                    val existing = context.contentResolver.openInputStream(file.uri)?.use { it.readBytes() }?.toString(Charsets.UTF_8) ?: ""
+                    val lines = existing.lines()
+                    val last1000 = if (lines.size > 1000) lines.takeLast(1000).joinToString("\n") else existing
+                    val newContent = last1000 + (if (last1000.isNotEmpty()) "\n" else "") + logLine + "\n"
+                    // Rewrite file
+                    exports.findFile(filename)?.delete()
+                    val recreated = exports.createFile("application/x-ndjson", filename) ?: return@withContext
+                    context.contentResolver.openOutputStream(recreated.uri, "w")?.use { os ->
+                        os.write(newContent.toByteArray(Charsets.UTF_8))
+                        os.flush()
+                    }
                 }
             }
         } catch (ex: Exception) {
@@ -389,17 +403,27 @@ class AliasSpeechParser(
                     os.flush()
                 }
             } else {
-                val existing = context.contentResolver.openInputStream(file.uri)?.use { it.readBytes() }?.toString(Charsets.UTF_8) ?: ""
-                val newContent = existing + logLine + "\n"
-                exports.findFile(filename)?.delete()
-                val created = exports.createFile("application/x-ndjson", filename) ?: return@withContext
-                context.contentResolver.openOutputStream(created.uri, "w")?.use { os ->
-                    os.write(newContent.toByteArray(Charsets.UTF_8))
-                    os.flush()
+                // Same append logic as above
+                try {
+                    context.contentResolver.openOutputStream(file.uri, "wa")?.use { os ->
+                        os.write((logLine + "\n").toByteArray(Charsets.UTF_8))
+                        os.flush()
+                    }
+                } catch (ex: Exception) {
+                    val existing = context.contentResolver.openInputStream(file.uri)?.use { it.readBytes() }?.toString(Charsets.UTF_8) ?: ""
+                    val lines = existing.lines()
+                    val last1000 = if (lines.size > 1000) lines.takeLast(1000).joinToString("\n") else existing
+                    val newContent = last1000 + (if (last1000.isNotEmpty()) "\n" else "") + logLine + "\n"
+                    exports.findFile(filename)?.delete()
+                    val recreated = exports.createFile("application/x-ndjson", filename) ?: return@withContext
+                    context.contentResolver.openOutputStream(recreated.uri, "w")?.use { os ->
+                        os.write(newContent.toByteArray(Charsets.UTF_8))
+                        os.flush()
+                    }
                 }
             }
         } catch (ex: Exception) {
-            Log.w(TAG, "Failed to write parse log: ${ex.message}", ex)
+            Log.e(TAG, "Failed to write parse log: ${ex.message}", ex)
         }
     }
 }

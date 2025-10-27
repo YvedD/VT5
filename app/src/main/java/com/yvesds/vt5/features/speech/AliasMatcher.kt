@@ -25,6 +25,7 @@ import kotlin.math.max
  * Extended:
  *  - reloadIndex(context, saf) to force reloading the CBOR from SAF
  *  - addAliasHotpatch(speciesId, aliasText, canonical, tilename) to add a minimal AliasRecord in-memory
+ *  - OPTIMIZED: phoneticCache for fast phonetic encoding, firstCharBuckets for instant shortlist.
  */
 internal object AliasMatcher {
     private const val TAG = "AliasMatcher"
@@ -40,6 +41,14 @@ internal object AliasMatcher {
     // Map alias(lowercase normalized) -> list of AliasRecord
     @Volatile
     private var aliasMap: Map<String, List<AliasRecord>>? = null
+
+    // OPTIMIZED: Cache phonetic codes (normalized key -> cologne code) to avoid re-encoding
+    @Volatile
+    private var phoneticCache: Map<String, String>? = null
+
+    // OPTIMIZED: Buckets by first char for instant shortlist (char -> list of keys)
+    @Volatile
+    private var firstCharBuckets: Map<Char, List<String>>? = null
 
     @OptIn(ExperimentalSerializationApi::class)
     suspend fun ensureLoaded(context: Context, saf: SaFStorageHelper) = withContext(Dispatchers.IO) {
@@ -69,22 +78,45 @@ internal object AliasMatcher {
                 val idx = Cbor.decodeFromByteArray(RepoAliasIndex.serializer(), ungz)
                 loadedIndex = idx
 
-                // build aliasMap
+                // build aliasMap and phoneticCache and firstCharBuckets
                 val map = mutableMapOf<String, MutableList<AliasRecord>>()
+                val phonCache = mutableMapOf<String, String>()
+                val buckets = mutableMapOf<Char, MutableList<String>>()
                 for (r in idx.json) {
                     // alias (explicit)
                     val key = r.alias.trim().lowercase()
                     map.getOrPut(key) { mutableListOf() }.add(r)
+                    if (key.isNotEmpty()) {
+                        val first = key[0]
+                        buckets.getOrPut(first) { mutableListOf() }.add(key)
+                        // Cache phonetic for alias
+                        val phonAlias = runCatching { ColognePhonetic.encode(normalizeLowerNoDiacritics(r.alias)) }.getOrDefault("")
+                        phonCache[key] = phonAlias
+                    }
                     // canonical (non-null per AliasRecord definition)
                     val c = r.canonical
                     val k2 = c.trim().lowercase()
                     map.getOrPut(k2) { mutableListOf() }.add(r)
+                    if (k2.isNotEmpty()) {
+                        val first = k2[0]
+                        buckets.getOrPut(first) { mutableListOf() }.add(k2)
+                        val phonCanon = runCatching { ColognePhonetic.encode(normalizeLowerNoDiacritics(c)) }.getOrDefault("")
+                        phonCache[k2] = phonCanon
+                    }
                     // norm (non-null)
                     val k3 = r.norm.trim().lowercase()
-                    if (k3.isNotBlank()) map.getOrPut(k3) { mutableListOf() }.add(r)
+                    if (k3.isNotBlank()) {
+                        map.getOrPut(k3) { mutableListOf() }.add(r)
+                        val first = k3[0]
+                        buckets.getOrPut(first) { mutableListOf() }.add(k3)
+                        val phonNorm = runCatching { ColognePhonetic.encode(k3) }.getOrDefault("")
+                        phonCache[k3] = phonNorm
+                    }
                 }
                 aliasMap = map.mapValues { it.value.toList() }
-                Log.i(TAG, "Loaded alias index: ${idx.json.size} records, aliasMap keys=${aliasMap!!.size}")
+                phoneticCache = phonCache
+                firstCharBuckets = buckets.mapValues { it.value.toList() }
+                Log.i(TAG, "Loaded alias index: ${idx.json.size} records, aliasMap keys=${aliasMap!!.size}, phoneticCache=${phoneticCache!!.size}, buckets=${firstCharBuckets!!.size}")
             } catch (ex: Exception) {
                 Log.w(TAG, "Error loading alias index: ${ex.message}", ex)
             }
@@ -109,6 +141,8 @@ internal object AliasMatcher {
                     // clear loaded index to avoid stale state
                     loadedIndex = null
                     aliasMap = null
+                    phoneticCache = null
+                    firstCharBuckets = null
                     return@synchronized
                 }
 
@@ -117,6 +151,8 @@ internal object AliasMatcher {
                     Log.w(TAG, "Failed to read aliases cbor bytes during reload")
                     loadedIndex = null
                     aliasMap = null
+                    phoneticCache = null
+                    firstCharBuckets = null
                     return@synchronized
                 }
 
@@ -124,19 +160,41 @@ internal object AliasMatcher {
                 val idx = Cbor.decodeFromByteArray(RepoAliasIndex.serializer(), ungz)
                 loadedIndex = idx
 
-                // build aliasMap
+                // build aliasMap and caches
                 val map = mutableMapOf<String, MutableList<AliasRecord>>()
+                val phonCache = mutableMapOf<String, String>()
+                val buckets = mutableMapOf<Char, MutableList<String>>()
                 for (r in idx.json) {
                     val key = r.alias.trim().lowercase()
                     map.getOrPut(key) { mutableListOf() }.add(r)
+                    if (key.isNotEmpty()) {
+                        val first = key[0]
+                        buckets.getOrPut(first) { mutableListOf() }.add(key)
+                        val phonAlias = runCatching { ColognePhonetic.encode(normalizeLowerNoDiacritics(r.alias)) }.getOrDefault("")
+                        phonCache[key] = phonAlias
+                    }
                     val c = r.canonical
                     val k2 = c.trim().lowercase()
                     map.getOrPut(k2) { mutableListOf() }.add(r)
+                    if (k2.isNotEmpty()) {
+                        val first = k2[0]
+                        buckets.getOrPut(first) { mutableListOf() }.add(k2)
+                        val phonCanon = runCatching { ColognePhonetic.encode(normalizeLowerNoDiacritics(c)) }.getOrDefault("")
+                        phonCache[k2] = phonCanon
+                    }
                     val k3 = r.norm.trim().lowercase()
-                    if (k3.isNotBlank()) map.getOrPut(k3) { mutableListOf() }.add(r)
+                    if (k3.isNotBlank()) {
+                        map.getOrPut(k3) { mutableListOf() }.add(r)
+                        val first = k3[0]
+                        buckets.getOrPut(first) { mutableListOf() }.add(k3)
+                        val phonNorm = runCatching { ColognePhonetic.encode(k3) }.getOrDefault("")
+                        phonCache[k3] = phonNorm
+                    }
                 }
                 aliasMap = map.mapValues { it.value.toList() }
-                Log.i(TAG, "Reloaded alias index: ${idx.json.size} records, aliasMap keys=${aliasMap!!.size}")
+                phoneticCache = phonCache
+                firstCharBuckets = buckets.mapValues { it.value.toList() }
+                Log.i(TAG, "Reloaded alias index: ${idx.json.size} records, aliasMap keys=${aliasMap!!.size}, phoneticCache=${phoneticCache!!.size}, buckets=${firstCharBuckets!!.size}")
             } catch (ex: Exception) {
                 Log.w(TAG, "Error reloading alias index: ${ex.message}", ex)
                 // keep previous loadedIndex if reload fails
@@ -154,12 +212,7 @@ internal object AliasMatcher {
      * Fuzzy candidate search using combined phonetic + normalized Levenshtein ratio across aliasMap keys.
      * Returns topN candidates with score in descending order.
      *
-     * Scoring:
-     *   phonSim = ColognePhonetic.similarity(query, key) (0..1)
-     *   levSim   = normalizedLevenshteinRatio(query, key) (0..1)
-     *   final    = wP * phonSim + wL * levSim
-     *
-     * We choose weights favouring phonetic similarity but keep lev distance as tiebreaker.
+     * OPTIMIZED: Use firstCharBuckets for instant shortlist.
      */
     suspend fun findFuzzyCandidates(
         phrase: String,
@@ -168,14 +221,18 @@ internal object AliasMatcher {
         topN: Int = 5,
         threshold: Double = 0.50
     ): List<Pair<AliasRecord, Double>> = withContext(Dispatchers.Default) {
+        val t0 = System.nanoTime()
         ensureLoaded(context, saf)
         val map = aliasMap ?: return@withContext emptyList()
+        val buckets = firstCharBuckets ?: return@withContext emptyList()
         val p = phrase.trim().lowercase()
         if (p.isEmpty()) return@withContext emptyList()
 
-        // shortlist keys by length heuristic for performance
+        // OPTIMIZED: Shortlist by first char + length (drastically reduces candidates)
+        val firstChar = if (p.isNotEmpty()) p[0] else return@withContext emptyList()
+        val bucket = buckets[firstChar] ?: emptyList()
         val len = p.length
-        val shortlist = map.keys.asSequence()
+        val shortlist = bucket.asSequence()
             .filter { key ->
                 val l = key.length
                 val diff = kotlin.math.abs(l - len)
@@ -203,7 +260,10 @@ internal object AliasMatcher {
         }
 
         scored.sortByDescending { it.second }
-        return@withContext scored.take(topN)
+        val result = scored.take(topN)
+        val t1 = System.nanoTime()
+        Log.d(TAG, "findFuzzyCandidates: phrase='$p' shortlist=${shortlist.count()} scored=${scored.size} topN=$topN timeMs=${(t1 - t0) / 1_000_000}")
+        return@withContext result
     }
 
     // Hot-patch: add a minimal AliasRecord in-memory so new alias is immediately visible
@@ -213,7 +273,7 @@ internal object AliasMatcher {
             if (norm.isBlank()) return
 
             val aliasLower = aliasRaw.trim().lowercase()
-            val col = runCatching { ColognePhonetic.encode(norm) }.getOrNull()
+            val col = runCatching { ColognePhonetic.encode(norm) }.getOrDefault("")
             val record = AliasRecord(
                 aliasid = "hotpatch_${System.nanoTime()}",
                 speciesid = speciesId,
@@ -233,14 +293,23 @@ internal object AliasMatcher {
 
             synchronized(this) {
                 val currentMap = aliasMap?.mapValues { it.value.toMutableList() }?.toMutableMap() ?: mutableMapOf()
+                val currentPhon = phoneticCache?.toMutableMap() ?: mutableMapOf()
+                val currentBuckets = firstCharBuckets?.mapValues { it.value.toMutableList() }?.toMutableMap() ?: mutableMapOf()
                 // keys to update: aliasLower, canonical, norm
                 val keys = listOf(aliasLower, (record.canonical ?: "").trim().lowercase(), norm)
                 for (k in keys) {
                     if (k.isBlank()) continue
                     val list = currentMap.getOrPut(k) { mutableListOf() }
                     list.add(record)
+                    currentPhon[k] = col
+                    if (k.isNotEmpty()) {
+                        val first = k[0]
+                        currentBuckets.getOrPut(first) { mutableListOf() }.add(k)
+                    }
                 }
                 aliasMap = currentMap.mapValues { it.value.toList() }.toMap()
+                phoneticCache = currentPhon
+                firstCharBuckets = currentBuckets.mapValues { it.value.toList() }.toMap()
             }
 
             Log.d(TAG, "Hot-patched alias into aliasMap: '$aliasRaw' -> $speciesId")
