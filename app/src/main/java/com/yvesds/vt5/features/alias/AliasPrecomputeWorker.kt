@@ -16,7 +16,7 @@ class AliasPrecomputeWorker(appContext: Context, params: WorkerParameters) : Cor
         val saf = SaFStorageHelper(applicationContext)
         try {
             setProgressAsync(workDataOf("progress" to 1, "message" to "Start pré-computen (SAF-only)"))
-            val result = AliasIndexWriter.ensureComputedSafOnly(applicationContext, saf, q = 3, minhashK = 8)
+            val result = AliasIndexWriter.ensureComputedSafOnly(applicationContext, saf, q = 3)
 
             val out = workDataOf(
                 "safAliasJsonPath" to (result.safAliasJsonPath ?: ""),

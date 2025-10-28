@@ -26,25 +26,15 @@ import java.time.format.DateTimeFormatter
 import java.util.zip.GZIPOutputStream
 
 /**
- * AliasIndexWriter (SAF-only, corrected)
+ * AliasIndexWriter (SAF-only, updated)
  *
- * - Reads inputs only from SAF (Documents/VT5)
- * - Writes outputs only to SAF in the exact paths requested by the user
- * - Produces:
- *     - Documents/VT5/assets/alias_index.json           (JSON, WITHOUT simhash64)
- *     - Documents/VT5/assets/alias_index.json.gz        (GZ)
- *     - Documents/VT5/serverdata/aliases_flat.schema.json
- *     - Documents/VT5/serverdata/species_master.schema.json
- *     - Documents/VT5/serverdata/phonetic_map.schema.json
- *     - Documents/VT5/serverdata/manifest.schema.json
- *     - Documents/VT5/binaries/aliases_flat.cbor.gz      (full CBOR, includes simhash64/minhash64 etc)
- *     - Documents/VT5/binaries/species_master.cbor.gz
- *     - Documents/VT5/exports/alias_precompute_log_<timestamp>.txt
+ * - Produces JSON and CBOR outputs for aliases/species/phonetic map and manifest.
+ * - JSON export is compact and no longer contains legacy fields (dmetapho, beidermorse, ngrams, minhash64, simhash64).
+ * - CBOR export uses AliasIndex (the canonical structure) — if you want CBOR without legacy fields,
+ *   ensure AliasIndex/AliasRecord definitions also omit them (we adapted PrecomputeAliasIndex and will adapt models next).
  *
- * Notes:
- * - This implementation uses only public kotlinx.serialization APIs and explicit @Serializable
- *   DTOs to avoid internal serializer usage and type-inference issues.
- * - JSON export intentionally omits simhash64 (kept only in CBOR).
+ * Author: VT5 Team (YvedD)
+ * Date: 2025-10-28
  */
 
 object AliasIndexWriter {
@@ -69,8 +59,7 @@ object AliasIndexWriter {
     private val jsonPretty = Json { prettyPrint = true }
 
     /**
-     * JSON DTO for alias export (explicit fields, no simhash64).
-     * Field names chosen to be simple and stable.
+     * Compact JSON DTO for alias export (no legacy fields)
      */
     @Serializable
     data class AliasJsonEntry(
@@ -81,12 +70,7 @@ object AliasIndexWriter {
         val alias: String,
         val norm: String,
         val cologne: String? = null,
-        val dmetapho: List<String> = emptyList(),
-        val beidermorse: List<String> = emptyList(),
         val phonemes: String? = null,
-        val ngrams: Map<String, String> = emptyMap(),
-        val minhash64: List<Long> = emptyList(),
-        // simhash64 intentionally omitted from JSON
         val weight: Double = 1.0
     )
 
@@ -129,38 +113,8 @@ object AliasIndexWriter {
         val messages: List<String>
     )
 
-    /**
-     * Preflight check for SAF-only inputs.
-     */
-    fun preflightCheckSafOnly(context: Context, saf: SaFStorageHelper): List<String> {
-        val out = mutableListOf<String>()
-        val vt5 = saf.getVt5DirIfExists()
-        if (vt5 == null) {
-            out += "SAF Documents/VT5 NOT set. Kies 'Kies documenten' en selecteer Documents/VT5."
-            return out
-        }
-        out += "SAF Documents/VT5 root: set"
-        val assets = vt5.findFile(ASSETS)?.takeIf { it.isDirectory }
-        out += if (assets != null) " - assets present" else " - assets missing"
-        val csv = assets?.findFile(CSV_NAME)
-        out += if (csv != null && csv.isFile) " - $CSV_NAME FOUND in assets" else " - $CSV_NAME MISSING in assets"
-
-        val server = vt5.findFile(SERVERDATA)?.takeIf { it.isDirectory }
-        out += if (server != null) " - serverdata present" else " - serverdata missing"
-        if (server != null) {
-            val species = server.findFile("species.json")
-            val site = server.findFile("site_species.json")
-            out += if (species != null && species.isFile) "   - species.json FOUND" else "   - species.json MISSING"
-            out += if (site != null && site.isFile) "   - site_species.json FOUND" else "   - site_species.json MISSING"
-        }
-        return out
-    }
-
-    /**
-     * Main SAF-only ensure function.
-     */
     @OptIn(ExperimentalSerializationApi::class)
-    suspend fun ensureComputedSafOnly(context: Context, saf: SaFStorageHelper, q: Int = 3, minhashK: Int = 8): Result {
+    suspend fun ensureComputedSafOnly(context: Context, saf: SaFStorageHelper, q: Int = 3): Result {
         val messages = mutableListOf<String>()
         val vt5 = saf.getVt5DirIfExists()
         if (vt5 == null) {
@@ -209,10 +163,10 @@ object AliasIndexWriter {
         }
         messages += "Read Documents/VT5/$SERVERDATA/species.json and site_species.json"
 
-        // Build alias index
+        // Build alias index using the new API (csvText, q)
         val csvText = csvBytes.toString(Charsets.UTF_8)
         val aliasIndex = try {
-            PrecomputeAliasIndex.buildFromCsv(csvText, q, minhashK)
+            PrecomputeAliasIndex.buildFromCsv(csvText, q)
         } catch (ex: Exception) {
             messages += "Error building alias index: ${ex.message}"
             return Result(null, null, null, null, emptyList(), null, 0, messages)
@@ -233,15 +187,19 @@ object AliasIndexWriter {
             SimpleSpecies(speciesId = sid, soortnaam = soortnaam, tilename = soortkey)
         }
 
-        // Build phonetic_map (code -> list of aliasIds)
+        // Build phonetic_map (code -> list of aliasIds) using only cologne and phonemes
         val phoneticMap = mutableMapOf<String, MutableList<String>>()
         aliasIndex.json.forEach { a ->
-            a.cologne?.let { code -> phoneticMap.getOrPut("cologne:$code") { mutableListOf() }.add(a.aliasid) }
-            a.dmetapho?.forEach { dm -> phoneticMap.getOrPut("dmetaphone:$dm") { mutableListOf() }.add(a.aliasid) }
-            a.beidermorse?.forEach { bm -> phoneticMap.getOrPut("beider:$bm") { mutableListOf() }.add(a.aliasid) }
+            a.cologne?.let { code ->
+                if (code.isNotBlank()) phoneticMap.getOrPut("cologne:$code") { mutableListOf() }.add(a.aliasid)
+            }
+            a.phonemes?.let { p ->
+                val key = "phonemes:${p.replace("\\s+".toRegex(), "")}"
+                phoneticMap.getOrPut(key) { mutableListOf() }.add(a.aliasid)
+            }
         }
 
-        // Map AliasRecord -> AliasJsonEntry (explicit DTO) excluding simhash64
+        // Map AliasRecord -> AliasJsonEntry (explicit DTO) excluding legacy fields
         val aliasJsonList = aliasIndex.json.map { a ->
             AliasJsonEntry(
                 aliasid = a.aliasid,
@@ -251,11 +209,7 @@ object AliasIndexWriter {
                 alias = a.alias,
                 norm = a.norm,
                 cologne = a.cologne,
-                dmetapho = a.dmetapho ?: emptyList(),
-                beidermorse = a.beidermorse ?: emptyList(),
                 phonemes = a.phonemes,
-                ngrams = a.ngrams ?: emptyMap(),
-                minhash64 = a.minhash64 ?: emptyList(),
                 weight = a.weight
             )
         }
