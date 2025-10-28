@@ -1,3 +1,4 @@
+@file:OptIn(kotlinx.serialization.InternalSerializationApi::class)
 package com.yvesds.vt5.features.speech
 
 import android.content.Context
@@ -6,26 +7,24 @@ import android.widget.Toast
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.time.Instant
 import java.util.Locale
 
 /**
- * AliasSpeechParser (UPDATED)
+ * AliasSpeechParser (UPDATED + FIXED)
  *
  * - parseSpokenWithContext(rawAsr, matchContext, partials) remains (single hypothesis).
  * - NEW: parseSpokenWithHypotheses(hypotheses, matchContext, partials) accepts N-best from SRM
  *   and chooses the best MatchResult by combining ASR confidence with matcher score.
  *
- * Behavior:
- * - If any hypothesis yields AliasPriorityMatcher.MatchResult.AutoAccept -> return immediately.
- * - Otherwise compute combined score = asrWeight * asrConf + (1-asrWeight) * matcherScore and return
- *   the MatchResult for the hypothesis with the highest combined score.
- *
  * Logging:
- * - writeMatchLog now includes the ASR N-best hypotheses with confidences when provided.
- * - OPTIMIZED: Streaming append using OutputStream("wa") if available, else buffer smaller to avoid full-file read/write.
+ * - FIXED: Pretty-printed JSON for readability
+ * - FIXED: Explicit @Serializable data classes (no more 'Any' serialization crash)
+ * - FIXED: MultiMatch support in logging
+ * - Dual logging: internal storage (reliable) + SAF (export)
  */
 class AliasSpeechParser(
     private val context: Context,
@@ -33,9 +32,49 @@ class AliasSpeechParser(
 ) {
     companion object {
         private const val TAG = "AliasSpeechParser"
-        private val json = Json { prettyPrint = false }
-        private val FILTER_WORDS = setOf("luisteren", "luisteren...", "luister") // lowercased forms to filter
+        // Pretty print enabled for readability
+        private val json = Json { prettyPrint = true }
+        private val FILTER_WORDS = setOf("luisteren", "luisteren...", "luister")
     }
+
+    // Serializable data classes for logging (fixes kotlinx.serialization crash)
+    @Serializable
+    data class MatchLogEntry(
+        val timestampIso: String,
+        val rawInput: String,
+        val resultType: String,
+        val hypothesis: String,
+        val candidate: CandidateLog? = null,
+        val multiMatches: List<MultiMatchLog>? = null,
+        val partials: List<String> = emptyList(),
+        val asr_hypotheses: List<AsrHypothesis>? = null
+    )
+
+    @Serializable
+    data class CandidateLog(
+        val speciesId: String? = null,
+        val displayName: String? = null,
+        val score: Double? = null,
+        val source: String? = null,
+        val amount: Int? = null,
+        val candidatesCount: Int? = null,
+        val topScore: Double? = null
+    )
+
+    @Serializable
+    data class MultiMatchLog(
+        val speciesId: String,
+        val displayName: String,
+        val amount: Int,
+        val score: Double,
+        val source: String
+    )
+
+    @Serializable
+    data class AsrHypothesis(
+        val text: String,
+        val confidence: Float
+    )
 
     // normalization function matching PrecomputeAliasIndex.normalizeLowerNoDiacritics
     private fun normalizeLowerNoDiacritics(input: String): String {
@@ -120,7 +159,7 @@ class AliasSpeechParser(
                 val mr = AliasPriorityMatcher.match(normalized, matchContext, context, saf)
 
                 // If matcher strongly auto-accepts, return immediately
-                if (mr is MatchResult.AutoAccept) {
+                if (mr is MatchResult.AutoAccept || mr is MatchResult.MultiMatch) {
                     // Log immediately with full ASR hypotheses
                     writeMatchLog(rawTrim, mr, partials, asrHypotheses = hypotheses)
                     return@withContext mr
@@ -131,6 +170,14 @@ class AliasSpeechParser(
                     is MatchResult.AutoAccept -> mr.candidate.score
                     is MatchResult.AutoAcceptAddPopup -> mr.candidate.score
                     is MatchResult.SuggestionList -> mr.candidates.firstOrNull()?.score ?: 0.0
+                    is MatchResult.MultiMatch -> {
+                        // For multi-match, use average score of all matches
+                        if (mr.matches.isNotEmpty()) {
+                            mr.matches.map { it.candidate.score }.average()
+                        } else {
+                            0.0
+                        }
+                    }
                     is MatchResult.NoMatch -> 0.0
                 }
 
@@ -187,7 +234,6 @@ class AliasSpeechParser(
         val items = mutableListOf<ParsedItem>()
         var i = 0
         while (i < tokens.size) {
-            var matched = false
             val maxWindow = minOf(6, tokens.size - i)
             var chosenWindowEnd = -1
             var chosenRecords: List<com.yvesds.vt5.features.alias.AliasRecord> = emptyList()
@@ -231,7 +277,6 @@ class AliasSpeechParser(
                     candidates = listOf(candidate)
                 )
                 items += parsed
-                matched = true
             } else {
                 var fuzzyFound: Pair<com.yvesds.vt5.features.alias.AliasRecord, Double>? = null
                 var fuzzyWindowPhrase: String? = null
@@ -274,7 +319,6 @@ class AliasSpeechParser(
                         candidates = candidatesList
                     )
                     items += parsed
-                    matched = true
                 } else {
                     i += 1
                 }
@@ -291,88 +335,178 @@ class AliasSpeechParser(
 
     /**
      * Write NDJSON match log for MatchResult.
-     *
-     * OPTIMIZED: Streaming append using OutputStream("wa") if available, else buffer smaller to avoid full-file read/write.
-     * Now includes optional ASR N-best hypotheses with confidences when provided.
+     * FIXED: Dual logging (internal + SAF) with explicit serializable data classes.
+     * FIXED: MultiMatch support.
+     * Real-time flush to internal storage for immediate debugging.
      */
-    private suspend fun writeMatchLog(rawInput: String, result: MatchResult, partials: List<String>, asrHypotheses: List<Pair<String, Float>>? = null) = withContext(Dispatchers.IO) {
+    private suspend fun writeMatchLog(
+        rawInput: String,
+        result: MatchResult,
+        partials: List<String>,
+        asrHypotheses: List<Pair<String, Float>>? = null
+    ) = withContext(Dispatchers.IO) {
         try {
-            val entry = mutableMapOf<String, Any?>(
-                "timestampIso" to Instant.now().toString(),
-                "rawInput" to rawInput,
-                "resultType" to result::class.simpleName,
-                "hypothesis" to result.hypothesis,
-                "candidate" to when (result) {
-                    is MatchResult.AutoAccept -> mapOf(
-                        "speciesId" to result.candidate.speciesId,
-                        "displayName" to result.candidate.displayName,
-                        "score" to result.candidate.score,
-                        "source" to result.source
+            // Build candidate log
+            val candidateLog = when (result) {
+                is MatchResult.AutoAccept -> CandidateLog(
+                    speciesId = result.candidate.speciesId,
+                    displayName = result.candidate.displayName,
+                    score = result.candidate.score,
+                    source = result.source,
+                    amount = result.amount
+                )
+                is MatchResult.AutoAcceptAddPopup -> CandidateLog(
+                    speciesId = result.candidate.speciesId,
+                    displayName = result.candidate.displayName,
+                    score = result.candidate.score,
+                    source = result.source,
+                    amount = result.amount
+                )
+                is MatchResult.SuggestionList -> CandidateLog(
+                    candidatesCount = result.candidates.size,
+                    topScore = result.candidates.firstOrNull()?.score,
+                    source = result.source
+                )
+                is MatchResult.MultiMatch -> null  // Use multiMatches field instead
+                is MatchResult.NoMatch -> null
+            }
+
+            // Build multi-match log (if applicable)
+            val multiMatchesLog = if (result is MatchResult.MultiMatch) {
+                result.matches.map { match ->
+                    MultiMatchLog(
+                        speciesId = match.candidate.speciesId,
+                        displayName = match.candidate.displayName,
+                        amount = match.amount,
+                        score = match.candidate.score,
+                        source = match.source
                     )
-                    is MatchResult.AutoAcceptAddPopup -> mapOf(
-                        "speciesId" to result.candidate.speciesId,
-                        "displayName" to result.candidate.displayName,
-                        "score" to result.candidate.score,
-                        "source" to result.source
-                    )
-                    is MatchResult.SuggestionList -> mapOf(
-                        "candidatesCount" to result.candidates.size,
-                        "topScore" to (result.candidates.firstOrNull()?.score ?: 0.0),
-                        "source" to result.source
-                    )
-                    is MatchResult.NoMatch -> null
-                },
-                "partials" to partials.filter { p ->
+                }
+            } else null
+
+            // Build ASR hypotheses list
+            val asrHyps = asrHypotheses?.map { (text, conf) -> AsrHypothesis(text, conf) }
+
+            // Build entry (now fully serializable)
+            val entry = MatchLogEntry(
+                timestampIso = Instant.now().toString(),
+                rawInput = rawInput,
+                resultType = result::class.simpleName ?: "Unknown",
+                hypothesis = result.hypothesis,
+                candidate = candidateLog,
+                multiMatches = multiMatchesLog,
+                partials = partials.filter { p ->
                     val n = normalizeLowerNoDiacritics(p)
                     !FILTER_WORDS.contains(n)
-                }
+                },
+                asr_hypotheses = asrHyps
             )
-
-            // Attach ASR hypotheses if present
-            if (asrHypotheses != null) {
-                val hs = asrHypotheses.map { (text, conf) ->
-                    mapOf("text" to text, "confidence" to conf)
-                }
-                entry["asr_hypotheses"] = hs
-            }
 
             val logLine = json.encodeToString(entry)
             val date = Instant.now().toString().substring(0, 10).replace("-", "")
             val filename = "match_log_$date.ndjson"
-            val vt5 = saf.getVt5DirIfExists() ?: return@withContext
-            val exports = vt5.findFile("exports")?.takeIf { it.isDirectory } ?: vt5.createDirectory("exports") ?: return@withContext
-            val file = exports.findFile(filename)
-            if (file == null || !file.exists()) {
-                // Create and write
-                val newFile = exports.createFile("application/x-ndjson", filename) ?: return@withContext
-                context.contentResolver.openOutputStream(newFile.uri, "w")?.use { os ->
-                    os.write((logLine + "\n").toByteArray(Charsets.UTF_8))
-                    os.flush()
+
+            // ========== 1. INTERNAL STORAGE (betrouwbaar, real-time) ==========
+            var internalSuccess = false
+            try {
+                val internalDir = java.io.File(context.filesDir, "match_logs")
+                if (!internalDir.exists()) internalDir.mkdirs()
+                val internalFile = java.io.File(internalDir, filename)
+
+                // Append mode (true)
+                java.io.FileWriter(internalFile, true).use { writer ->
+                    writer.write(logLine + "\n")
+                    writer.flush()
                 }
-            } else {
-                // OPTIMIZED: Try append mode if supported (SAF may not support "wa", fallback to read+rewrite but limit to last 1000 lines)
-                try {
-                    context.contentResolver.openOutputStream(file.uri, "wa")?.use { os ->
+                internalSuccess = true
+                Log.d(TAG, "Match log written to internal: ${internalFile.absolutePath}")
+            } catch (ex: Exception) {
+                Log.e(TAG, "CRITICAL: Internal match log failed: ${ex.message}", ex)
+            }
+
+            // ========== 2. SAF STORAGE (export, best-effort) ==========
+            try {
+                val vt5 = saf.getVt5DirIfExists()
+                if (vt5 == null) {
+                    Log.w(TAG, "SAF match log skipped: VT5 dir not set")
+                    return@withContext
+                }
+
+                val exports = vt5.findFile("exports")?.takeIf { it.isDirectory }
+                    ?: vt5.createDirectory("exports")
+
+                if (exports == null) {
+                    Log.w(TAG, "SAF match log skipped: exports dir creation failed")
+                    return@withContext
+                }
+
+                val file = exports.findFile(filename)
+                if (file == null || !file.exists()) {
+                    // Create new file
+                    val newFile = exports.createFile("application/x-ndjson", filename)
+                    if (newFile == null) {
+                        Log.w(TAG, "SAF match log: file creation failed")
+                        return@withContext
+                    }
+                    context.contentResolver.openOutputStream(newFile.uri, "w")?.use { os ->
                         os.write((logLine + "\n").toByteArray(Charsets.UTF_8))
                         os.flush()
                     }
-                } catch (ex: Exception) {
-                    // Fallback: read last 1000 lines + append to avoid huge files
-                    val existing = context.contentResolver.openInputStream(file.uri)?.use { it.readBytes() }?.toString(Charsets.UTF_8) ?: ""
-                    val lines = existing.lines()
-                    val last1000 = if (lines.size > 1000) lines.takeLast(1000).joinToString("\n") else existing
-                    val newContent = last1000 + (if (last1000.isNotEmpty()) "\n" else "") + logLine + "\n"
-                    // Rewrite file
-                    exports.findFile(filename)?.delete()
-                    val recreated = exports.createFile("application/x-ndjson", filename) ?: return@withContext
-                    context.contentResolver.openOutputStream(recreated.uri, "w")?.use { os ->
-                        os.write(newContent.toByteArray(Charsets.UTF_8))
-                        os.flush()
+                    Log.d(TAG, "Match log written to SAF: ${newFile.uri}")
+                } else {
+                    // Append to existing (try "wa" mode, fallback to rewrite)
+                    var appended = false
+                    try {
+                        context.contentResolver.openOutputStream(file.uri, "wa")?.use { os ->
+                            os.write((logLine + "\n").toByteArray(Charsets.UTF_8))
+                            os.flush()
+                            appended = true
+                        }
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "SAF append mode failed, using fallback rewrite: ${ex.message}")
+                    }
+
+                    if (!appended) {
+                        // Fallback: read last 1000 lines + rewrite
+                        val existing = context.contentResolver.openInputStream(file.uri)?.use {
+                            it.readBytes()
+                        }?.toString(Charsets.UTF_8) ?: ""
+                        val lines = existing.lines()
+                        val last1000 = if (lines.size > 1000) {
+                            lines.takeLast(1000).joinToString("\n")
+                        } else {
+                            existing
+                        }
+                        val newContent = last1000 + (if (last1000.isNotEmpty()) "\n" else "") + logLine + "\n"
+
+                        // Rewrite file
+                        exports.findFile(filename)?.delete()
+                        val recreated = exports.createFile("application/x-ndjson", filename)
+                        if (recreated != null) {
+                            context.contentResolver.openOutputStream(recreated.uri, "w")?.use { os ->
+                                os.write(newContent.toByteArray(Charsets.UTF_8))
+                                os.flush()
+                            }
+                            Log.d(TAG, "Match log rewritten to SAF (fallback)")
+                        }
                     }
                 }
+            } catch (ex: Exception) {
+                Log.w(TAG, "SAF match log failed (non-critical): ${ex.message}", ex)
             }
+
+            // ========== 3. SUCCESS CHECK ==========
+            if (!internalSuccess) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "⚠️ ASR logging FAILED — check permissions", Toast.LENGTH_LONG).show()
+                }
+            }
+
         } catch (ex: Exception) {
-            Log.w(TAG, "Failed to write match log: ${ex.message}", ex)
+            Log.e(TAG, "writeMatchLog CRITICAL FAILURE: ${ex.message}", ex)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, "ASR log fatal error: ${ex.message}", Toast.LENGTH_LONG).show()
+            }
         }
     }
 

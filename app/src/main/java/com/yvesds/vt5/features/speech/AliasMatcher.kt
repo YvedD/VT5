@@ -229,7 +229,7 @@ internal object AliasMatcher {
      * Fuzzy candidate search using combined phonetic + normalized Levenshtein ratio across aliasMap keys.
      * Returns topN candidates with score in descending order.
      *
-     * OPTIMIZED: Use firstCharBuckets for instant shortlist, bloomFilter for quick rejection.
+     * FIXED: Bloom filter now tokenizes query and checks individual tokens (not full phrase).
      */
     suspend fun findFuzzyCandidates(
         phrase: String,
@@ -246,10 +246,22 @@ internal object AliasMatcher {
         val p = phrase.trim().lowercase()
         if (p.isEmpty()) return@withContext emptyList()
 
-        // OPTIMIZED: Bloom filter quick rejection
-        if (p.hashCode().toLong() !in bloom) {
-            Log.d(TAG, "Bloom filter rejected: $p")
-            return@withContext emptyList()
+        // FIXED: Bloom filter - tokenize query and check if ANY token matches
+        val tokens = p.split("\\s+".toRegex()).filter { token ->
+            token.isNotBlank() && token.toIntOrNull() == null  // strip cijfers
+        }
+
+        if (tokens.isEmpty()) {
+            // Query contains only numbers/spaces -> skip bloom filter check
+            Log.d(TAG, "Bloom filter skipped: query contains only numbers")
+        } else {
+            // Check if at least ONE token is in bloom filter
+            val anyTokenMatches = tokens.any { token -> token.hashCode().toLong() in bloom }
+            if (!anyTokenMatches) {
+                Log.d(TAG, "Bloom filter rejected: $p (no tokens matched: $tokens)")
+                return@withContext emptyList()
+            }
+            Log.d(TAG, "Bloom filter passed: $p (tokens: $tokens)")
         }
 
         // OPTIMIZED: Shortlist by first char + length (drastically reduces candidates)
@@ -289,7 +301,6 @@ internal object AliasMatcher {
         Log.d(TAG, "findFuzzyCandidates: phrase='$p' shortlist=${shortlist.count()} scored=${scored.size} topN=$topN timeMs=${(t1 - t0) / 1_000_000}")
         return@withContext result
     }
-
     // Hot-patch: add a minimal AliasRecord in-memory so new alias is immediately visible
     fun addAliasHotpatch(speciesId: String, aliasRaw: String, canonical: String? = null, tilename: String? = null) {
         try {

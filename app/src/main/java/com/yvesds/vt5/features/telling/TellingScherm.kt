@@ -54,9 +54,10 @@ import java.util.Locale
  *
  * UPDATED:
  *  - N-best orchestration: listen to SRM hypotheses and iterate them via parser until a MatchResult
- *    is found (AutoAccept / AutoAcceptAddPopup / SuggestionList).
+ *    is found (AutoAccept / AutoAcceptAddPopup / SuggestionList / MultiMatch).
  *  - Hot-reload: when an alias is added, persist and hot-patch AliasMatcher so the alias is active immediately.
  *  - ASR silence timeout slider wiring (real-time update + persist on stop).
+ *  - Multi-species support: "aalscholver 5 boertjes 3" -> Aalscholver +5, Boerenzwaluw +3
  */
 class TellingScherm : AppCompatActivity() {
 
@@ -505,24 +506,25 @@ class TellingScherm : AppCompatActivity() {
             // Register hypotheses listener: iterate N-best hypotheses and call parser until a useable MatchResult is found
             speechRecognitionManager.setOnHypothesesListener { hypotheses, partials ->
                 lifecycleScope.launch {
-                    Log.d(TAG, "Hypotheses received: $hypotheses")  // Debug
+                    Log.d(TAG, "Hypotheses received: $hypotheses")
                     try {
                         val matchContext = buildMatchContext()
                         val parser = AliasSpeechParser(this@TellingScherm, SaFStorageHelper(this@TellingScherm))
 
                         // Centralized N-best handling in parser:
                         val result = parser.parseSpokenWithHypotheses(hypotheses, matchContext, partials, asrWeight = 0.4)
-                        Log.d(TAG, "Parse result: $result")  // Debug
+                        Log.d(TAG, "Parse result: $result")
 
                         when (result) {
                             is MatchResult.AutoAccept -> {
-                                val cnt = extractCountFromHypothesis(result.hypothesis) ?: 1
-                                updateSoortCount(result.candidate.speciesId, cnt)
-                                addLog("Herkend: ${result.candidate.displayName} $cnt (auto)", "spraak")
+                                // FIXED: Use extracted amount from result
+                                updateSoortCount(result.candidate.speciesId, result.amount)
+                                addLog("Herkend: ${result.candidate.displayName} ${result.amount} (auto)", "spraak")
                                 RecentSpeciesStore.recordUse(this@TellingScherm, result.candidate.speciesId, maxEntries = 25)
                             }
                             is MatchResult.AutoAcceptAddPopup -> {
-                                val cnt = extractCountFromHypothesis(result.hypothesis) ?: 1
+                                // FIXED: Use extracted amount from result
+                                val cnt = result.amount
                                 runOnUiThread {
                                     val prettyName = result.candidate.displayName
                                     val msg = "Soort \"$prettyName\" werd herkend met aantal $cnt maar staat nog niet in de lijst.\n\nWil je deze soort toevoegen en meteen $cnt noteren?"
@@ -536,7 +538,32 @@ class TellingScherm : AppCompatActivity() {
                                         .show()
                                 }
                             }
+                            is MatchResult.MultiMatch -> {
+                                // NEW: Handle multiple species in one query (e.g., "aalscholver 5 boertjes 3")
+                                result.matches.forEach { match ->
+                                    if (match.candidate.isInTiles) {
+                                        updateSoortCount(match.candidate.speciesId, match.amount)
+                                        addLog("Herkend: ${match.candidate.displayName} ${match.amount} (multi)", "spraak")
+                                        RecentSpeciesStore.recordUse(this@TellingScherm, match.candidate.speciesId, maxEntries = 25)
+                                    } else {
+                                        // Species not in tiles -> ask to add
+                                        runOnUiThread {
+                                            val prettyName = match.candidate.displayName
+                                            val msg = "Soort \"$prettyName\" (${match.amount}x) herkend maar niet in lijst.\n\nToevoegen?"
+                                            AlertDialog.Builder(this@TellingScherm)
+                                                .setTitle("Soort toevoegen?")
+                                                .setMessage(msg)
+                                                .setPositiveButton("Ja") { _, _ ->
+                                                    addSpeciesToTiles(match.candidate.speciesId, prettyName, match.amount)
+                                                }
+                                                .setNegativeButton("Nee", null)
+                                                .show()
+                                        }
+                                    }
+                                }
+                            }
                             is MatchResult.SuggestionList -> {
+                                // Extract amount from hypothesis (fallback for unclear matches)
                                 val cnt = extractCountFromHypothesis(result.hypothesis) ?: 1
                                 runOnUiThread { showSuggestionBottomSheet(result.candidates, cnt) }
                             }
@@ -549,6 +576,7 @@ class TellingScherm : AppCompatActivity() {
                     }
                 }
             }
+
             // Raw ASR callback: capture last partial / raw best match
             speechRecognitionManager.setOnRawResultListener { rawText ->
                 runOnUiThread {

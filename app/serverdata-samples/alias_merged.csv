@@ -1,0 +1,340 @@
+1;roodkeelduiker;Roodkeel;roodkeelduiker
+2;parelduiker;Pareld;parelduiker
+3;ijsduiker;Ijsdui;ijsduiker
+5;dodaars;Dodaars;dodaars
+6;fuut;Fuut;fuut
+7;roodhalsfuut;Rhfuut;roodhalsfuut
+8;kuifduiker;Kuifdkr;kuifduiker
+9;geoorde fuut;GeoordeF;geoorde fuut
+10;noordse stormvogel;NoStorm;noordse storm;noorse storm
+13;grauwe pijlstormvogel;Grwe Pijl;grauwe pijl;lauwe pijl
+14;noordse pijlstormvogel;NoordsePijl;noordse pijl;noorse pijl
+17;vaal stormvogeltje;Vaaltje;vaaltje
+19;jan-van-gent;JvGent;jan van gent
+20;aalscholver;Aal;alsgolver;als golven;als volgor;als golden;als over;allesgolver;alles over;ali;alscherver
+21;kuifaalscholver;Kuifaal;kuif ali
+22;roerdomp;Roerdomp;roerdomp
+23;woudaap;Woudaap;wouaap
+24;kwak;Kwak;kwak
+25;ralreiger;Ralreiger;ralreiger
+26;koereiger;Koereiger;koereiger
+27;kleine zilverreiger;KlZilver;kleine zilver
+28;grote zilverreiger;GroZilv;grote zilver
+29;blauwe reiger;BlaR;laurijger;lauregor;laureger;blauwe regen;blauwe regener
+30;purperreiger;Purperr;purper
+31;zwarte ooievaar;ZwOoi;zwarte ooi
+32;ooievaar;Ooiev;ooievaar
+33;zwarte ibis;ZwIbis;zwarte ibis
+34;lepelaar;Lepel;liepelaar
+36;knobbelzwaan;Knobbel;knobbelzwaan
+37;kleine zwaan;KlZwaan;kleine zwaan
+38;wilde zwaan;WiZwaan;wilde zwaan
+39;rietgans spec.;rietgasp;rietgans spec.
+41;toendrarietgans;Toenriet;toendrarietgans
+42;kleine rietgans;KlRiet;kleine riet;kleine rieten
+43;kolgans;Kol;kol;kollen
+45;grauwe gans;GrGans;rauwehands;grohe hans
+49;brandgans;Brand;brandjes
+50;rotgans;Rot;rotjes;rotties
+52;Nijlgans;Nijlgans;nijlgans
+54;bergeend;Berge;bargeend;bargind;barents;waarheend;berg inkt;barg eend;barcheent;berg 1;bar eens;bar eend;bach eens;barind;berg een;bergeen;berg1;bar1;bar 1;back ind
+56;smient;Smient;smient
+59;krakeend;Krak;craquin;kraqueen;crokin;krakking;craqueen;croky;kraqueend;brakind;krake eend
+61;wintertaling;WiTa;wita
+62;wilde eend;WildeE;weldient
+63;pijlstaart;Pijlst;pijlstaart
+64;zomertaling;Zomerta;zomertaling
+66;slobeend;Slobeend;slop eent
+67;krooneend;Krooneend;krooneend
+68;tafeleend;Tafel;tafeleend
+71;kuifeend;Kuifeend;kuifeend
+72;topper;Topper;topper
+73;eider;Eider;eider
+77;ijseend;IJseend;ijseend
+78;zwarte zee-eend;ZwZee;zwarte zeeend;kakkers;zwarte ze eend;zwarte zieeend
+80;grote zee-eend;GrZeeeend;grote zee-eend
+81;brilduiker;Brildui;brilduiker
+82;nonnetje;Nonnetje;nonnetje
+83;middelste zaagbek;MiZa;miza
+84;grote zaagbek;GrZaag;groza
+86;wespendief;Wespend;wesp;wespen
+87;grijze wouw;Grijze Wouw;grijze wouw
+88;zwarte wouw;ZwWouw;zwarte wouw
+89;rode wouw;RoWouw;rowo
+91;zeearend;ZeeA;zeearend
+92;vale gier;ValeG;vale gier
+94;slangenarend;SlangenA;slangenarend
+95;bruine kiekendief;BrKiek;bruine kiek;bruine quick;brengen kiekendief;brende kiekendief;bruine kickendief;benekiekendief
+96;blauwe kiekendief;BlaKie;blauwe kiek;blauwe kickendief;blauwe kikkerdief
+97;steppekiekendief;Steppekiek;steppekiek;steppenkiek
+98;grauwe kiekendief;GrKiek;grauwe kiek;grauwe kikkerdief
+99;havik;Havik;havik
+100;sperwer;Sperw;sperwer
+101;buizerd;Buizerd;buizerd
+109;visarend;VisA;visa
+110;torenvalk;TorenV;boerenwolk;boerenwalk;toerenwalk;toerenwolk
+111;Roodpootvalk;RopoValk;roodpootvalk
+112;smelleken;Smel;smelleken
+113;boomvalk;Boomvalk;boomvalk
+115;slechtvalk;Slechtv;slechtvalk
+119;patrijs;Patrijs;patrijs
+120;kwartel;Kwartel;kwartel
+122;waterral;Waterra;waterral
+127;waterhoen;Waterhoen;waterhoen
+128;meerkoet;Meerkoet;meerkoet
+129;kraanvogel;Kraanv;kraantjes;kraantje
+133;scholekster;Schol;vollekster;schol
+134;steltkluut;Steltklu;steltkluut
+135;kluut;Kluut;kluutjes;ludw
+136;griel;Griel;griel
+140;kleine plevier;KlPlev;kleine plevier
+141;bontbekplevier;Bontbek;bombak profiel;bombak profir;bombak profijer;bonbak profiel;bombak profijt
+142;strandplevier;Strandplvr;strandplevier
+144;Morinelplevier;Morinelplevier;morinelplevier
+145;goudplevier;Goudpl;goedplevier;houtplevier;oud plevier;oed plevier
+147;zilverplevier;Zilverpl;zilvers
+150;kievit;Kievit;kieviten
+151;kanoet;Kanoet;kanoet
+152;drieteenstrandloper;Drietstra;drieteenstrandloper
+154;kleine strandloper;KlStrand;kleine strandloper
+155;temmincks strandloper;TemmStrlpr;temmincks strandloper
+159;krombekstrandloper;Krombek;krombekstrandloper
+160;paarse strandloper;PaarseS;paarse strandloper
+161;bonte strandloper;BonteStra;bontjes;boentjes;boontjes;bonjes
+165;kemphaan:kemph;Kemph;kemphaan
+166;bokje;Bokje;bokje
+167;watersnip;WaterSn;watersnip
+170;houtsnip;Houtsnip;houtsnip
+171;grutto;Grutto;grutto
+172;rosse grutto;RosseGr;roste grutto
+173;regenwulp;Regenw;regenwelp;regenwulpen
+175;wulp;Wulp;hulp;tulp
+176;zwarte ruiter;ZwRuiter;zwarte ruiter
+177;tureluur;Turel;tuutjes;tutjes
+180;groenpootruiter;Groenp;groenpootruiter
+182;witgat;Witgat;witgat
+183;bosruiter;Bosruit;bosruiter
+184;terekruiter;Terekrtr;terekruiter
+185;oeverloper;Oeverl;oeverloper
+187;steenloper;Steenl;steenloper
+190;rosse franjepoot;RosseFra;rosse franjepoot
+191;middelste jager;MidJag;middelste jager
+192;kleine jager;KleJag;kleine jager
+193;kleinste jager;KlstJag;kleinste jager
+194;grote jager;GroJag;grote jager
+196;zwartkopmeeuw;ZwartKmee;zwartkopmeeuw;wat komt weer;word kopmeeuw;zwart opmeel;wat komt mail;zwartkop mio;wat komt nieuw;zwartkotmail
+197;dwergmeeuw;Dwergm;dwergmeeuw
+198;vorkstaartmeeuw;Vorkstm;vorkstaartmeeuw
+200;kokmeeuw;Kok;cockmail;cognieuw;cocknee;cocktail;kokmeo;hotmail;cockney;cocknieuw;kogneel;kognieuw;rock meal;cochmeel;coquill;cognael;cochmeo;koekmeel;kookmeel;cockneeuw;cockbio
+202;stormmeeuw;Storm;stormmeeuw
+203;kleine mantelmeeuw;KlMantel;kleine mantel;kleine mantelmeel;trainermantel;leende mantel;leenemanthof;leena man;rené mantel;kleine manto;kleine man;kleine man door;kleine mantel mew
+206;zilvermeeuw;Zilverm;zilvermeel;zilvermail;zilvermio;zilvermeo;zilvernieuwd;wel vernieuw;zilverniel;zelf vermeeuw
+207;kleine burgemeester;KleBurgm;kleine burgemeester
+208;grote burgemeester;GrBurg;grote burgemeester
+209;grote mantelmeeuw;GrMant;grote mantelmeeuw
+211;drieteenmeeuw;DrieteenM;trydactyla
+213;lachstern;Lachstern;lachstern
+214;reuzenstern;Reuzenst;reuzenstern
+215;grote stern;GrStern;grote sterren
+217;visdief;VisDf;visdief
+218;noordse stern;NoStern;noordse stern
+220;dwergstern;Dwergst;dwergstern
+221;witwangstern;Witwngstrn;witwangstern
+222;zwarte stern;ZwStern;zwarte stern
+224;zeekoet;Zeekoet;zeekoet
+226;alk;Alk;alk
+228;kleine alk;KleAlk;kleine alk
+232;holenduif;Holend;holenduif
+233;houtduif;Houtd;houtteuf;goedteuf;goedduif;houteuf
+234;turkse tortel;TuTo;turkse tortel
+235;zomertortel;Zmrtortel;zomertortel
+237;koekoek;Koekoek;koekoek
+245;ransuil;Ransuil;ransuil
+246;velduil;Velduil;velduil
+249;gierzwaluw;Gierzw;giertjes;hier zwaluw;dierzwaluw;heerswaluw;vier zwaluw;huurtjes;sierswaluw
+250;Alpengierzwaluw;Alpengierzwaluw;alpengierzwaluw
+251;ijsvogel;IJsvogel;ijsvogel
+254;bijeneter;Bijeneter;bijeneter
+256;hop;Hop;hop
+257;draaihals;Draaihals;draaihals
+259;groene specht;GroenSp;groene specht
+260;zwarte specht;ZwSpecht;zwarte specht
+261;grote bonte specht;GrBonSp;grote bonte specht
+262;middelste bonte specht;MidBoSp;middelste bonte specht
+263;kleine bonte specht:klbonte;KlBonte;kleine bonte specht
+266;kuifleeuwerik;Kuiflee;kuifleeuwerik
+267;boomleeuwerik;Booml;boomleeuwerik
+268;veldleeuwerik;Veldl;veldleeuwerik
+269;strandleeuwerik;Strandlee;strandleeuwerik
+270;oeverzwaluw;Oeverzw;oevertje;oevertjes
+271;boerenzwaluw;Boer;boertjes;boeren zwaluw;bordjes;boerswaluw;boerendwaluw;boerendwoluw;boerenswoud;hoedjes;oertjes;voedingswaluw
+272;roodstuitzwaluw;Roodstuizw;roodstuitzwaluw
+273;huiszwaluw;HuisZw;huisjes
+274;grote pieper;GroPiep;grote pieper
+275;duinpieper;Duinpi;duinpieper
+276;Siberische Boompieper;Siberische Boompieper;siberische boompieper
+277;boompieper;Boomp;boompieper
+278;graspieper;Grasp;graspier;gras pieper;graspoeper
+279;roodkeelpieper;Roodkpiep;roodkeelpieper
+280;waterpieper;Waterp;waterpieper
+281;gele kwikstaart spec;GeleKwikSpec;gele kwikstaart spec.
+282;gele kwikstaart;GeleKwik;gele kwik;gele quick;heerlijk wegstart
+283;engelse kwikstaart;EngGele;engelse kwikstaart
+284;noordse kwikstaart;NrdseKwik;noordse kwikstaart
+287;grote gele kwikstaart;GrGeleKw;grote gele;grote gele quick;grote heerlijk wegstaart;grote gele kwekstaart
+288;witte kwikstaart spec;WitKwiSpec;witte kwikstaart spec.
+289;witte kwikstaart;WitteKwik;witte kwikstaart
+290;rouwkwikstaart;RouwKwik;rouwkwikstaart
+291;pestvogel;Pestv;pestvogel
+293;winterkoning;Winterk;winterkoning
+294;heggenmus;Heggen;heggenmus
+296;roodborst;Roodborst;roodborst
+298;nachtegaal;Nachtegaal;nachtegaal
+299;blauwborst;BlaBorst;blauwborst
+303;zwarte roodstaart;ZwRoods;zwarte roodstaart
+304;gekraagde roodstaart;GekRoods;gekraagde roodstaart
+305;paapje;Paap;paapje
+306;roodborsttapuit;Robotap;roodborsttapuit
+307;tapuit;Tapuit;tapuit
+314;beflijster;Beflijst;beflijster
+315;merel;Merel;merel
+323;kramsvogel;Krams;kramsvogel
+324;zanglijster;Zangl;zanglijster
+325;koperwiek;Koperw;koperwiek
+326;grote lijster;GrLijster;grote lijster
+327;cetti's zanger;Cetti's Zanger;cetti's zanger
+328;graszanger;Graszanger;graszanger
+330;sprinkhaanzanger;Sprinkhza;sprinkhaanzanger
+332;snor;Snor;snor
+334;rietzanger;Rietz;rietzanger
+336;bosrietzanger;Bosrietz;bosrietzanger
+337;kleine karekiet;KlKar;kleine karekiet
+338;grote karekiet;GroteKar;grote karekiet
+340;spotvogel;Spotvogel;spotvogel
+346;sperwergrasmus;Sperwrgrmus;sperwergrasmus
+347;braamsluiper;Braamsl;braamsluiper
+348;grasmus;Grasmus;grasmus
+349;tuinfluiter;Tuinfl;tuinfluiter
+350;zwartkop;ZwartKop;zwartkop
+358;fluiter;Fluiter;fluiter
+359;tjiftjaf;Tjiftjaf;tjiftjaf
+361;fitis;Fitis;fitis
+363;goudhaan;Goudh;goudhaan
+364;vuurgoudhaan;Vuurgoudh;vuurgoudhaan
+365;grauwe vliegenvanger;GrVlieg;grauwe vliegenvanger
+368;bonte vliegenvanger;BonteVlieg;bonte vliegenvanger
+369;baardman;Baard;baardman
+370;staartmees;Staartm;staartmees
+373;matkop;Matkop;matkop
+374;kuifmees;Kuifmees;kuifmees
+375;zwarte mees;ZwMees;zwarte mees
+376;pimpelmees;Pimpel;pimpelmees
+377;koolmees;Kool;koolmees
+381;buidelmees;Buidelm;buidelmees
+382;wielewaal;Wielew;wielewaal
+383;grauwe klauwier;Grauwe Klauwier;grauwe klauwier
+385;klapekster;Klapeks;klapekster
+387;gaai;Gaai;gaai
+388;ekster;Ekster;ekster
+389;notenkraker;Notenkr;notenkraker
+391;kauw;Kauw;kauwtjes;co;kootjes
+393;roek;Roek;roek
+394;zwarte kraai;ZwKraai;zwarte kraai
+395;bonte kraai;BonteKr;bonte kraai
+396;raaf;Raaf;raaf
+397;spreeuw;Spreeuw;spreeuiw
+399;huismus;Huismus;huismus
+400;ringmus;Ringmus;ringmus
+402;vink;Vink;fink
+403;keep;Keep;keep
+404;europese kanarie;EuroKan;europese kanarie
+405;groenling;Groenl;groenling
+406;putter;Putter;putter
+407;sijs;Sijs;sijsje;sijsjes;safe;feestje
+408;kneu;Kneu;kneutjes;kneus;nu
+409;frater;Frater;frater
+410;barmsijs spec;BarmSpec;barmsijs spec.
+412;kleine barmsijs;KlBarm;kleine barmsijs
+415;kruisbek;Kruisb;kruisbek
+419;goudvink;Goudv;goudvink
+421;appelvink;Appelv;appelvink
+425;ijsgors;IJsgors;ijsgors
+426;sneeuwgors;SneeuwGrs;sneeuwgors
+429;geelgors;Geelgors;geelgors
+435;dwerggors;Dwerggors;dwerggors
+438;rietgors;Rietg;rietgors
+440;grauwe gors;GrGors;grauwe gors
+443;oeverpieper;Oeverp;oeverpieper
+444;pontische meeuw;PontMeeu;pontische meeuw
+445;geelpootmeeuw;Geelpmeeu;geelpootmeeuw
+446;tjiftjaf of fitis;Tjif/Fitis;tjiftjaf of fitis
+447;noordse stern of visdief;Nrdse/Dief;novi;vino;novy;noordse star nog visdief;logi;movie;pino
+448;Zwarte Zwaan;Zwarte Zwaan;zwarte zwaan
+453;alk of zeekoet;Alk/Zeekoet;alk of zeekoet
+454;Vale Pijlstormvogel;ValePijl;vale pijlstormvogel
+455;jager spec;JagerSpec;jager spec.
+457;duiker spec;DuikSpec;duiker spec.
+472;Koninginnepage;Koninginnepage;koninginnepage
+482;fuut spec.;fuut spec.;fuut spec.
+500;stormvogeltje spec;StormVoSpec;stormvogeltje spec
+526;reiger spec;ArdeaSpec;reiger (ardea) spec.
+528;ooievaar of zwarte ooievaar;OoiSpec;ooievaar of zwarte ooievaar
+546;anser spec;AnserSpec;anser spec.
+584;kiekendief spec;KiekSpec;kiekendief spec
+585;Sperwer/Havik;Sperwer/Havik;sperwer of havik
+586;buizerd spec;BuizerdSpec;buizerd spec
+591;arend spec;ArendSpec;arend spec.
+592;dwegarend;Dwergar;dwergarend
+602;valk spec;ValkSpec;valk spec.
+654;strandloper spec;StrandLoSpec;strandloper spec
+665;wulp spec;WulpSpec;wulp spec.
+672;steltlopers spec;SteltSpec;steltloper spec.
+705;stern spec;SternSpec;stern spec.
+737;gierzwaluw spec;GierZwSpec;gierzwaluw spec.
+758;leeuwerik spec;LewrikSpec;leeuwerik spec.
+761;rotszwaluw;Rotszwaluw;rotszwaluw
+763;zwaluw spec.;zwaluw spec.;zwaluw spec.
+766;pieper spec;PieperSpec;pieper spec.
+806;lijster spec;LijstSpec;lijster spec.
+837;loofzanger spec;LoofZaSpec;loofzanger spec
+841;vliegenvanger spec;VlieVaSpec;vliegenvanger spec
+879;vink spec;VinkSpec;vink spec.
+884;kruisbek spec.;kruisbek spec.;kruisbek spec.
+907;gors spec;GorsSpec;gors spec.
+912;grauwe of steppekiekendief;Gr/Steppekiek;grauwe of steppekiekendief
+914;kleine of middelste jager;Kle/MidJager;miki;kimi
+916;roodkeel of parelduiker;Roodk/Parelduiker;roodkeel of parelduiker
+933;Bruinvis;Bruinvis;bruinvis
+945;gans spec;GansSpec;gans spec.
+976;Grijze Zeehond;GrijZeeho;grijze zeehond
+978;Gewone Zeehond;GewZeeho;gewone zeehond
+981;duif spec;ColumbaSpec;duif (columba) spec.
+983;Atalanta;Atalanta;atalanta
+984;eend spec.;eendSpec;eend spec.
+990;grote meeuw spec;GroMeeuwSpec;grote meeuw spec.
+995;zangvogel spec;ZangVoSpec;zangvogel spec.
+997;roofvogel spec;RoofSpec;roofvogel spec.
+999;buizerd of wespendief;Buz/Wesp;buizerd of wespendief
+1062;water of oeverpieper;Water/Oeverpieper;waterpieper of oeverpieper
+1072;Dagpauwoog;Dagpauw;dagpauwoog
+1074;koolwitje spec;KoolWitSpec;koolwitje spec.
+1078;Bont Zandoogje;Bont Zandoogje;bont zandoogje
+1081;boompieper/sib. boompieper;Boompieper/Sib. Boompieper;boompieper of sib. boompieper
+1084;rotgans spec.;rotgans spec.;rotgans spec.
+1098;Kolibrievlinder;Kolibrievlinder;kolibrievlinder
+1099;Boomvalk/Roodpootvalk;Boomvalk/Roodpootvalk;boomvalk of roodpootvalk
+1102;blauwe of grauwe of steppekiekendief;Bl/Gr/Steppekiek;blauwe of grauwe of steppekiekendief
+1119;hommel spec;HommelSpec;hommel spec.
+1127;Vink/Keep;Vink/Keep;vink of keep
+1150;middelgrote roofvogel;middelgrote roofvogel;middelgrote roofvogel
+1478;Pluvialis sp.;Pluvialis sp.;pluvialis sp.
+1924;Citroenvlinder;Citroenvlinder;citroenvlinder
+2313;kleine steltloper spec;KlSteltSpec;kleine steltloper spec.
+2314;grote steltloper spec;GroSteltSpec;grote steltloper spec.
+4606;Grote Keizerlibel;Grote Keizerlibel;grote keizerlibel
+4612;Bloedrode heidelibel;Bloedrode heidelibel;bloedrode heidelibel
+4614;heidelibel spec;HeideLiSpec;heidelibel onbekend
+4617;Blauwe Glazenmaker;Blauwe Glazenmaker;blauwe glazenmaker
+4623;Glazenmaker onbekend;Glazenmaker onbekend;glazenmaker onbekend
+4806;Valkparkiet;Valkparkiet;valkparkiet
+4868;koereiger of kleine zilverreiger;Koe/KlZil;koereiger of kleine zilverreiger
