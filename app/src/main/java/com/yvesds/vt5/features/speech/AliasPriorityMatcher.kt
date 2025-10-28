@@ -9,110 +9,127 @@ import java.util.Locale
 import kotlin.math.max
 
 /**
- * AliasPriorityMatcher - 9-step priority cascade with scoring.
+ * AliasPriorityMatcher.kt
  *
- * UPDATED: Multi-token parsing with sliding window + Dutch number word support.
- * - Splits query into tokens
- * - Tries sliding windows of 1-6 tokens for matching
- * - Skips numbers (digits + Dutch words like "vijf") during matching
- * - Extracts numbers (digits + Dutch words) for amounts
- * - Filters number words from fuzzy matching to prevent false positives (e.g., "vijf" → "Vink")
- * - Returns list of matches with amounts for multi-species queries
+ * PURPOSE:
+ * 9-step priority cascade matcher with hybrid scoring (Text + Cologne + Phonemes).
+ * Includes multi-token parsing for queries like "blauwe kiekendief vijf".
  *
- * Example: "blauwe kiekendief vijf" ->
- *   - Match "blauwe kiekendief" -> Blauwe Kiekendief, amount=5 (parsed from "vijf")
+ * ARCHITECTURE:
+ * Priority Cascade (1-9):
+ * 1. Exact canonical in tiles (instant accept)
+ * 2. Exact canonical in site (add popup)
+ * 3. Exact alias in tiles (instant accept)
+ * 4. Exact alias in site (add popup)
+ * 5. Fuzzy canonical in tiles (scored)
+ * 6. Fuzzy canonical in site (scored)
+ * 7. Fuzzy alias in tiles (scored)
+ * 8. Fuzzy alias in site (scored)
+ * 9. No match (raw log, user can tap to add alias)
  *
- * Example: "aalscholver 5 boertjes 3" ->
- *   - Match "aalscholver" -> Aalscholver, amount=5
- *   - Match "boertjes" -> Boerenzwaluw, amount=3
- *   - Return MultiMatch([Aalscholver:5, Boerenzwaluw:3])
+ * NEW FEATURES (v2.1):
+ * - Multi-token sliding window (1-6 tokens)
+ * - Dutch number word parsing ("vijf" → 5)
+ * - Number word filtering (prevents "vijf" matching "Vink")
+ * - Hybrid scoring: Text (45%) + Cologne (30%) + Phonemes (25%)
+ * - MultiMatch support (e.g., "aalscholver 5 boertjes 3")
+ *
+ * SCORING WEIGHTS:
+ * - W_TEXT = 0.45 (Levenshtein similarity)
+ * - W_PHON = 0.30 (Cologne phonetic similarity)
+ * - W_PRIOR = 0.25 (Context prior: tiles/site/recents)
+ *
+ * USAGE:
+ * ```kotlin
+ * val result = AliasPriorityMatcher.match(
+ *     hypothesis = "blauwe kiekendief vijf",
+ *     matchContext = buildMatchContext(),
+ *     context = context,
+ *     saf = saf
+ * )
+ *
+ * when (result) {
+ *     is MatchResult.AutoAccept ->
+ *         updateCount(result.candidate.speciesId, result.amount)
+ *     is MatchResult.MultiMatch ->
+ *         result.matches.forEach { updateCount(it.candidate.speciesId, it.amount) }
+ *     // ... etc
+ * }
+ * ```
+ *
+ * AUTHOR: VT5 Team (YvedD)
+ * DATE: 2025-10-28
+ * VERSION: 2.1
  */
 object AliasPriorityMatcher {
     private const val TAG = "AliasPriorityMatcher"
 
-    // Score thresholds / params
-    private const val AUTO_ACCEPT_THRESHOLD = 0.70
-    private const val SUGGEST_THRESHOLD = 0.40
-    private const val AUTO_ACCEPT_MARGIN = 0.12
+    /*═══════════════════════════════════════════════════════════════════════
+     * SCORING PARAMETERS
+     *═══════════════════════════════════════════════════════════════════════*/
 
-    // Weights for combined score
-    private const val W_TEXT = 0.45
-    private const val W_PHON = 0.30
-    private const val W_PRIOR = 0.25
+    // Score thresholds
+    private const val AUTO_ACCEPT_THRESHOLD = 0.70   // Auto-accept if score >= 0.70
+    private const val SUGGEST_THRESHOLD = 0.40       // Show suggestions if score >= 0.40
+    private const val AUTO_ACCEPT_MARGIN = 0.12      // Top must beat 2nd by 0.12 for auto-accept
 
-    // Prior components
-    private const val PRIOR_RECENT = 0.25
-    private const val PRIOR_TILES = 0.25
-    private const val PRIOR_SITE = 0.15
+    // Hybrid scoring weights (sum = 1.0)
+    private const val W_TEXT = 0.45   // Levenshtein text similarity
+    private const val W_PHON = 0.30   // Cologne phonetic similarity
+    private const val W_PRIOR = 0.25  // Context prior (tiles/site/recents)
 
-    // Dutch number words blacklist (to prevent "vijf" matching "Vink", etc.)
-    private val NUMBER_WORDS = setOf(
-        "nul", "een", "één", "eén", "twee", "drie", "vier", "vijf", "zes", "zeven", "acht", "negen",
-        "tien", "elf", "twaalf", "dertien", "veertien", "vijftien", "zestien", "zeventien", "achttien", "negentien",
-        "twintig", "eenentwintig", "tweeëntwintig", "drieëntwintig", "vierentwintig", "vijfentwintig",
-        "dertig", "veertig", "vijftig", "zestig", "zeventig", "tachtig", "negentig", "honderd"
-    )
+    // Prior scoring components
+    private const val PRIOR_RECENT = 0.25  // Recently used species
+    private const val PRIOR_TILES = 0.25   // In current tiles
+    private const val PRIOR_SITE = 0.15    // Allowed at current site
 
-    /**
-     * Parse Dutch number words to integers.
-     */
-    private fun parseNumberWord(word: String): Int? {
-        return when (word.lowercase(Locale.getDefault())) {
-            "nul", "zero" -> 0
-            "een", "één", "eén" -> 1
-            "twee" -> 2
-            "drie" -> 3
-            "vier" -> 4
-            "vijf" -> 5
-            "zes" -> 6
-            "zeven" -> 7
-            "acht" -> 8
-            "negen" -> 9
-            "tien" -> 10
-            "elf" -> 11
-            "twaalf" -> 12
-            "dertien" -> 13
-            "veertien" -> 14
-            "vijftien" -> 15
-            "zestien" -> 16
-            "zeventien" -> 17
-            "achttien" -> 18
-            "negentien" -> 19
-            "twintig" -> 20
-            "eenentwintig" -> 21
-            "tweeëntwintig", "tweeentwintig" -> 22
-            "drieëntwintig", "drieentwintig" -> 23
-            "vierentwintig" -> 24
-            "vijfentwintig" -> 25
-            "dertig" -> 30
-            "veertig" -> 40
-            "vijftig" -> 50
-            "zestig" -> 60
-            "zeventig" -> 70
-            "tachtig" -> 80
-            "negentig" -> 90
-            "honderd" -> 100
-            else -> null
-        }
-    }
+    /*═══════════════════════════════════════════════════════════════════════
+     * DUTCH NUMBER WORD PARSING (integrated with NumberPatterns)
+     *═══════════════════════════════════════════════════════════════════════*/
 
     /**
-     * Check if a token is a number (digit or Dutch word).
+     * Check if token is a number (digit or Dutch word)
      */
     private fun isNumberToken(token: String): Boolean {
-        return token.toIntOrNull() != null || parseNumberWord(token) != null
+        return token.toIntOrNull() != null || NumberPatterns.parseNumberWord(token) != null
     }
 
     /**
-     * Parse a token as a number (digit or Dutch word).
+     * Parse token as number (digit or Dutch word)
+     *
+     * Examples:
+     * - "5" → 5
+     * - "vijf" → 5
+     * - "vogel" → null
      */
     private fun parseAmountToken(token: String): Int? {
-        return token.toIntOrNull() ?: parseNumberWord(token)
+        return token.toIntOrNull() ?: NumberPatterns.parseNumberWord(token)
     }
 
+    /*═══════════════════════════════════════════════════════════════════════
+     * MAIN MATCH FUNCTION (Multi-token with sliding window)
+     *═══════════════════════════════════════════════════════════════════════*/
+
     /**
-     * Main match function - NOW with multi-token sliding window + Dutch number support.
-     * Returns a MatchResult which may contain MULTIPLE species with amounts.
+     * Match hypothesis against aliases with priority cascade
+     *
+     * NEW (v2.1): Multi-token sliding window support
+     *
+     * Input: "blauwe kiekendief vijf"
+     * Tokens: ["blauwe", "kiekendief", "vijf"]
+     *
+     * Sliding window (6 → 1 tokens):
+     * 1. Try ["blauwe", "kiekendief", "vijf"] (3 tokens) → has number, skip
+     * 2. Try ["blauwe", "kiekendief"] (2 tokens) → MATCH! Blauwe Kiekendief
+     * 3. Next token "vijf" → parseAmountToken("vijf") = 5
+     *
+     * Result: MatchResult.AutoAccept(Blauwe Kiekendief, amount=5)
+     *
+     * @param hypothesis Raw ASR hypothesis (normalized)
+     * @param matchContext Context with tiles/site/recents
+     * @param context Application context
+     * @param saf SAF helper
+     * @return MatchResult (AutoAccept, MultiMatch, SuggestionList, or NoMatch)
      */
     suspend fun match(
         hypothesis: String,
@@ -124,12 +141,14 @@ object AliasPriorityMatcher {
         val hyp = hypothesis.trim()
         if (hyp.isBlank()) return@withContext MatchResult.NoMatch(hyp, "empty")
 
+        // Ensure alias index loaded
         try {
             AliasMatcher.ensureLoaded(context, saf)
         } catch (ex: Exception) {
             Log.w(TAG, "Alias index ensureLoaded failed: ${ex.message}", ex)
         }
 
+        // Normalize and tokenize
         val normalized = normalizeLowerNoDiacritics(hyp)
         val tokens = normalized.split("\\s+".toRegex()).filter { it.isNotBlank() }
 
@@ -137,7 +156,19 @@ object AliasPriorityMatcher {
             return@withContext MatchResult.NoMatch(hyp, "empty-after-norm")
         }
 
-        // NEW: Multi-token sliding window matching (like old parseSpoken logic)
+        /*───────────────────────────────────────────────────────────────────
+         * MULTI-TOKEN SLIDING WINDOW MATCHING
+         *
+         * Algorithm:
+         * 1. Iterate through tokens (i = 0 to size-1)
+         * 2. For each position, try windows of size 6 → 1 (longest first)
+         * 3. Skip windows containing ONLY numbers
+         * 4. Skip windows containing ANY number words (prevents "vijf"→"Vink")
+         * 5. Try exact match → fuzzy match
+         * 6. If match found, extract amount from next token
+         * 7. Continue to next unmatched position
+         *───────────────────────────────────────────────────────────────────*/
+
         val matches = mutableListOf<MatchResult.MatchWithAmount>()
         var i = 0
 
@@ -156,8 +187,8 @@ object AliasPriorityMatcher {
                     break
                 }
 
-                // Skip if window contains ANY number words (prevents "vijf" → "Vink" matching)
-                val hasNumberWord = windowTokens.any { it.lowercase() in NUMBER_WORDS }
+                // Skip if window contains ANY number words (prevents "vijf" → "Vink")
+                val hasNumberWord = windowTokens.any { NumberPatterns.isNumberWord(it) }
                 if (hasNumberWord) {
                     continue
                 }
@@ -201,7 +232,7 @@ object AliasPriorityMatcher {
                     }
 
                     // Skip if window contains ANY number words
-                    val hasNumberWord = windowTokens.any { it.lowercase() in NUMBER_WORDS }
+                    val hasNumberWord = windowTokens.any { NumberPatterns.isNumberWord(it) }
                     if (hasNumberWord) {
                         continue
                     }
@@ -240,17 +271,20 @@ object AliasPriorityMatcher {
         val t1 = System.nanoTime()
         Log.d(TAG, "match: found ${matches.size} matches, timeMs=${(t1 - t0) / 1_000_000}")
 
-        // Convert matches to MatchResult
+        /*───────────────────────────────────────────────────────────────────
+         * CONVERT MATCHES TO MATCHRESULT
+         *───────────────────────────────────────────────────────────────────*/
+
         if (matches.isEmpty()) {
             return@withContext MatchResult.NoMatch(hyp, "no-candidates")
         }
 
-        // If we have multiple matches, return as MultiMatch (NEW result type)
+        // If we have multiple matches, return as MultiMatch (NEW in v2.1!)
         if (matches.size > 1) {
             return@withContext MatchResult.MultiMatch(matches, hyp, "multi-species")
         }
 
-        // Single match - use existing logic
+        // Single match: use existing logic
         val match = matches.first()
         return@withContext if (match.candidate.isInTiles) {
             MatchResult.AutoAccept(match.candidate, hyp, match.source, match.amount)
@@ -259,9 +293,20 @@ object AliasPriorityMatcher {
         }
     }
 
+    /*═══════════════════════════════════════════════════════════════════════
+     * EXACT MATCH (Steps 1-4)
+     *═══════════════════════════════════════════════════════════════════════*/
+
     /**
-     * Try exact match (steps 1-4: canonical/alias in tiles/site).
-     * Returns Pair(Candidate, source) or null.
+     * Try exact match (canonical or alias in tiles/site)
+     *
+     * Steps:
+     * 1. Exact canonical in tiles → instant accept
+     * 2. Exact canonical in site (not tiles) → add popup
+     * 3. Exact alias in tiles → instant accept
+     * 4. Exact alias in site (not tiles) → add popup
+     *
+     * @return Pair(Candidate, source) or null if no exact match
      */
     private suspend fun tryExactMatch(
         phrase: String,
@@ -298,9 +343,25 @@ object AliasPriorityMatcher {
         return null
     }
 
+    /*═══════════════════════════════════════════════════════════════════════
+     * FUZZY MATCH (Steps 5-8) with HYBRID SCORING
+     *═══════════════════════════════════════════════════════════════════════*/
+
     /**
-     * Try fuzzy match (steps 5-8: fuzzy canonical/alias in tiles/site).
-     * Returns Pair(Candidate, source) or null.
+     * Try fuzzy match with hybrid scoring
+     *
+     * NEW (v2.1): Hybrid scoring with Cologne + Phonemes
+     *
+     * Scoring Formula:
+     * score = W_TEXT × textSim + W_PHON × cologneSim + W_PHONEME × phonemeSim + W_PRIOR × prior
+     *
+     * Where:
+     * - textSim: Levenshtein similarity (0.0-1.0)
+     * - cologneSim: Cologne phonetic similarity (0.0-1.0)
+     * - phonemeSim: IPA phoneme similarity (0.0-1.0, if available)
+     * - prior: Context prior (tiles/site/recents)
+     *
+     * @return Pair(Candidate, source) or null if score too low
      */
     private suspend fun tryFuzzyMatch(
         phrase: String,
@@ -327,9 +388,18 @@ object AliasPriorityMatcher {
         return null
     }
 
-    // ========== Helper methods (mostly unchanged) ==========
+    /*═══════════════════════════════════════════════════════════════════════
+     * HELPER METHODS
+     *═══════════════════════════════════════════════════════════════════════*/
 
-    private fun findExactCanonicalInSet(normalized: String, speciesIds: Set<String>, ctx: MatchContext): Candidate? {
+    /**
+     * Find exact canonical match in species set
+     */
+    private fun findExactCanonicalInSet(
+        normalized: String,
+        speciesIds: Set<String>,
+        ctx: MatchContext
+    ): Candidate? {
         for (sid in speciesIds) {
             val (canonical, tilename) = ctx.speciesById[sid] ?: continue
             val canonNorm = normalizeLowerNoDiacritics(canonical)
@@ -340,7 +410,15 @@ object AliasPriorityMatcher {
         return null
     }
 
-    private suspend fun findExactAliasInSet(normalized: String, speciesIds: Set<String>, appContext: Context, saf: SaFStorageHelper): Candidate? {
+    /**
+     * Find exact alias match in species set
+     */
+    private suspend fun findExactAliasInSet(
+        normalized: String,
+        speciesIds: Set<String>,
+        appContext: Context,
+        saf: SaFStorageHelper
+    ): Candidate? {
         val records = AliasMatcher.findExact(normalized, appContext, saf)
         for (r in records) {
             if (r.speciesid in speciesIds) {
@@ -352,52 +430,103 @@ object AliasPriorityMatcher {
         return null
     }
 
-    private suspend fun findFuzzyCandidates(normalized: String, ctx: MatchContext, appContext: Context, saf: SaFStorageHelper): List<Candidate> {
+    /**
+     * Find fuzzy candidates (steps 5-8) with NUMBER FILTERING
+     */
+    private suspend fun findFuzzyCandidates(
+        normalized: String,
+        ctx: MatchContext,
+        appContext: Context,
+        saf: SaFStorageHelper
+    ): List<Candidate> {
         val accum = mutableListOf<Candidate>()
+
+        // Fuzzy canonical in tiles
         accum += fuzzyCanonicalInSet(normalized, ctx.tilesSpeciesIds, ctx)
+
+        // Fuzzy alias in tiles (with number filtering!)
         accum += fuzzyAliasInSet(normalized, ctx.tilesSpeciesIds, ctx, appContext, saf)
+
+        // Fuzzy canonical in site (not tiles)
         val siteOnly = ctx.siteAllowedIds - ctx.tilesSpeciesIds
         accum += fuzzyCanonicalInSet(normalized, siteOnly, ctx)
+
+        // Fuzzy alias in site (with number filtering!)
         accum += fuzzyAliasInSet(normalized, siteOnly, ctx, appContext, saf)
 
-        // dedupe keep best
+        // Dedupe: keep best score per species
         val byId = linkedMapOf<String, Candidate>()
         for (c in accum) {
             val ex = byId[c.speciesId]
             if (ex == null || c.score > ex.score) byId[c.speciesId] = c
         }
+
         return byId.values.toList()
     }
 
-    private fun fuzzyCanonicalInSet(normalized: String, speciesIds: Set<String>, ctx: MatchContext): List<Candidate> {
-        // FIXED: Strip numbers (digits + Dutch words) from tokens for distance calculation
-        val tokens = normalized.split("\\s+".toRegex()).filter { it.isNotBlank() && !isNumberToken(it) }
+    /**
+     * Fuzzy canonical matching (no phonemes, simple Cologne + Levenshtein)
+     */
+    private fun fuzzyCanonicalInSet(
+        normalized: String,
+        speciesIds: Set<String>,
+        ctx: MatchContext
+    ): List<Candidate> {
+        // Strip numbers from query for matching
+        val tokens = normalized.split("\\s+".toRegex())
+            .filter { it.isNotBlank() && !isNumberToken(it) }
+
         val allowDist = when {
             tokens.isEmpty() -> 2
             tokens.size == 1 -> 2
             tokens.size == 2 -> 3
             else -> 4
         }
+
         val out = mutableListOf<Candidate>()
+
         for (sid in speciesIds) {
             val (canonical, tilename) = ctx.speciesById[sid] ?: continue
             val canonNorm = normalizeLowerNoDiacritics(canonical)
+
             val lev = levenshteinDistance(normalized, canonNorm)
             if (lev > allowDist) continue
+
             val textSim = 1.0 - (lev.toDouble() / max(normalized.length, canonNorm.length).toDouble())
             val phonSim = runCatching { ColognePhonetic.similarity(normalized, canonNorm) }.getOrDefault(0.0)
             val prior = computePrior(sid, ctx)
+
             val score = (W_TEXT * textSim + W_PHON * phonSim + W_PRIOR * prior).coerceIn(0.0, 1.0)
+
             out += Candidate(sid, tilename ?: canonical, score, sid in ctx.tilesSpeciesIds, "fuzzy-canon")
         }
+
         return out
     }
 
-    private suspend fun fuzzyAliasInSet(normalized: String, speciesIds: Set<String>, ctx: MatchContext, appContext: Context, saf: SaFStorageHelper): List<Candidate> {
+    /**
+     * Fuzzy alias matching with HYBRID SCORING (Text + Cologne + Phonemes)
+     *
+     * NEW (v2.1): Number filtering + phoneme scoring
+     */
+    private suspend fun fuzzyAliasInSet(
+        normalized: String,
+        speciesIds: Set<String>,
+        ctx: MatchContext,
+        appContext: Context,
+        saf: SaFStorageHelper
+    ): List<Candidate> {
+        // Get fuzzy candidates from AliasMatcher
         val records = AliasMatcher.findFuzzyCandidates(normalized, appContext, saf, topN = 50, threshold = 0.0)
+
+        // FILTER OUT NUMBER WORDS (prevents "vijf" → "Vink"!)
+        val filteredRecords = NumberPatterns.filterNumberCandidates(records.map { it.first })
+
+        if (filteredRecords.isEmpty()) return emptyList()
+
         val out = mutableListOf<Candidate>()
 
-        // FIXED: Strip cijfers + number words uit normalized voor Levenshtein
+        // Strip numbers from query for matching
         val normalizedNoNumbers = normalized.split("\\s+".toRegex())
             .filter { it.isNotBlank() && !isNumberToken(it) }
             .joinToString(" ")
@@ -410,21 +539,49 @@ object AliasPriorityMatcher {
             else -> 4
         }
 
-        for ((rec, _) in records) {
+        for (rec in filteredRecords) {
             if (rec.speciesid !in speciesIds) continue
+
             val recNorm = rec.norm
+
+            // Layer 1: Text similarity (Levenshtein)
             val lev = levenshteinDistance(normalizedNoNumbers, recNorm)
             if (lev > allowDist) continue
+
             val textSim = 1.0 - (lev.toDouble() / max(normalizedNoNumbers.length, recNorm.length).toDouble())
-            val phonSim = runCatching { ColognePhonetic.similarity(normalizedNoNumbers, recNorm) }.getOrDefault(0.0)
+
+            // Layer 2: Cologne phonetic similarity
+            val cologneSim = runCatching {
+                ColognePhonetic.similarity(normalizedNoNumbers, recNorm)
+            }.getOrDefault(0.0)
+
+            // Layer 3: IPA phoneme similarity (if available) - NEW!
+            val phonemeSim = if (rec.phonemes != null) {
+                val queryPhonemes = DutchPhonemizer.phonemize(normalizedNoNumbers)
+                DutchPhonemizer.phonemeSimilarity(queryPhonemes, rec.phonemes)
+            } else 0.0
+
+            // Hybrid scoring with phonemes
             val prior = computePrior(rec.speciesid, ctx)
-            val score = (W_TEXT * textSim + W_PHON * phonSim + W_PRIOR * prior).coerceIn(0.0, 1.0)
+
+            val score = if (rec.phonemes != null) {
+                // All 3 layers available
+                (W_TEXT * textSim + W_PHON * cologneSim + 0.25 * phonemeSim + W_PRIOR * prior * 0.75).coerceIn(0.0, 1.0)
+            } else {
+                // Fallback: text + cologne only
+                (W_TEXT * textSim + W_PHON * cologneSim + W_PRIOR * prior).coerceIn(0.0, 1.0)
+            }
+
             val (canonical, tilename) = ctx.speciesById[rec.speciesid] ?: (rec.canonical to rec.tilename)
-            out += Candidate(rec.speciesid, tilename ?: canonical, score, rec.speciesid in ctx.tilesSpeciesIds, "fuzzy-alias")
+            out += Candidate(rec.speciesid, tilename ?: canonical, score, rec.speciesid in ctx.tilesSpeciesIds, "fuzzy-alias-hybrid")
         }
+
         return out
     }
 
+    /**
+     * Compute context prior (tiles/site/recents boost)
+     */
     private fun computePrior(speciesId: String, ctx: MatchContext): Double {
         var prior = 0.0
         if (speciesId in ctx.recentIds) prior += PRIOR_RECENT
@@ -433,13 +590,18 @@ object AliasPriorityMatcher {
         return prior.coerceAtMost(0.6)
     }
 
+    /**
+     * Levenshtein distance (standard edit distance)
+     */
     private fun levenshteinDistance(a: String, b: String): Int {
         val la = a.length
         val lb = b.length
         if (la == 0) return lb
         if (lb == 0) return la
+
         val prev = IntArray(lb + 1) { it }
         val cur = IntArray(lb + 1)
+
         for (i in 1..la) {
             cur[0] = i
             val ai = a[i - 1]
@@ -449,9 +611,13 @@ object AliasPriorityMatcher {
             }
             System.arraycopy(cur, 0, prev, 0, lb + 1)
         }
+
         return prev[lb]
     }
 
+    /**
+     * Normalize text (lowercase, no diacritics, single spaces)
+     */
     private fun normalizeLowerNoDiacritics(input: String): String {
         val lower = input.lowercase(Locale.getDefault())
         val decomposed = java.text.Normalizer.normalize(lower, java.text.Normalizer.Form.NFD)

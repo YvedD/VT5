@@ -11,7 +11,6 @@ import android.view.GestureDetector
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.widget.EditText
-import android.widget.TextView
 import android.widget.SeekBar
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,6 +28,9 @@ import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.core.ui.ProgressDialogHelper
 import com.yvesds.vt5.databinding.SchermTellingBinding
 import com.yvesds.vt5.features.alias.AliasRepository
+import com.yvesds.vt5.features.alias.AliasManager
+import com.yvesds.vt5.features.telling.AliasEditor
+import com.yvesds.vt5.features.telling.AddAliasDialog
 import com.yvesds.vt5.features.recent.RecentSpeciesStore
 import com.yvesds.vt5.features.serverdata.model.ServerDataCache
 import com.yvesds.vt5.features.soort.ui.SoortSelectieScherm
@@ -38,7 +40,6 @@ import com.yvesds.vt5.features.speech.AliasSpeechParser
 import com.yvesds.vt5.features.speech.MatchContext
 import com.yvesds.vt5.features.speech.MatchResult
 import com.yvesds.vt5.features.speech.Candidate
-import com.yvesds.vt5.features.speech.AliasMatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -48,16 +49,18 @@ import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import java.util.Locale
+import java.time.Instant
 
 /**
- * TellingScherm - Hoofdscherm voor het tellen van soorten met spraakherkenning.
+ * TellingScherm.kt
  *
- * UPDATED:
- *  - N-best orchestration: listen to SRM hypotheses and iterate them via parser until a MatchResult
- *    is found (AutoAccept / AutoAcceptAddPopup / SuggestionList / MultiMatch).
- *  - Hot-reload: when an alias is added, persist and hot-patch AliasMatcher so the alias is active immediately.
- *  - ASR silence timeout slider wiring (real-time update + persist on stop).
- *  - Multi-species support: "aalscholver 5 boertjes 3" -> Aalscholver +5, Boerenzwaluw +3
+ * Full activity for the counting screen. This is the complete, self-contained file.
+ * It integrates AliasManager hot-patch flow (AddAliasDialog usage), multi-match handling,
+ * ASR N-best orchestration and the UI controls for species tiles and logs.
+ *
+ * Author: VT5 Team (YvedD)
+ * Date: 2025-10-28
+ * Version: 2.1
  */
 class TellingScherm : AppCompatActivity() {
 
@@ -84,11 +87,14 @@ class TellingScherm : AppCompatActivity() {
     private lateinit var tilesAdapter: SpeciesTileAdapter
     private lateinit var logAdapter: SpeechLogAdapter
 
-    // Alias repository
+    // Alias repository (legacy, kept for compatibility)
     private val aliasRepository by lazy { AliasRepository.getInstance(this) }
 
     // Alias editor (buffer + persist helper)
     private lateinit var aliasEditor: AliasEditor
+
+    // SAF helper
+    private val safHelper by lazy { SaFStorageHelper(this) }
 
     // Datamodellen
     data class SoortRow(val soortId: String, val naam: String, val count: Int = 0)
@@ -151,7 +157,7 @@ class TellingScherm : AppCompatActivity() {
         prefs = this.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
         // Init alias editor (SAF)
-        aliasEditor = AliasEditor(this, SaFStorageHelper(this))
+        aliasEditor = AliasEditor(this, safHelper)
 
         // Log-venster setup with RecyclerView and inline alias tap
         setupLogRecyclerView()
@@ -172,84 +178,9 @@ class TellingScherm : AppCompatActivity() {
         preloadAliases()
     }
 
-    /**
-     * Setup the small horizontal seekbar (seekBarSilenceCompact) placed between the log and buttons.
-     * - Real-time: update SpeechRecognitionManager on every change
-     * - Persist: save to SharedPreferences when user stops sliding (onStopTrackingTouch)
-     */
-    private fun setupSilenceSeekBar() {
-        try {
-            // viewBinding: binding.seekBarSilenceCompact moet bestaan in layout
-            seekBarSilenceCompact = binding.seekBarSilenceCompact
-
-            // read saved ms (default 2000)
-            val savedMs = prefs.getInt(PREF_ASR_SILENCE_MS, DEFAULT_SILENCE_MS)
-            val progress = ((savedMs - 2000) / 100).coerceIn(0, 30)
-            seekBarSilenceCompact.max = 30
-            seekBarSilenceCompact.progress = progress
-
-            // if SRM already initialized, apply immediately
-            if (speechInitialized) {
-                speechRecognitionManager.setSilenceStopMillis(savedMs.toLong())
-            }
-
-            // realtime update during sliding
-            seekBarSilenceCompact.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                    val ms = 2000 + progress * 100
-                    if (speechInitialized) {
-                        speechRecognitionManager.setSilenceStopMillis(ms.toLong())
-                    }
-                }
-                override fun onStartTrackingTouch(seekBar: SeekBar?) { /* no-op */ }
-                override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                    val p = seekBar?.progress ?: 0
-                    val ms = 2000 + p * 100
-                    prefs.edit().putInt(PREF_ASR_SILENCE_MS, ms).apply()
-                    if (speechInitialized) {
-                        speechRecognitionManager.setSilenceStopMillis(ms.toLong())
-                    }
-                }
-            })
-        } catch (ex: Exception) {
-            Log.w(TAG, "setupSilenceSeekBar failed: ${ex.message}", ex)
-        }
-    }
-
-    /**
-     * Preload aliassen for better speech recognition
-     */
-    private fun preloadAliases() {
-        lifecycleScope.launch {
-            try {
-                val success = aliasRepository.loadAliasData()
-
-                if (success) {
-                    Log.d(TAG, "Aliases preloaded successfully")
-                } else {
-                    Log.w(TAG, "Failed to preload aliases")
-                    tryConvertCsvToJson()
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error preloading aliases", e)
-            }
-        }
-    }
-
-    private fun tryConvertCsvToJson() {
-        lifecycleScope.launch {
-            try {
-                val success = aliasRepository.convertCsvToJson()
-                if (success) {
-                    Log.d(TAG, "Successfully converted CSV to JSON")
-                    aliasRepository.loadAliasData()
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error converting CSV to JSON", e)
-            }
-        }
-    }
-
+    /*═══════════════════════════════════════════════════════════════════════
+     * SETUP: Log RecyclerView with IN-FIELD ALIAS TRAINING
+     *═══════════════════════════════════════════════════════════════════════*/
     private fun setupLogRecyclerView() {
         val layoutManager = LinearLayoutManager(this)
         layoutManager.stackFromEnd = true
@@ -272,51 +203,34 @@ class TellingScherm : AppCompatActivity() {
                                 Toast.makeText(this@TellingScherm, "Soortenlijst nog niet beschikbaar", Toast.LENGTH_SHORT).show()
                                 return true
                             }
+
+                            // Extract count from raw text (e.g., "ali 5" → count=5)
+                            val extractedCount = extractCountFromText(row.tekst)
+
+                            // Use the AddAliasDialog signature common in this repo:
                             val dlg = AddAliasDialog.newInstance(listOf(row.tekst), availableSpeciesFlat)
+
                             dlg.listener = object : AddAliasDialog.AddAliasListener {
                                 override fun onAliasAssigned(speciesId: String, aliasText: String) {
                                     lifecycleScope.launch {
-                                        val added = aliasEditor.addAliasInMemory(speciesId, aliasText)
+                                        val snapshot = ServerDataCache.getOrLoad(this@TellingScherm)
+                                        val canonical = snapshot.speciesById[speciesId]?.soortnaam ?: aliasText
+                                        val tilename = snapshot.speciesById[speciesId]?.soortkey
+
+                                        val added = AliasManager.addAlias(
+                                            context = this@TellingScherm,
+                                            saf = safHelper,
+                                            speciesId = speciesId,
+                                            aliasText = aliasText.trim(),
+                                            canonical = canonical,
+                                            tilename = tilename
+                                        )
+
                                         if (added) {
-                                            try {
-                                                // hot-reload to AliasRepository as well (in-memory)
-                                                aliasRepository.addAliasInMemory(speciesId, aliasText)
-                                                addLog("Alias toegevoegd in-memory: $aliasText -> $speciesId", "alias")
-                                            } catch (ex: Exception) {
-                                                Log.w(TAG, "AliasRepository.addAliasInMemory failed: ${ex.message}")
-                                                addLog("Alias toegevoegd in buffer: $aliasText -> $speciesId", "alias")
-                                            }
-
-                                            // Persist and hot-patch the matcher so the alias is active immediately
-                                            val progress = ProgressDialogHelper.show(this@TellingScherm, "Alias opslaan...")
-                                            withContext(Dispatchers.IO) {
-                                                try {
-                                                    // Persist user aliases to SAF (merge)
-                                                    aliasEditor.persistUserAliasesSaf()
-                                                } catch (ex: Exception) {
-                                                    Log.w(TAG, "persistUserAliasesSaf failed: ${ex.message}", ex)
-                                                }
-                                            }
-
-                                            // Hot-patch AliasMatcher (in-memory) so next recognition uses it immediately.
-                                            try {
-                                                // Try to obtain canonical/tilename for nicer display
-                                                val snapshot = ServerDataCache.getCachedOrNull() ?: ServerDataCache.getOrLoad(this@TellingScherm)
-                                                val canonical = snapshot.speciesById[speciesId]?.soortnaam ?: aliasText
-                                                val tilename = snapshot.speciesById[speciesId]?.soortkey
-                                                AliasMatcher.addAliasHotpatch(speciesId, aliasText, canonical, tilename)
-                                            } catch (ex: Exception) {
-                                                Log.w(TAG, "AliasMatcher.addAliasHotpatch failed: ${ex.message}", ex)
-                                            } finally {
-                                                // fix: dismiss the AlertDialog instance returned by ProgressDialogHelper.show
-                                                try {
-                                                    progress.dismiss()
-                                                } catch (_: Exception) {
-                                                    // ignore dismiss errors
-                                                }
-                                            }
-
-                                            Toast.makeText(this@TellingScherm, "Alias opgeslagen en direct actief", Toast.LENGTH_SHORT).show()
+                                            addSpeciesToTilesIfNeeded(speciesId, canonical, extractedCount)
+                                            updateSoortCount(speciesId, extractedCount)
+                                            addLog("Alias toegevoegd: '$aliasText' → $canonical (+$extractedCount)", "alias")
+                                            Toast.makeText(this@TellingScherm, "Alias actief en opgeslagen (buffer).", Toast.LENGTH_SHORT).show()
                                         } else {
                                             Toast.makeText(this@TellingScherm, "Alias niet toegevoegd (duplicaat of ongeldig)", Toast.LENGTH_SHORT).show()
                                         }
@@ -346,6 +260,14 @@ class TellingScherm : AppCompatActivity() {
         })
     }
 
+    /**
+     * Extract count from text (e.g., "ali 5" → 5)
+     */
+    private fun extractCountFromText(text: String): Int {
+        val m = Regex("\\b(\\d+)\\b").find(text)
+        return m?.groups?.get(1)?.value?.toIntOrNull() ?: 1
+    }
+
     private fun setupSpeciesTilesRecyclerView() {
         val flm = FlexboxLayoutManager(this).apply {
             flexDirection = FlexDirection.ROW
@@ -370,33 +292,94 @@ class TellingScherm : AppCompatActivity() {
             Toast.makeText(this, "Afronden (batch-upload) volgt later.", Toast.LENGTH_LONG).show()
         }
 
-        // Correcte aanroep
         binding.btnAfronden.setOnLongClickListener {
             tryConvertCsvToJson()
             Toast.makeText(this@TellingScherm, "CSV naar JSON conversie gestart...", Toast.LENGTH_SHORT).show()
             true
         }
 
-        // Save & close button (Afsluiten / Opslaan)
         binding.btnSaveClose.setOnClickListener {
             AlertDialog.Builder(this)
                 .setTitle("Data opslaan?")
                 .setMessage("Wil je de toegevoegde aliassen opslaan en terugkeren naar Metadata?")
                 .setPositiveButton("Opslaan") { _, _ ->
                     lifecycleScope.launch {
-                        val ok = aliasEditor.persistUserAliasesSaf()
-                        if (ok) {
-                            Toast.makeText(this@TellingScherm, "Aliassen opgeslagen", Toast.LENGTH_SHORT).show()
-                        } else {
-                            Toast.makeText(this@TellingScherm, "Opslaan mislukt", Toast.LENGTH_LONG).show()
-                        }
-                        // Navigeer daarna naar MetadataScherm
+                        AliasManager.forceFlush(this@TellingScherm, safHelper)
+                        Toast.makeText(this@TellingScherm, "Opslaan afgerond", Toast.LENGTH_SHORT).show()
                         startActivity(Intent(this@TellingScherm, com.yvesds.vt5.features.metadata.ui.MetadataScherm::class.java).apply { flags = Intent.FLAG_ACTIVITY_CLEAR_TOP })
                         finish()
                     }
                 }
                 .setNegativeButton("Annuleren", null)
                 .show()
+        }
+    }
+
+    private fun tryConvertCsvToJson() {
+        // Convenience wrapper to invoke existing repository conversion (if present).
+        lifecycleScope.launch {
+            try {
+                val ok = aliasRepository.convertCsvToJson()
+                if (ok) {
+                    Toast.makeText(this@TellingScherm, "CSV -> JSON conversie voltooid", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this@TellingScherm, "CSV conversie mislukte of niets te doen", Toast.LENGTH_SHORT).show()
+                }
+            } catch (ex: Exception) {
+                Log.w(TAG, "tryConvertCsvToJson failed: ${ex.message}", ex)
+                Toast.makeText(this@TellingScherm, "Fout tijdens CSV conversie", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun setupSilenceSeekBar() {
+        try {
+            seekBarSilenceCompact = binding.seekBarSilenceCompact
+
+            val savedMs = prefs.getInt(PREF_ASR_SILENCE_MS, DEFAULT_SILENCE_MS)
+            val progress = ((savedMs - 2000) / 100).coerceIn(0, 30)
+            seekBarSilenceCompact.max = 30
+            seekBarSilenceCompact.progress = progress
+
+            if (speechInitialized) {
+                speechRecognitionManager.setSilenceStopMillis(savedMs.toLong())
+            }
+
+            seekBarSilenceCompact.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    val ms = 2000 + progress * 100
+                    if (speechInitialized) {
+                        speechRecognitionManager.setSilenceStopMillis(ms.toLong())
+                    }
+                }
+
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    val p = seekBar?.progress ?: 0
+                    val ms = 2000 + p * 100
+                    prefs.edit().putInt(PREF_ASR_SILENCE_MS, ms).apply()
+                    if (speechInitialized) {
+                        speechRecognitionManager.setSilenceStopMillis(ms.toLong())
+                    }
+                }
+            })
+        } catch (ex: Exception) {
+            Log.w(TAG, "setupSilenceSeekBar failed: ${ex.message}", ex)
+        }
+    }
+
+    private fun preloadAliases() {
+        lifecycleScope.launch {
+            try {
+                // Ensure alias seed/cache exists and load it in AliasManager
+                AliasManager.initialize(this@TellingScherm, safHelper)
+                // Populate availableSpeciesFlat for AddAliasDialog dropdown
+                val snapshot = ServerDataCache.getOrLoad(this@TellingScherm)
+                availableSpeciesFlat = snapshot.speciesById.map { (id, s) -> "$id||${s.soortnaam}" }.toList()
+                Log.d(TAG, "Aliases preloaded successfully")
+            } catch (e: Exception) {
+                Log.w(TAG, "Error preloading aliases: ${e.message}", e)
+            }
         }
     }
 
@@ -409,12 +392,6 @@ class TellingScherm : AppCompatActivity() {
                         val snapshot = ServerDataCache.getOrLoad(this@TellingScherm)
                         val pre = TellingSessionManager.preselectState.value
                         val ids = pre.selectedSoortIds
-
-                        availableSpeciesFlat = snapshot.speciesById.map { (id, s) -> "$id||${s.soortnaam}" }.toList()
-
-                        if (ids.isEmpty()) {
-                            return@withContext null to emptyList()
-                        }
 
                         val speciesById = snapshot.speciesById
                         val initialList = ids.mapNotNull { sid ->
@@ -463,19 +440,15 @@ class TellingScherm : AppCompatActivity() {
     private suspend fun buildMatchContext(): MatchContext = withContext(Dispatchers.IO) {
         val snapshot = ServerDataCache.getOrLoad(this@TellingScherm)
 
-        // Tiles species IDs
         val tiles = tilesAdapter.currentList.map { it.soortId }.toSet()
 
-        // Site allowed species IDs
         val telpostId = TellingSessionManager.preselectState.value.telpostId
         val siteAllowed = telpostId?.let { id ->
             snapshot.siteSpeciesBySite[id]?.map { it.soortid }?.toSet() ?: emptySet()
         } ?: snapshot.speciesById.keys
 
-        // Recent species IDs
         val recents = RecentSpeciesStore.getRecents(this@TellingScherm).map { it.first }.toSet()
 
-        // Species lookup map
         val speciesById = snapshot.speciesById.mapValues { (_, sp) ->
             sp.soortnaam to sp.soortkey
         }
@@ -493,7 +466,6 @@ class TellingScherm : AppCompatActivity() {
             speechRecognitionManager = SpeechRecognitionManager(this)
             speechRecognitionManager.initialize()
 
-            // Apply saved silence ms if present
             val savedMs = prefs.getInt(PREF_ASR_SILENCE_MS, DEFAULT_SILENCE_MS)
             speechRecognitionManager.setSilenceStopMillis(savedMs.toLong())
 
@@ -503,31 +475,27 @@ class TellingScherm : AppCompatActivity() {
                 speechRecognitionManager.loadAliases()
             }
 
-            // Register hypotheses listener: iterate N-best hypotheses and call parser until a useable MatchResult is found
             speechRecognitionManager.setOnHypothesesListener { hypotheses, partials ->
                 lifecycleScope.launch {
                     Log.d(TAG, "Hypotheses received: $hypotheses")
                     try {
                         val matchContext = buildMatchContext()
-                        val parser = AliasSpeechParser(this@TellingScherm, SaFStorageHelper(this@TellingScherm))
+                        val parser = AliasSpeechParser(this@TellingScherm, safHelper)
 
-                        // Centralized N-best handling in parser:
                         val result = parser.parseSpokenWithHypotheses(hypotheses, matchContext, partials, asrWeight = 0.4)
                         Log.d(TAG, "Parse result: $result")
 
                         when (result) {
                             is MatchResult.AutoAccept -> {
-                                // FIXED: Use extracted amount from result
                                 updateSoortCount(result.candidate.speciesId, result.amount)
                                 addLog("Herkend: ${result.candidate.displayName} ${result.amount} (auto)", "spraak")
                                 RecentSpeciesStore.recordUse(this@TellingScherm, result.candidate.speciesId, maxEntries = 25)
                             }
                             is MatchResult.AutoAcceptAddPopup -> {
-                                // FIXED: Use extracted amount from result
                                 val cnt = result.amount
                                 runOnUiThread {
                                     val prettyName = result.candidate.displayName
-                                    val msg = "Soort \"$prettyName\" werd herkend met aantal $cnt maar staat nog niet in de lijst.\n\nWil je deze soort toevoegen en meteen $cnt noteren?"
+                                    val msg = "Soort \"$prettyName\" herkend met aantal $cnt.\n\nToevoegen?"
                                     AlertDialog.Builder(this@TellingScherm)
                                         .setTitle("Soort toevoegen?")
                                         .setMessage(msg)
@@ -539,17 +507,15 @@ class TellingScherm : AppCompatActivity() {
                                 }
                             }
                             is MatchResult.MultiMatch -> {
-                                // NEW: Handle multiple species in one query (e.g., "aalscholver 5 boertjes 3")
                                 result.matches.forEach { match ->
                                     if (match.candidate.isInTiles) {
                                         updateSoortCount(match.candidate.speciesId, match.amount)
                                         addLog("Herkend: ${match.candidate.displayName} ${match.amount} (multi)", "spraak")
                                         RecentSpeciesStore.recordUse(this@TellingScherm, match.candidate.speciesId, maxEntries = 25)
                                     } else {
-                                        // Species not in tiles -> ask to add
                                         runOnUiThread {
                                             val prettyName = match.candidate.displayName
-                                            val msg = "Soort \"$prettyName\" (${match.amount}x) herkend maar niet in lijst.\n\nToevoegen?"
+                                            val msg = "Soort \"$prettyName\" (${match.amount}x) herkend.\n\nToevoegen?"
                                             AlertDialog.Builder(this@TellingScherm)
                                                 .setTitle("Soort toevoegen?")
                                                 .setMessage(msg)
@@ -563,8 +529,7 @@ class TellingScherm : AppCompatActivity() {
                                 }
                             }
                             is MatchResult.SuggestionList -> {
-                                // Extract amount from hypothesis (fallback for unclear matches)
-                                val cnt = extractCountFromHypothesis(result.hypothesis) ?: 1
+                                val cnt = extractCountFromText(result.hypothesis)
                                 runOnUiThread { showSuggestionBottomSheet(result.candidates, cnt) }
                             }
                             is MatchResult.NoMatch -> {
@@ -577,7 +542,6 @@ class TellingScherm : AppCompatActivity() {
                 }
             }
 
-            // Raw ASR callback: capture last partial / raw best match
             speechRecognitionManager.setOnRawResultListener { rawText ->
                 runOnUiThread {
                     lastRawPartial = rawText
@@ -593,12 +557,6 @@ class TellingScherm : AppCompatActivity() {
             Log.e(TAG, "Error initializing speech recognition", e)
             Toast.makeText(this, "Kon spraakherkenning niet initialiseren: ${e.message}", Toast.LENGTH_SHORT).show()
         }
-    }
-
-    // Helper: try to extract a numeric count from hypothesis text, naive but useful
-    private fun extractCountFromHypothesis(hyp: String): Int? {
-        val m = Regex("\\b(\\d+)\\b").find(hyp)
-        return m?.groups?.get(1)?.value?.toIntOrNull()
     }
 
     private fun showSuggestionBottomSheet(candidates: List<Candidate>, count: Int) {
@@ -838,6 +796,11 @@ class TellingScherm : AppCompatActivity() {
 
         if (::volumeKeyHandler.isInitialized) {
             volumeKeyHandler.unregister()
+        }
+
+        // Ensure pending alias writes are flushed
+        lifecycleScope.launch {
+            AliasManager.forceFlush(this@TellingScherm, safHelper)
         }
     }
 }
