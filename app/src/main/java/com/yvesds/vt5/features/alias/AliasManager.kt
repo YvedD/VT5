@@ -274,51 +274,49 @@ object AliasManager {
         tilename: String?
     ): Boolean = withContext(Dispatchers.IO) {
         try {
-            val normalized = aliasText.trim().lowercase()
-            if (normalized.isBlank()) {
-                Log.w(TAG, "addAlias: Empty alias text")
+            val normalizedText = aliasText.trim()
+            if (normalizedText.isBlank()) {
+                Log.w(TAG, "addAlias: empty")
                 return@withContext false
             }
 
-            // Check duplicate (fast in-memory check via AliasMatcher)
-            val existing = com.yvesds.vt5.features.speech.AliasMatcher.findExact(normalized, context, saf)
-            if (existing.isNotEmpty()) {
-                val existingSpecies = existing.first().speciesid
+            // Fast duplicate check in-memory (AliasMatcher)
+            val found = com.yvesds.vt5.features.speech.AliasMatcher.findExact(normalizeLowerNoDiacritics(normalizedText), context, saf)
+            if (found.isNotEmpty()) {
+                val existingSpecies = found.first().speciesid
                 if (existingSpecies == speciesId) {
-                    Log.w(TAG, "addAlias: Duplicate alias '$normalized' for species $speciesId")
+                    Log.w(TAG, "addAlias: duplicate alias for same species")
                     return@withContext false
                 } else {
-                    Log.w(TAG, "addAlias: Alias '$normalized' already exists for species $existingSpecies (conflict!)")
-                    // TODO: Show conflict dialog (user override?)
+                    Log.w(TAG, "addAlias: alias already exists for species $existingSpecies")
                     return@withContext false
                 }
             }
 
-            // STEP 1: INSTANT HOT-PATCH (Layer 2: In-memory cache)
+            // 1) Hot-patch in-memory (AliasMatcher)
             com.yvesds.vt5.features.speech.AliasMatcher.addAliasHotpatch(
                 speciesId = speciesId,
-                aliasRaw = normalized,
+                aliasRaw = normalizedText,
                 canonical = canonical,
                 tilename = tilename
             )
-            Log.i(TAG, "Hot-patched alias: '$normalized' → $speciesId (instant!)")
 
-            // STEP 2: ASYNC ADD TO WRITE QUEUE (Layer 3: Batched writes)
-            val key = "$speciesId||$normalized"
+            // 2) Add to in-memory write queue for batched persistence
+            val key = "$speciesId||${normalizeLowerNoDiacritics(normalizedText)}"
             val pending = PendingAlias(
                 speciesId = speciesId,
-                aliasText = normalized,
+                aliasText = normalizedText,
                 canonical = canonical,
                 tilename = tilename,
                 timestamp = Instant.now().toString()
             )
             writeQueue[key] = pending
 
-            // STEP 3: SCHEDULE BATCH WRITE
+            // 3) Schedule batched write (existing logic)
             scheduleBatchWrite(context, saf)
 
+            Log.i(TAG, "addAlias: hotpatched and queued alias='$normalizedText' for species=$speciesId")
             return@withContext true
-
         } catch (ex: Exception) {
             Log.e(TAG, "addAlias failed: ${ex.message}", ex)
             return@withContext false
@@ -436,27 +434,20 @@ object AliasManager {
      * - cologne: Cologne phonetic code
      * - phonemes: IPA phonemes
      */
-    private fun generateAliasData(text: String, source: String): AliasData {
-        val normalized = normalizeLowerNoDiacritics(text)
-
-        val cologne = runCatching {
-            ColognePhonetic.encode(normalized)
-        }.getOrNull() ?: ""
-
-        val phonemes = runCatching {
-            DutchPhonemizer.phonemize(normalized)
-        }.getOrNull() ?: ""
+    private fun generateAliasData(text: String, source: String = "seed_canonical"): AliasData {
+        val cleaned = normalizeLowerNoDiacritics(text)
+        val col = runCatching { ColognePhonetic.encode(cleaned) }.getOrNull() ?: ""
+        val phon = runCatching { DutchPhonemizer.phonemize(cleaned) }.getOrNull() ?: ""
 
         return AliasData(
-            text = text.lowercase(),
-            norm = normalized,
-            cologne = cologne,
-            phonemes = phonemes,
+            text = text.trim().lowercase(),
+            norm = cleaned,
+            cologne = col,
+            phonemes = phon,
             source = source,
-            timestamp = if (source == "user_field_training") Instant.now().toString() else null
+            timestamp = if (source == "user_in-field_training") Instant.now().toString() else null
         )
     }
-
     /*═══════════════════════════════════════════════════════════════════════
      * PRIVATE: BATCH WRITE SYSTEM
      *═══════════════════════════════════════════════════════════════════════*/
@@ -509,58 +500,57 @@ object AliasManager {
             val binaries = vt5.findFile(BINARIES)?.takeIf { it.isDirectory } ?: return@withContext
             val masterDoc = binaries.findFile(MASTER_FILE) ?: return@withContext
 
-            // 1. Load current master
-            val masterJson = context.contentResolver.openInputStream(masterDoc.uri)?.use {
-                it.readBytes().toString(Charsets.UTF_8)
-            } ?: return@withContext
+            // Load current master
+            val masterJson = context.contentResolver.openInputStream(masterDoc.uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                ?: return@withContext
 
-            val master = jsonPretty.decodeFromString<AliasMaster>(masterJson)
+            val master = jsonPretty.decodeFromString(AliasMaster.serializer(), masterJson)
 
-            // 2. Merge writeQueue into master
-            val updatedSpecies = master.species.map { species ->
-                val pendingForSpecies = writeQueue.values.filter { it.speciesId == species.speciesId }
+            // Merge pending aliases into master
+            val speciesMap = master.species.associateBy { it.speciesId }.toMutableMap()
 
-                if (pendingForSpecies.isEmpty()) {
-                    species
-                } else {
-                    val newAliases = pendingForSpecies.map { pending ->
-                        generateAliasData(
-                            text = pending.aliasText,
-                            source = "user_field_training"
-                        ).copy(timestamp = pending.timestamp)
-                    }
-
-                    // Deduplicate: keep only new aliases
-                    val existingTexts = species.aliases.map { it.text.lowercase() }.toSet()
-                    val uniqueNew = newAliases.filter { it.text.lowercase() !in existingTexts }
-
-                    species.copy(
-                        aliases = species.aliases + uniqueNew
-                    )
+            for ((_, pending) in writeQueue) {
+                val speciesEntry = speciesMap.getOrElse(pending.speciesId) {
+                    // If not present, create minimal SpeciesEntry with canonical from pending.canonical
+                    SpeciesEntry(
+                        speciesId = pending.speciesId,
+                        canonical = pending.canonical,
+                        tilename = pending.tilename,
+                        aliases = emptyList()
+                    ).also { speciesMap[pending.speciesId] = it }
                 }
-            }.toList()
 
+                // Prepare new AliasData
+                val newAlias = generateAliasData(pending.aliasText, source = "user_field_training").copy(timestamp = pending.timestamp)
+
+                // Deduplicate by norm/text
+                val existingNorms = speciesEntry.aliases.map { it.norm }.toMutableSet()
+                if (!existingNorms.contains(newAlias.norm)) {
+                    val updatedAliasList = speciesEntry.aliases + newAlias
+                    speciesMap[pending.speciesId] = speciesEntry.copy(aliases = updatedAliasList)
+                }
+            }
+
+            // Build updated master
             val updatedMaster = master.copy(
                 timestamp = Instant.now().toString(),
-                species = updatedSpecies
+                species = speciesMap.values.sortedBy { it.speciesId }
             )
 
-            // 3. Write updated master
-            val updatedJson = jsonPretty.encodeToString(updatedMaster)
-
+            // Write master JSON (pretty)
+            val updatedJson = jsonPretty.encodeToString(AliasMaster.serializer(), updatedMaster)
             context.contentResolver.openOutputStream(masterDoc.uri, "wt")?.use {
                 it.write(updatedJson.toByteArray(Charsets.UTF_8))
                 it.flush()
             }
 
-            Log.i(TAG, "Flushed ${writeQueue.size} aliases to master")
+            Log.i(TAG, "Flushed ${writeQueue.size} pending aliases to master")
 
-            // 4. Regenerate CBOR cache (background)
+            // Regenerate CBOR cache from master.toAliasIndex()
             rebuildCborCache(updatedMaster, binaries, context)
 
-            // 5. Clear queue
+            // Clear the writeQueue
             writeQueue.clear()
-
         } catch (ex: Exception) {
             Log.e(TAG, "flushWriteQueue failed: ${ex.message}", ex)
         }
@@ -577,19 +567,13 @@ object AliasManager {
      * Used by AliasMatcher for fast loading (binary format)
      */
     @OptIn(ExperimentalSerializationApi::class)
-    private suspend fun rebuildCborCache(
-        master: AliasMaster,
-        binariesDir: androidx.documentfile.provider.DocumentFile,
-        context: Context
-    ) = withContext(Dispatchers.IO) {
+    private suspend fun rebuildCborCache(master: AliasMaster, binariesDir: androidx.documentfile.provider.DocumentFile, context: Context) = withContext(Dispatchers.IO) {
         try {
-            // Convert to flat index
+            // Convert master -> AliasIndex (flat)
             val index = master.toAliasIndex()
 
-            // Serialize to CBOR
+            // Serialize with CBOR and gzip
             val cborBytes = Cbor.encodeToByteArray(AliasIndex.serializer(), index)
-
-            // GZIP compress
             val gzipped = ByteArrayOutputStream().use { baos ->
                 GZIPOutputStream(baos).use { gzip ->
                     gzip.write(cborBytes)
@@ -598,19 +582,11 @@ object AliasManager {
                 baos.toByteArray()
             }
 
-            // Write to file
-            val cborFile = binariesDir.findFile(CBOR_FILE)?.also { it.delete() }
-                ?: binariesDir.createFile("application/octet-stream", CBOR_FILE)
-
+            val cborFile = binariesDir.findFile(CBOR_FILE)?.also { it.delete() } ?: binariesDir.createFile("application/octet-stream", CBOR_FILE)
             if (cborFile != null) {
-                context.contentResolver.openOutputStream(cborFile.uri, "w")?.use {
-                    it.write(gzipped)
-                    it.flush()
-                }
-
+                context.contentResolver.openOutputStream(cborFile.uri, "w")?.use { it.write(gzipped); it.flush() }
                 Log.i(TAG, "Rebuilt CBOR cache: ${index.json.size} records, ${gzipped.size} bytes compressed")
             }
-
         } catch (ex: Exception) {
             Log.e(TAG, "rebuildCborCache failed: ${ex.message}", ex)
         }
