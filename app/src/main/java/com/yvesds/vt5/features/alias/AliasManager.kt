@@ -89,70 +89,34 @@ object AliasManager {
 
     private const val TAG = "AliasManager"
 
-    /*═══════════════════════════════════════════════════════════════════════
-     * FILE PATHS & CONSTANTS
-     *═══════════════════════════════════════════════════════════════════════*/
-
+    /*═══════════════════════════════════════════════════════════════... */
+    /* FILE PATHS & CONSTANTS */
     private const val MASTER_FILE = "aliases_master.json"
     private const val CBOR_FILE = "aliases_optimized.cbor.gz"
     private const val BINARIES = "binaries"
 
-    /*═══════════════════════════════════════════════════════════════════════
-     * JSON/CBOR SERIALIZERS
-     *═══════════════════════════════════════════════════════════════════════*/
-
-    /**
-     * Pretty JSON for aliases_master.json (human-readable)
-     */
+    /* JSON/CBOR SERIALIZERS */
     private val jsonPretty = Json {
         prettyPrint = true
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
 
-    /**
-     * Compact JSON for internal operations
-     */
     private val jsonCompact = Json {
         prettyPrint = false
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
 
-    /*═══════════════════════════════════════════════════════════════════════
-     * WRITE QUEUE (Layer 3: Async Batched Writes)
-     *═══════════════════════════════════════════════════════════════════════*/
-
-    /**
-     * Pending alias additions (waiting for batch flush)
-     * Key: "speciesId||aliasText" (for deduplication)
-     */
+    /* WRITE QUEUE */
     private val writeQueue = ConcurrentHashMap<String, PendingAlias>()
-
-    /**
-     * Write job pending flag (atomic for thread safety)
-     */
     private val writePending = AtomicBoolean(false)
-
-    /**
-     * Coroutine scope for background write operations
-     */
     private val writeScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-
-    /**
-     * Current write job (nullable, cancelled on new batch)
-     */
     private var writeJob: Job? = null
 
-    /**
-     * Batch write thresholds
-     */
-    private const val BATCH_SIZE_THRESHOLD = 5    // Write after 5 additions
-    private const val BATCH_TIME_THRESHOLD_MS = 30_000L  // Or after 30 seconds
+    private const val BATCH_SIZE_THRESHOLD = 5
+    private const val BATCH_TIME_THRESHOLD_MS = 30_000L
 
-    /**
-     * Pending alias data structure
-     */
     private data class PendingAlias(
         val speciesId: String,
         val aliasText: String,
@@ -161,25 +125,7 @@ object AliasManager {
         val timestamp: String
     )
 
-    /*═══════════════════════════════════════════════════════════════════════
-     * PUBLIC API: INITIALIZATION
-     *═══════════════════════════════════════════════════════════════════════*/
-
-    /**
-     * Initialize alias system
-     *
-     * Called by: VT5App.onCreate() or InstallatieScherm
-     *
-     * Flow:
-     * 1. Check if aliases_master.json exists in SAF
-     * 2. If NOT: Generate seed from species.json (first install)
-     * 3. If YES: Load existing (preserve user training)
-     * 4. Load CBOR cache into AliasMatcher
-     *
-     * @param context Application context
-     * @param saf SAF helper for file access
-     * @return true if successful, false otherwise
-     */
+    /* INITIALIZATION */
     suspend fun initialize(context: Context, saf: SaFStorageHelper): Boolean = withContext(Dispatchers.IO) {
         try {
             val vt5 = saf.getVt5DirIfExists()
@@ -237,34 +183,7 @@ object AliasManager {
         }
     }
 
-    /*═══════════════════════════════════════════════════════════════════════
-     * PUBLIC API: ADD ALIAS (HOT-RELOAD)
-     *═══════════════════════════════════════════════════════════════════════*/
-
-    /**
-     * Add alias with instant hot-reload (NO HERSTART!)
-     *
-     * Called by: TellingScherm gesture detector (user taps raw log)
-     *
-     * Flow:
-     * 1. INSTANT (0.2ms): Hot-patch AliasMatcher in-memory cache
-     * 2. ASYNC: Add to writeQueue for batched persistence
-     * 3. BATCHED (5 adds or 30s): Flush to disk in background
-     *
-     * Timeline Example:
-     * T=0s:   User taps "ali" → addAlias(...)
-     * T=0.2ms: Hot-patch complete → alias active!
-     * T=0.3s: User says "ali 5" → MATCH! ✅
-     * T=30s:  Background flush → persisted to disk
-     *
-     * @param context Application context
-     * @param saf SAF helper
-     * @param speciesId Species ID (e.g., "20" for Aalscholver)
-     * @param aliasText Alias text (e.g., "ali")
-     * @param canonical Canonical name (e.g., "Aalscholver")
-     * @param tilename Tile name (e.g., "Aal"), nullable
-     * @return true if successful, false if duplicate or error
-     */
+    /* ADD ALIAS (HOT-RELOAD) */
     suspend fun addAlias(
         context: Context,
         saf: SaFStorageHelper,
@@ -323,17 +242,7 @@ object AliasManager {
         }
     }
 
-    /*═══════════════════════════════════════════════════════════════════════
-     * PUBLIC API: FORCE FLUSH
-     *═══════════════════════════════════════════════════════════════════════*/
-
-    /**
-     * Force flush pending writes (call on app pause/destroy)
-     *
-     * Called by: TellingScherm.onDestroy(), VT5App.onTerminate()
-     *
-     * Ensures no data loss if app crashes or user closes app.
-     */
+    /* FORCE FLUSH */
     suspend fun forceFlush(context: Context, saf: SaFStorageHelper) {
         writeJob?.cancel()
         if (writeQueue.isNotEmpty()) {
@@ -342,27 +251,7 @@ object AliasManager {
         }
     }
 
-    /*═══════════════════════════════════════════════════════════════════════
-     * PRIVATE: SEED GENERATION (First Install)
-     *═══════════════════════════════════════════════════════════════════════*/
-
-    /**
-     * Generate seed from species.json (first install only)
-     *
-     * Creates minimal aliases: canonical + tilename per species
-     * No user training data (that comes from field use!)
-     *
-     * Example output:
-     * {
-     *   "speciesId": "20",
-     *   "canonical": "Aalscholver",
-     *   "tilename": "Aal",
-     *   "aliases": [
-     *     { "text": "aalscholver", "source": "seed_canonical", ... },
-     *     { "text": "aal", "source": "seed_tilename", ... }
-     *   ]
-     * }
-     */
+    /* SEED GENERATION */
     private suspend fun generateSeedFromSpeciesJson(
         context: Context,
         saf: SaFStorageHelper,
@@ -433,6 +322,9 @@ object AliasManager {
      * - norm: Normalized text
      * - cologne: Cologne phonetic code
      * - phonemes: IPA phonemes
+     *
+     * This version ensures cologne/phonemes are returned as consistent (non-null) strings
+     * to match the AliasData model (which uses non-null String fields).
      */
     private fun generateAliasData(text: String, source: String = "seed_canonical"): AliasData {
         val cleaned = normalizeLowerNoDiacritics(text)
@@ -442,25 +334,16 @@ object AliasManager {
         return AliasData(
             text = text.trim().lowercase(),
             norm = cleaned,
+            // AliasData model expects non-null Strings for cologne/phonemes — provide empty string when encoding fails
             cologne = col,
             phonemes = phon,
             source = source,
-            timestamp = if (source == "user_in-field_training") Instant.now().toString() else null
+            // consistent token for user-added aliases
+            timestamp = if (source == "user_field_training") Instant.now().toString() else null
         )
     }
-    /*═══════════════════════════════════════════════════════════════════════
-     * PRIVATE: BATCH WRITE SYSTEM
-     *═══════════════════════════════════════════════════════════════════════*/
 
-    /**
-     * Schedule batch write (triggered after each addAlias call)
-     *
-     * Logic:
-     * - If queue >= 5 aliases: Write immediately
-     * - Else: Schedule write after 30 seconds
-     *
-     * Thread-safe: Uses AtomicBoolean to prevent duplicate jobs
-     */
+    /* BATCH WRITE SYSTEM */
     private fun scheduleBatchWrite(context: Context, saf: SaFStorageHelper) {
         if (writePending.compareAndSet(false, true)) {
             writeJob?.cancel()
@@ -482,16 +365,6 @@ object AliasManager {
         }
     }
 
-    /**
-     * Flush write queue to disk (Layer 1: Persistent storage)
-     *
-     * Flow:
-     * 1. Load current aliases_master.json
-     * 2. Merge writeQueue entries into master
-     * 3. Write updated master to disk
-     * 4. Regenerate CBOR cache (background)
-     * 5. Clear writeQueue
-     */
     private suspend fun flushWriteQueue(context: Context, saf: SaFStorageHelper) = withContext(Dispatchers.IO) {
         if (writeQueue.isEmpty()) return@withContext
 
@@ -556,16 +429,7 @@ object AliasManager {
         }
     }
 
-    /*═══════════════════════════════════════════════════════════════════════
-     * PRIVATE: CBOR CACHE GENERATION
-     *═══════════════════════════════════════════════════════════════════════*/
-
-    /**
-     * Rebuild CBOR cache from master
-     *
-     * Converts hierarchical AliasMaster → flat AliasIndex → CBOR bytes
-     * Used by AliasMatcher for fast loading (binary format)
-     */
+    /* CBOR CACHE GENERATION */
     @OptIn(ExperimentalSerializationApi::class)
     private suspend fun rebuildCborCache(master: AliasMaster, binariesDir: androidx.documentfile.provider.DocumentFile, context: Context) = withContext(Dispatchers.IO) {
         try {
@@ -592,15 +456,7 @@ object AliasManager {
         }
     }
 
-    /*═══════════════════════════════════════════════════════════════════════
-     * PRIVATE: HELPER FUNCTIONS
-     *═══════════════════════════════════════════════════════════════════════*/
-
-    /**
-     * Normalize text (lowercase, no diacritics, single spaces)
-     *
-     * Matches PrecomputeAliasIndex.normalizeLowerNoDiacritics()
-     */
+    /* HELPERS */
     private fun normalizeLowerNoDiacritics(input: String): String {
         val lower = input.lowercase()
         val decomposed = java.text.Normalizer.normalize(lower, java.text.Normalizer.Form.NFD)

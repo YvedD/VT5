@@ -3,28 +3,27 @@ package com.yvesds.vt5.features.speech
 import android.content.Context
 import android.util.Log
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
-import com.yvesds.vt5.features.alias.AliasRecord
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.max
 
 /**
- * AliasPriorityMatcher (updated)
+ * AliasPriorityMatcher (fixed)
  *
  * - Priority cascade preserved (exact canonical/alias in tiles/site, fuzzy in tiles/site)
  * - Fuzzy scoring uses hybrid weights across:
  *     - text similarity (normalized Levenshtein)
  *     - cologne phonetic similarity
  *     - phoneme similarity (when available)
- * - No usage of minhash/simhash/ngrams/dmetapho/beidermorse
+ * - Uses AliasMatcher shortlist generation
+ * - Candidate objects now always include a `source` field; helper findExact* functions
+ *   set candidate.source appropriately so there is no missing-parameter error.
  */
 
 object AliasPriorityMatcher {
     private const val TAG = "AliasPriorityMatcher"
 
-    private const val AUTO_ACCEPT_THRESHOLD = 0.70
     private const val SUGGEST_THRESHOLD = 0.40
-    private const val AUTO_ACCEPT_MARGIN = 0.12
 
     // Scoring weights (sum <= 1)
     private const val W_TEXT = 0.45
@@ -56,7 +55,6 @@ object AliasPriorityMatcher {
 
         val normalized = normalizeLowerNoDiacritics(hyp)
         val tokens = normalized.split("\\s+".toRegex()).filter { it.isNotBlank() }
-
         if (tokens.isEmpty()) return@withContext MatchResult.NoMatch(hyp, "empty-after-norm")
 
         val matches = mutableListOf<MatchResult.MatchWithAmount>()
@@ -131,15 +129,80 @@ object AliasPriorityMatcher {
         saf: SaFStorageHelper
     ): Pair<Candidate, String>? {
         val normalized = normalizeLowerNoDiacritics(phrase)
-        val exactCanonicalTiles = findExactCanonicalInSet(normalized, ctx.tilesSpeciesIds, ctx)
-        if (exactCanonicalTiles != null) return exactCanonicalTiles to "exact_canonical_tiles"
-        val exactCanonicalSite = findExactCanonicalInSet(normalized, ctx.siteAllowedIds, ctx)
-        if (exactCanonicalSite != null && !ctx.tilesSpeciesIds.contains(exactCanonicalSite.speciesId)) return exactCanonicalSite to "exact_canonical_site"
-        val exactAliasTiles = findExactAliasInSet(normalized, ctx.tilesSpeciesIds, appContext, saf)
-        if (exactAliasTiles != null) return exactAliasTiles to "exact_alias_tiles"
-        val exactAliasSite = findExactAliasInSet(normalized, ctx.siteAllowedIds, appContext, saf)
-        if (exactAliasSite != null && !ctx.tilesSpeciesIds.contains(exactAliasSite.speciesId)) return exactAliasSite to "exact_alias_site"
+
+        // canonical in tiles
+        findExactCanonicalInSet(normalized, ctx.tilesSpeciesIds, "exact_canonical_tiles", ctx, appContext, saf)?.let {
+            return it to "exact_canonical_tiles"
+        }
+
+        // canonical in site
+        findExactCanonicalInSet(normalized, ctx.siteAllowedIds, "exact_canonical_site", ctx, appContext, saf)?.let { cand ->
+            if (!ctx.tilesSpeciesIds.contains(cand.speciesId)) return cand to "exact_canonical_site"
+        }
+
+        // alias in tiles
+        findExactAliasInSet(normalized, ctx.tilesSpeciesIds, "exact_alias_tiles", ctx, appContext, saf)?.let {
+            return it to "exact_alias_tiles"
+        }
+
+        // alias in site
+        findExactAliasInSet(normalized, ctx.siteAllowedIds, "exact_alias_site", ctx, appContext, saf)?.let { cand ->
+            if (!ctx.tilesSpeciesIds.contains(cand.speciesId)) return cand to "exact_alias_site"
+        }
+
         return null
+    }
+
+    // Return Candidate? if phrase exactly matches canonical name in the allowed set
+    private suspend fun findExactCanonicalInSet(
+        normalized: String,
+        allowed: Set<String>,
+        sourceTag: String,
+        ctx: MatchContext,
+        appContext: Context,
+        saf: SaFStorageHelper
+    ): Candidate? = withContext(Dispatchers.Default) {
+        val nameMap = ctx.speciesById
+        for (sid in allowed) {
+            val info = nameMap[sid] ?: continue
+            val canon = info.first
+            if (normalizeLowerNoDiacritics(canon) == normalized) {
+                return@withContext Candidate(
+                    speciesId = sid,
+                    displayName = canon,
+                    score = 1.0,
+                    isInTiles = sid in ctx.tilesSpeciesIds,
+                    source = sourceTag
+                )
+            }
+        }
+        return@withContext null
+    }
+
+    // Return Candidate? if phrase exactly matches any alias in allowed set (consult AliasMatcher)
+    private suspend fun findExactAliasInSet(
+        normalized: String,
+        allowed: Set<String>,
+        sourceTag: String,
+        ctx: MatchContext,
+        appContext: Context,
+        saf: SaFStorageHelper
+    ): Candidate? = withContext(Dispatchers.Default) {
+        val records = AliasMatcher.findExact(normalized, appContext, saf)
+        if (records.isEmpty()) return@withContext null
+        for (r in records) {
+            if (r.speciesid in allowed) {
+                val display = r.canonical
+                return@withContext Candidate(
+                    speciesId = r.speciesid,
+                    displayName = display,
+                    score = 1.0,
+                    isInTiles = r.speciesid in ctx.tilesSpeciesIds,
+                    source = sourceTag
+                )
+            }
+        }
+        return@withContext null
     }
 
     private suspend fun tryFuzzyMatch(
@@ -149,58 +212,38 @@ object AliasPriorityMatcher {
         saf: SaFStorageHelper
     ): Pair<Candidate, String>? {
         val normalized = normalizeLowerNoDiacritics(phrase)
-
-        val fuzzyCandidates = findFuzzyCandidates(normalized, ctx, appContext, saf)
-        if (fuzzyCandidates.isEmpty()) return null
-
-        // compute hybrid score for each candidate
-        val scored = fuzzyCandidates.map { rec ->
-            val textSim = rec.textSim
-            val cologneSim = rec.cologneSim
-            val phonemeSim = rec.phonemeSim
-            val prior = computePrior(rec.record.speciesid, ctx)
-            val score = (W_TEXT * textSim + W_COLOGNE * cologneSim + W_PHONEME * phonemeSim + prior * 0.0).coerceIn(0.0, 1.0)
-            Triple(rec, score, prior)
-        }.sortedByDescending { it.second }
-
-        val top = scored.first()
-        if (top.second >= SUGGEST_THRESHOLD) {
-            val candidate = Candidate(
-                speciesId = top.first.record.speciesid,
-                displayName = top.first.record.canonical,
-                score = top.second,
-                isInTiles = top.first.record.speciesid in ctx.tilesSpeciesIds
-            )
-            val source = if (candidate.isInTiles) "fuzzy_tiles" else "fuzzy_site"
-            return candidate to source
-        }
-        return null
-    }
-
-    private suspend fun findFuzzyCandidates(
-        normalized: String,
-        ctx: MatchContext,
-        appContext: Context,
-        saf: SaFStorageHelper
-    ): List<FuzzyCandidate> = withContext(Dispatchers.Default) {
-        val t0 = System.nanoTime()
-        val results = mutableListOf<FuzzyCandidate>()
-
-        // Use AliasMatcher to get shortlist
         val shortlist = AliasMatcher.findFuzzyCandidates(normalized, appContext, saf, topN = 50, threshold = 0.0)
+        if (shortlist.isEmpty()) return null
 
-        for ((rec, baseScore) in shortlist) {
-            val textSim = 1.0 - (levenshteinDistance(normalized, rec.norm).toDouble() / max(normalized.length, rec.norm.length).toDouble())
+        // compute hybrid score for each candidate and pick top
+        val scored = shortlist.mapNotNull { pair ->
+            val rec = pair.first
+            val textSim = if (rec.norm.isNotBlank()) normalizedLevenshteinRatio(normalized, rec.norm) else 0.0
             val cologneSim = runCatching { ColognePhonetic.similarity(normalized, rec.norm) }.getOrDefault(0.0)
             val phonemeSim = if (!rec.phonemes.isNullOrBlank()) {
                 val qPh = runCatching { DutchPhonemizer.phonemize(normalized) }.getOrDefault("")
                 runCatching { DutchPhonemizer.phonemeSimilarity(qPh, rec.phonemes) }.getOrDefault(0.0)
             } else 0.0
 
-            results += FuzzyCandidate(rec, textSim, cologneSim, phonemeSim)
-        }
+            val prior = computePrior(rec.speciesid, ctx)
+            val score = (W_TEXT * textSim + W_COLOGNE * cologneSim + W_PHONEME * phonemeSim + prior * 0.0).coerceIn(0.0, 1.0)
+            Triple(rec, score, prior)
+        }.sortedByDescending { it.second }
 
-        results
+        if (scored.isEmpty()) return null
+        val top = scored.first()
+        if (top.second >= SUGGEST_THRESHOLD) {
+            val candidate = Candidate(
+                speciesId = top.first.speciesid,
+                displayName = top.first.canonical,
+                score = top.second,
+                isInTiles = top.first.speciesid in ctx.tilesSpeciesIds,
+                source = if (top.first.speciesid in ctx.tilesSpeciesIds) "fuzzy_tiles" else "fuzzy_site"
+            )
+            val source = candidate.source
+            return candidate to source
+        }
+        return null
     }
 
     private fun computePrior(speciesId: String, ctx: MatchContext): Double {
@@ -211,12 +254,12 @@ object AliasPriorityMatcher {
         return prior.coerceAtMost(0.6)
     }
 
-    private data class FuzzyCandidate(
-        val record: AliasRecord,
-        val textSim: Double,
-        val cologneSim: Double,
-        val phonemeSim: Double
-    )
+    private fun normalizedLevenshteinRatio(s1: String, s2: String): Double {
+        val d = levenshteinDistance(s1, s2)
+        val maxLen = max(s1.length, s2.length)
+        if (maxLen == 0) return 1.0
+        return 1.0 - (d.toDouble() / maxLen.toDouble())
+    }
 
     private fun levenshteinDistance(a: String, b: String): Int {
         val la = a.length

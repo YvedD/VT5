@@ -48,15 +48,15 @@ import android.content.pm.PackageManager
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import java.util.Locale
 import java.time.Instant
 
 /**
  * TellingScherm.kt
  *
- * Full activity for the counting screen. This is the complete, self-contained file.
- * It integrates AliasManager hot-patch flow (AddAliasDialog usage), multi-match handling,
- * ASR N-best orchestration and the UI controls for species tiles and logs.
+ * Full activity for the counting screen. Integrates AliasManager hot-patch flow,
+ * AddAliasDialog usage, multi-match handling, ASR N-best orchestration and the UI.
  *
  * Author: VT5 Team (YvedD)
  * Date: 2025-10-28
@@ -178,9 +178,9 @@ class TellingScherm : AppCompatActivity() {
         preloadAliases()
     }
 
-    /*═══════════════════════════════════════════════════════════════════════
+    /*═══════════════════════════════════════════════════════════════
      * SETUP: Log RecyclerView with IN-FIELD ALIAS TRAINING
-     *═══════════════════════════════════════════════════════════════════════*/
+     *═══════════════════════════════════════════════════════════════*/
     private fun setupLogRecyclerView() {
         val layoutManager = LinearLayoutManager(this)
         layoutManager.stackFromEnd = true
@@ -357,7 +357,8 @@ class TellingScherm : AppCompatActivity() {
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {
                     val p = seekBar?.progress ?: 0
                     val ms = 2000 + p * 100
-                    prefs.edit().putInt(PREF_ASR_SILENCE_MS, ms).apply()
+                    // Use KTX edit extension
+                    prefs.edit { putInt(PREF_ASR_SILENCE_MS, ms) }
                     if (speechInitialized) {
                         speechRecognitionManager.setSilenceStopMillis(ms.toLong())
                     }
@@ -584,6 +585,19 @@ class TellingScherm : AppCompatActivity() {
             }
             .setNegativeButton("Annuleer", null)
             .show()
+    }
+
+    /**
+     * Helper: add species to tiles if not present; if present only update count.
+     * This keeps the original behavior used by AddAliasDialog handler.
+     */
+    private fun addSpeciesToTilesIfNeeded(speciesId: String, canonical: String, extractedCount: Int) {
+        val current = tilesAdapter.currentList
+        if (current.any { it.soortId == speciesId }) {
+            updateSoortCount(speciesId, extractedCount)
+            return
+        }
+        addSpeciesToTiles(speciesId, canonical, extractedCount)
     }
 
     private fun addSpeciesToTiles(soortId: String, naam: String, initialCount: Int) {

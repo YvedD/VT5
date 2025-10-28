@@ -275,7 +275,7 @@ class InstallatieScherm : AppCompatActivity() {
                 try {
                     val reindexDialog = ProgressDialogHelper.show(this@InstallatieScherm, "Alias index bijwerken...")
                     val result = withContext(Dispatchers.IO) {
-                        AliasIndexWriter.ensureComputedSafOnly(this@InstallatieScherm, saf, q = 3, minhashK = 8)
+                        AliasIndexWriter.ensureComputedSafOnly(this@InstallatieScherm, saf, q = 3)
                     }
                     reindexDialog.dismiss()
                     Log.d(TAG, "Alias index updated: ${result.aliasCount} aliases")
