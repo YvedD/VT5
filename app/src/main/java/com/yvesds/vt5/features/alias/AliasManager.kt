@@ -16,84 +16,32 @@ import java.util.zip.GZIPOutputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.time.Instant
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.contentOrNull
 
 /**
  * AliasManager.kt
  *
- * PURPOSE:
- * Central alias management system with hot-reload capabilities.
- * SINGLE SOURCE OF TRUTH for all alias operations.
- *
- * ARCHITECTURE (3-Layer System):
- *
- * ┌─────────────────────────────────────────────────────────────┐
- * │ LAYER 1: PERSISTENT STORAGE (SAF Documents/VT5/binaries/)  │
- * ├─────────────────────────────────────────────────────────────┤
- * │ aliases_master.json (Human-readable, pretty JSON)           │
- * │ ├─ Read: App start (warm cache)                            │
- * │ └─ Write: Batched (every 5 additions or 30s)              │
- * │                                                              │
- * │ aliases_optimized.cbor.gz (Binary cache, fast loading)      │
- * │ └─ Regenerated: Async when master changes                  │
- * └─────────────────────────────────────────────────────────────┘
- *                          ↕
- * ┌─────────────────────────────────────────────────────────────┐
- * │ LAYER 2: IN-MEMORY CACHE (AliasMatcher)                    │
- * ├─────────────────────────────────────────────────────────────┤
- * │ aliasMap: ConcurrentHashMap<String, List<AliasRecord>>     │
- * │ phoneticCache: ConcurrentHashMap<String, String>           │
- * │ bloomFilter: ConcurrentHashMap<Long, Boolean>              │
- * │                                                              │
- * │ → Hot-patchable: addAliasHotpatch() updates instantly      │
- * │ → Thread-safe: ConcurrentHashMap for multi-coroutine       │
- * └─────────────────────────────────────────────────────────────┘
- *                          ↕
- * ┌─────────────────────────────────────────────────────────────┐
- * │ LAYER 3: WRITE QUEUE (Background Worker)                   │
- * ├─────────────────────────────────────────────────────────────┤
- * │ writeQueue: ConcurrentHashMap<String, PendingAlias>        │
- * │                                                              │
- * │ Flow:                                                        │
- * │ 1. User taps log → addAlias()                              │
- * │ 2. INSTANT: Hot-patch Layer 2 (0.2ms)                      │
- * │ 3. ASYNC: Add to writeQueue                                │
- * │ 4. BATCHED: Flush every 5 adds or 30s                      │
- * │    ├─ Merge into master.json                               │
- * │    └─ Regenerate CBOR cache (background)                   │
- * └─────────────────────────────────────────────────────────────┘
- *
- * KEY FEATURES:
- * - NO HERSTART: Hot-patch makes aliases instantly active
- * - THREAD-SAFE: ConcurrentHashMap for parallel access
- * - BATCHED WRITES: Performance + data safety (30s max latency)
- * - SEED GENERATION: Auto-generate from species.json on first install
- *
- * USAGE:
- * ```kotlin
- * // App start (VT5App.onCreate or InstallatieScherm)
- * AliasManager.initialize(context, saf)
- *
- * // User adds alias (TellingScherm gesture detector)
- * AliasManager.addAlias(context, saf, "20", "ali", "Aalscholver", "Aal")
- * // → Instant hot-patch! User can immediately say "ali 5"
- *
- * // App pause/destroy (force flush pending writes)
- * AliasManager.forceFlush(context, saf)
- * ```
- *
- * AUTHOR: VT5 Team (YvedD)
- * DATE: 2025-10-28
- * VERSION: 2.1
+ * Straightforward, pragmatic AliasManager implementation.
+ * Focus: seed generation from site_species.json + species.json,
+ * writing alias_master.json to /assets and aliases_optimized.cbor.gz to /binaries,
+ * plus hotpatch + batched write queue.
  */
+
 object AliasManager {
 
     private const val TAG = "AliasManager"
 
-    /*═══════════════════════════════════════════════════════════════... */
     /* FILE PATHS & CONSTANTS */
-    private const val MASTER_FILE = "aliases_master.json"
-    private const val CBOR_FILE = "aliases_optimized.cbor.gz"
+    private const val MASTER_FILE = "alias_master.json" // human-readable master (in assets/)
+    private const val CBOR_FILE = "aliases_optimized.cbor.gz" // binary index (in binaries/)
     private const val BINARIES = "binaries"
+    private const val ASSETS = "assets"
 
     /* JSON/CBOR SERIALIZERS */
     private val jsonPretty = Json {
@@ -134,46 +82,60 @@ object AliasManager {
                 return@withContext false
             }
 
-            val binaries = vt5.findFile(BINARIES)?.takeIf { it.isDirectory }
-                ?: vt5.createDirectory(BINARIES)
-
+            // Ensure binaries exists
+            val binaries = vt5.findFile(BINARIES)?.takeIf { it.isDirectory } ?: vt5.createDirectory(BINARIES)
             if (binaries == null) {
                 Log.e(TAG, "Cannot create binaries directory")
                 return@withContext false
             }
 
-            // Check if master file exists
-            val masterDoc = binaries.findFile(MASTER_FILE)
-
-            if (masterDoc != null && masterDoc.exists()) {
-                // Existing installation: load master
-                Log.i(TAG, "Loading existing aliases_master.json...")
-
-                val masterJson = context.contentResolver.openInputStream(masterDoc.uri)?.use {
+            // Prefer alias_master.json in assets (human-readable)
+            val assetsDir = vt5.findFile(ASSETS)?.takeIf { it.isDirectory } ?: vt5.createDirectory(ASSETS)
+            val masterDocAssets = assetsDir?.findFile(MASTER_FILE)
+            if (masterDocAssets != null && masterDocAssets.exists()) {
+                Log.i(TAG, "Loading existing alias_master.json from assets...")
+                val masterJson = context.contentResolver.openInputStream(masterDocAssets.uri)?.use {
                     it.readBytes().toString(Charsets.UTF_8)
                 }
-
-                if (masterJson != null) {
-                    val master = jsonPretty.decodeFromString<AliasMaster>(masterJson)
+                if (!masterJson.isNullOrBlank()) {
+                    val master = jsonPretty.decodeFromString(AliasMaster.serializer(), masterJson)
                     Log.i(TAG, "Loaded ${master.species.size} species, ${master.species.sumOf { it.aliases.size }} total aliases")
-
-                    // Ensure CBOR cache exists and is up-to-date
+                    // Ensure CBOR exists else rebuild
                     val cborDoc = binaries.findFile(CBOR_FILE)
                     if (cborDoc == null || !cborDoc.exists()) {
                         Log.w(TAG, "CBOR cache missing, regenerating...")
                         rebuildCborCache(master, binaries, context)
                     }
-
-                    // Hot-load into AliasMatcher
-                    com.yvesds.vt5.features.speech.AliasMatcher.ensureLoaded(context, saf)
-
+                    // Hot-load
+                    try { com.yvesds.vt5.features.speech.AliasMatcher.ensureLoaded(context, saf) } catch (_: Exception) {}
                     return@withContext true
                 }
             }
 
-            // First install: generate seed from species.json
+            // Fallback: maybe master exists in binaries (legacy placement)
+            val masterDocBinaries = binaries.findFile(MASTER_FILE)
+            if (masterDocBinaries != null && masterDocBinaries.exists()) {
+                Log.i(TAG, "Loading existing alias_master.json from binaries (legacy)...")
+                val masterJson = context.contentResolver.openInputStream(masterDocBinaries.uri)?.use {
+                    it.readBytes().toString(Charsets.UTF_8)
+                }
+                if (!masterJson.isNullOrBlank()) {
+                    val master = jsonPretty.decodeFromString(AliasMaster.serializer(), masterJson)
+                    Log.i(TAG, "Loaded ${master.species.size} species (from binaries), ${master.species.sumOf { it.aliases.size }} total aliases")
+                    // Ensure CBOR exists
+                    val cborDoc = binaries.findFile(CBOR_FILE)
+                    if (cborDoc == null || !cborDoc.exists()) {
+                        Log.w(TAG, "CBOR cache missing, regenerating...")
+                        rebuildCborCache(master, binaries, context)
+                    }
+                    try { com.yvesds.vt5.features.speech.AliasMatcher.ensureLoaded(context, saf) } catch (_: Exception) {}
+                    return@withContext true
+                }
+            }
+
+            // First install: generate seed from species.json (pass vt5 root so writeMaster writes to assets & binaries)
             Log.i(TAG, "First install detected, generating seed from species.json...")
-            generateSeedFromSpeciesJson(context, saf, binaries)
+            generateSeedFromSpeciesJson(context, saf, vt5)
 
             return@withContext true
 
@@ -251,65 +213,233 @@ object AliasManager {
         }
     }
 
-    /* SEED GENERATION */
-    private suspend fun generateSeedFromSpeciesJson(
-        context: Context,
-        saf: SaFStorageHelper,
-        binariesDir: androidx.documentfile.provider.DocumentFile
+    @kotlinx.serialization.ExperimentalSerializationApi
+    private suspend fun writeMasterAndCborToSaf(
+        context: android.content.Context,
+        master: AliasMaster,
+        vt5RootDir: androidx.documentfile.provider.DocumentFile
     ) = withContext(Dispatchers.IO) {
         try {
-            // Load species.json via ServerDataCache
-            val snapshot = ServerDataCache.getOrLoad(context)
+            val jsonPrettyLocal = Json { prettyPrint = true; encodeDefaults = true; ignoreUnknownKeys = true }
 
-            // Generate minimal seed (canonical + tilename per species)
-            val speciesList = snapshot.speciesById.map { (id, sp) ->
-                val canonicalAlias = generateAliasData(
-                    text = sp.soortnaam,
-                    source = "seed_canonical"
-                )
+            // --- ASSETS: pretty JSON ---
+            val assetsDir = vt5RootDir.findFile(ASSETS)?.takeIf { it.isDirectory } ?: vt5RootDir.createDirectory(ASSETS)
+            if (assetsDir == null) {
+                Log.e(TAG, "writeMasterAndCborToSaf: cannot access/create assets dir (vt5=${vt5RootDir.uri})")
+                return@withContext
+            }
 
-                val tilenameAlias = if (!sp.soortkey.equals(sp.soortnaam, ignoreCase = true)) {
-                    generateAliasData(
-                        text = sp.soortkey,
-                        source = "seed_tilename"
-                    )
-                } else {
-                    null  // Skip tilename if identical to canonical
+            val masterName = MASTER_FILE
+            // try to find existing or create new
+            val existingMaster = assetsDir.findFile(masterName)?.takeIf { it.isFile }
+            val masterDoc = existingMaster ?: kotlin.runCatching { assetsDir.createFile("application/json", masterName) }.getOrNull()
+            if (masterDoc == null) {
+                Log.e(TAG, "writeMasterAndCborToSaf: failed creating $masterName in assets")
+            } else {
+                val prettyJson = jsonPrettyLocal.encodeToString(AliasMaster.serializer(), master)
+                try {
+                    context.contentResolver.openOutputStream(masterDoc.uri, "w")?.use { os ->
+                        os.write(prettyJson.toByteArray(Charsets.UTF_8))
+                        os.flush()
+                    }
+                    Log.i(TAG, "writeMasterAndCborToSaf: wrote $masterName to ${masterDoc.uri} (${prettyJson.length} bytes)")
+                } catch (ex: Exception) {
+                    Log.e(TAG, "writeMasterAndCborToSaf: failed writing $masterName: ${ex.message}", ex)
                 }
+            }
+
+            // --- BINARIES: gzipped CBOR ---
+            val binariesDir = vt5RootDir.findFile(BINARIES)?.takeIf { it.isDirectory } ?: vt5RootDir.createDirectory(BINARIES)
+            if (binariesDir == null) {
+                Log.e(TAG, "writeMasterAndCborToSaf: cannot access/create binaries dir (vt5=${vt5RootDir.uri})")
+                return@withContext
+            }
+
+            val index = master.toAliasIndex()
+            val cborBytes = Cbor.encodeToByteArray(AliasIndex.serializer(), index)
+
+            val gzipped: ByteArray = ByteArrayOutputStream().use { baos ->
+                GZIPOutputStream(baos).use { gzip ->
+                    gzip.write(cborBytes)
+                    gzip.finish()
+                }
+                baos.toByteArray()
+            }
+
+            val cborName = CBOR_FILE
+            binariesDir.findFile(cborName)?.delete()
+            val cborDoc = binariesDir.createFile("application/octet-stream", cborName)
+            if (cborDoc != null) {
+                try {
+                    context.contentResolver.openOutputStream(cborDoc.uri, "w")?.use { os ->
+                        os.write(gzipped)
+                        os.flush()
+                    }
+                    Log.i(TAG, "writeMasterAndCborToSaf: wrote $cborName to ${cborDoc.uri} (${gzipped.size} bytes)")
+                } catch (ex: Exception) {
+                    Log.e(TAG, "writeMasterAndCborToSaf: failed writing $cborName: ${ex.message}", ex)
+                }
+            } else {
+                Log.e(TAG, "writeMasterAndCborToSaf: failed creating $cborName in binaries")
+            }
+
+        } catch (ex: Exception) {
+            Log.e(TAG, "writeMasterAndCborToSaf failed: ${ex.message}", ex)
+        }
+    }
+
+    /* SEED GENERATION */
+    @OptIn(ExperimentalSerializationApi::class)
+    private suspend fun generateSeedFromSpeciesJson(
+        context: android.content.Context,
+        saf: SaFStorageHelper,
+        vt5RootDir: androidx.documentfile.provider.DocumentFile
+    ) = withContext(Dispatchers.IO) {
+        try {
+            // locate serverdata
+            val serverDir = vt5RootDir.findFile("serverdata")?.takeIf { it.isDirectory }
+            if (serverDir == null) {
+                Log.w(TAG, "serverdata not available, aborting seed generation")
+                return@withContext
+            }
+
+            // list contents for diagnostics
+            kotlin.runCatching {
+                val present = serverDir.listFiles().mapNotNull { it.name }
+                Log.i(TAG, "serverdata contains: ${present.joinToString(", ")}")
+            }
+
+            // tolerant lookup for site_species file
+            val siteSpeciesFile = serverDir.listFiles().firstOrNull { doc ->
+                val nm = doc.name?.lowercase() ?: return@firstOrNull false
+                nm == "site_species.json" || nm == "site_species" || nm.startsWith("site_species")
+            }
+
+            if (siteSpeciesFile == null) {
+                Log.w(TAG, "No site_species file found in serverdata")
+                return@withContext
+            } else {
+                Log.i(TAG, "Using site_species file: ${siteSpeciesFile.name} (uri=${siteSpeciesFile.uri})")
+            }
+
+            val siteBytes: ByteArray? = kotlin.runCatching {
+                context.contentResolver.openInputStream(siteSpeciesFile.uri)?.use { it.readBytes() }
+            }.getOrNull()
+
+            if (siteBytes == null || siteBytes.isEmpty()) {
+                Log.w(TAG, "site_species file is empty or could not be read")
+                return@withContext
+            }
+
+            // strip BOM if present
+            val bytesNoBom = if (siteBytes.size >= 3 && siteBytes[0] == 0xEF.toByte() && siteBytes[1] == 0xBB.toByte() && siteBytes[2] == 0xBF.toByte()) {
+                siteBytes.copyOfRange(3, siteBytes.size)
+            } else siteBytes
+
+            val text = bytesNoBom.toString(Charsets.UTF_8).trim()
+            // try parse flexibly: top-level array or object with "json" or "data" keys
+            val siteSpeciesIds = mutableSetOf<String>()
+            kotlin.runCatching {
+                val root = Json.parseToJsonElement(text)
+                var arr = root.jsonArrayOrNull()
+                if (arr == null && root is kotlinx.serialization.json.JsonObject) {
+                    arr = root["json"]?.jsonArray ?: root["data"]?.jsonArray ?: root["items"]?.jsonArray
+                }
+                // fallback: search for first array of objects
+                if (arr == null && root is kotlinx.serialization.json.JsonObject) {
+                    for ((k, v) in root) {
+                        if (v is kotlinx.serialization.json.JsonArray) { arr = v; break }
+                    }
+                }
+                if (arr == null) {
+                    // try recursive search
+                    arr = root.findFirstArrayWithObjects()
+                }
+                if (arr != null) {
+                    arr.forEach { el ->
+                        if (el is kotlinx.serialization.json.JsonObject) {
+                            val sid = el["soortid"]?.jsonPrimitive?.contentOrNull
+                                ?: el["soort_id"]?.jsonPrimitive?.contentOrNull
+                                ?: el["soortId"]?.jsonPrimitive?.contentOrNull
+                                ?: el["id"]?.jsonPrimitive?.contentOrNull
+                            if (!sid.isNullOrBlank()) siteSpeciesIds.add(sid.lowercase().trim())
+                        }
+                    }
+                } else {
+                    Log.w(TAG, "site_species parsed but no usable array found")
+                }
+            }.onFailure {
+                Log.w(TAG, "Failed to parse site_species content: ${it.message}", it)
+            }
+
+            if (siteSpeciesIds.isEmpty()) {
+                Log.w(TAG, "No site_species entries found — aborting seed generation")
+                return@withContext
+            }
+
+            // Load species map (prefer ServerDataCache)
+            val snapshot = kotlin.runCatching { ServerDataCache.getOrLoad(context) }.getOrNull()
+            val speciesMap = mutableMapOf<String, Pair<String, String?>>()
+            if (snapshot != null) {
+                snapshot.speciesById.forEach { (k, v) ->
+                    speciesMap[k.lowercase()] = Pair(v.soortnaam ?: k, v.soortkey?.takeIf { it.isNotBlank() })
+                }
+            } else {
+                // fallback to reading species.json from serverdata
+                val speciesFile = serverDir.findFile("species.json")?.takeIf { it.isFile }
+                val speciesBytes = speciesFile?.let { doc -> kotlin.runCatching { context.contentResolver.openInputStream(doc.uri)?.use { it.readBytes() } }.getOrNull() }
+                if (speciesBytes != null) {
+                    kotlin.runCatching {
+                        val root = Json.parseToJsonElement(speciesBytes.toString(Charsets.UTF_8))
+                        val arr = root.jsonArrayOrNull() ?: root.jsonObject["json"]?.jsonArray
+                        arr?.forEach { el ->
+                            if (el is kotlinx.serialization.json.JsonObject) {
+                                val sid = el["soortid"]?.jsonPrimitive?.contentOrNull?.lowercase()?.trim() ?: return@forEach
+                                val naam = el["soortnaam"]?.jsonPrimitive?.contentOrNull ?: sid
+                                val key = el["soortkey"]?.jsonPrimitive?.contentOrNull
+                                speciesMap[sid] = Pair(naam, key?.takeIf { it.isNotBlank() })
+                            }
+                        }
+                    }.onFailure { Log.w(TAG, "Failed to parse species.json: ${it.message}") }
+                }
+            }
+
+            // Build deterministic, sorted list of site species ids
+            val sidList = siteSpeciesIds.toList().sortedWith(Comparator { a, b ->
+                val ai = a.toIntOrNull(); val bi = b.toIntOrNull()
+                when {
+                    ai != null && bi != null -> ai.compareTo(bi)
+                    ai != null && bi == null -> -1
+                    ai == null && bi != null -> 1
+                    else -> a.compareTo(b)
+                }
+            })
+
+            val speciesList = sidList.map { sid ->
+                val (naamRaw, keyRaw) = speciesMap[sid] ?: Pair(sid, null)
+                val canonical = naamRaw ?: sid
+                val tilename = keyRaw
+                val canonicalAlias = generateAliasData(text = canonical, source = "seed_canonical")
+                val tilenameAlias = if (!tilename.isNullOrBlank() && !tilename.equals(canonical, ignoreCase = true)) {
+                    generateAliasData(text = tilename, source = "seed_tilename")
+                } else null
 
                 SpeciesEntry(
-                    speciesId = id,
-                    canonical = sp.soortnaam,
-                    tilename = sp.soortkey,
+                    speciesId = sid,
+                    canonical = canonical,
+                    tilename = tilename,
                     aliases = listOfNotNull(canonicalAlias, tilenameAlias)
                 )
             }
 
-            val master = AliasMaster(
-                version = "2.1",
-                timestamp = Instant.now().toString(),
-                species = speciesList
-            )
+            // Write master (to assets) and CBOR (to binaries)
+            val master = AliasMaster(version = "2.1", timestamp = Instant.now().toString(), species = speciesList)
+            writeMasterAndCborToSaf(context, master, vt5RootDir)
 
-            // Write to SAF
-            val masterJson = jsonPretty.encodeToString(master)
-            val masterDoc = binariesDir.createFile("application/json", MASTER_FILE)
+            // Hot-load CBOR into matcher
+            try { com.yvesds.vt5.features.speech.AliasMatcher.ensureLoaded(context, saf) } catch (_: Exception) {}
 
-            if (masterDoc != null) {
-                context.contentResolver.openOutputStream(masterDoc.uri, "w")?.use {
-                    it.write(masterJson.toByteArray(Charsets.UTF_8))
-                    it.flush()
-                }
-
-                Log.i(TAG, "Seed generated: ${speciesList.size} species, ${speciesList.sumOf { it.aliases.size }} total aliases")
-
-                // Generate CBOR cache
-                rebuildCborCache(master, binariesDir, context)
-
-                // Load into AliasMatcher
-                com.yvesds.vt5.features.speech.AliasMatcher.ensureLoaded(context, saf)
-            }
-
+            Log.i(TAG, "Seed generated: ${speciesList.size} species, ${speciesList.sumOf { it.aliases.size }} total aliases")
         } catch (ex: Exception) {
             Log.e(TAG, "Seed generation failed: ${ex.message}", ex)
         }
@@ -317,14 +447,6 @@ object AliasManager {
 
     /**
      * Generate AliasData from text
-     *
-     * Computes:
-     * - norm: Normalized text
-     * - cologne: Cologne phonetic code
-     * - phonemes: IPA phonemes
-     *
-     * This version ensures cologne/phonemes are returned as consistent (non-null) strings
-     * to match the AliasData model (which uses non-null String fields).
      */
     private fun generateAliasData(text: String, source: String = "seed_canonical"): AliasData {
         val cleaned = normalizeLowerNoDiacritics(text)
@@ -334,11 +456,9 @@ object AliasManager {
         return AliasData(
             text = text.trim().lowercase(),
             norm = cleaned,
-            // AliasData model expects non-null Strings for cologne/phonemes — provide empty string when encoding fails
             cologne = col,
             phonemes = phon,
             source = source,
-            // consistent token for user-added aliases
             timestamp = if (source == "user_field_training") Instant.now().toString() else null
         )
     }
@@ -370,21 +490,22 @@ object AliasManager {
 
         try {
             val vt5 = saf.getVt5DirIfExists() ?: return@withContext
-            val binaries = vt5.findFile(BINARIES)?.takeIf { it.isDirectory } ?: return@withContext
-            val masterDoc = binaries.findFile(MASTER_FILE) ?: return@withContext
+            val assetsDir = vt5.findFile(ASSETS)?.takeIf { it.isDirectory } ?: vt5.createDirectory(ASSETS) ?: return@withContext
+            val masterDoc = assetsDir.findFile(MASTER_FILE) ?: assetsDir.createFile("application/json", MASTER_FILE) ?: return@withContext
 
-            // Load current master
-            val masterJson = context.contentResolver.openInputStream(masterDoc.uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
-                ?: return@withContext
-
-            val master = jsonPretty.decodeFromString(AliasMaster.serializer(), masterJson)
+            // Load current master (if present) or create minimal
+            val masterJson = context.contentResolver.openInputStream(masterDoc.uri)?.use { it.readBytes().toString(Charsets.UTF_8) } ?: ""
+            val master = if (masterJson.isBlank()) {
+                AliasMaster(version = "2.1", timestamp = Instant.now().toString(), species = emptyList())
+            } else {
+                jsonPretty.decodeFromString(AliasMaster.serializer(), masterJson)
+            }
 
             // Merge pending aliases into master
             val speciesMap = master.species.associateBy { it.speciesId }.toMutableMap()
 
             for ((_, pending) in writeQueue) {
                 val speciesEntry = speciesMap.getOrElse(pending.speciesId) {
-                    // If not present, create minimal SpeciesEntry with canonical from pending.canonical
                     SpeciesEntry(
                         speciesId = pending.speciesId,
                         canonical = pending.canonical,
@@ -393,10 +514,8 @@ object AliasManager {
                     ).also { speciesMap[pending.speciesId] = it }
                 }
 
-                // Prepare new AliasData
                 val newAlias = generateAliasData(pending.aliasText, source = "user_field_training").copy(timestamp = pending.timestamp)
 
-                // Deduplicate by norm/text
                 val existingNorms = speciesEntry.aliases.map { it.norm }.toMutableSet()
                 if (!existingNorms.contains(newAlias.norm)) {
                     val updatedAliasList = speciesEntry.aliases + newAlias
@@ -404,7 +523,6 @@ object AliasManager {
                 }
             }
 
-            // Build updated master
             val updatedMaster = master.copy(
                 timestamp = Instant.now().toString(),
                 species = speciesMap.values.sortedBy { it.speciesId }
@@ -412,7 +530,7 @@ object AliasManager {
 
             // Write master JSON (pretty)
             val updatedJson = jsonPretty.encodeToString(AliasMaster.serializer(), updatedMaster)
-            context.contentResolver.openOutputStream(masterDoc.uri, "wt")?.use {
+            context.contentResolver.openOutputStream(masterDoc.uri, "w")?.use {
                 it.write(updatedJson.toByteArray(Charsets.UTF_8))
                 it.flush()
             }
@@ -420,9 +538,9 @@ object AliasManager {
             Log.i(TAG, "Flushed ${writeQueue.size} pending aliases to master")
 
             // Regenerate CBOR cache from master.toAliasIndex()
+            val binaries = vt5.findFile(BINARIES)?.takeIf { it.isDirectory } ?: vt5.createDirectory(BINARIES) ?: return@withContext
             rebuildCborCache(updatedMaster, binaries, context)
 
-            // Clear the writeQueue
             writeQueue.clear()
         } catch (ex: Exception) {
             Log.e(TAG, "flushWriteQueue failed: ${ex.message}", ex)
@@ -433,10 +551,8 @@ object AliasManager {
     @OptIn(ExperimentalSerializationApi::class)
     private suspend fun rebuildCborCache(master: AliasMaster, binariesDir: androidx.documentfile.provider.DocumentFile, context: Context) = withContext(Dispatchers.IO) {
         try {
-            // Convert master -> AliasIndex (flat)
             val index = master.toAliasIndex()
 
-            // Serialize with CBOR and gzip
             val cborBytes = Cbor.encodeToByteArray(AliasIndex.serializer(), index)
             val gzipped = ByteArrayOutputStream().use { baos ->
                 GZIPOutputStream(baos).use { gzip ->
@@ -463,5 +579,27 @@ object AliasManager {
         val noDiacritics = decomposed.replace("\\p{Mn}+".toRegex(), "")
         val cleaned = noDiacritics.replace("[^\\p{L}\\p{Nd}]+".toRegex(), " ").trim()
         return cleaned.replace("\\s+".toRegex(), " ")
+    }
+
+    // small helpers for JsonElement convenience
+    private fun JsonElement.jsonArrayOrNull() = try { this.jsonArray } catch (_: Throwable) { null }
+    private fun JsonElement.findFirstArrayWithObjects(): kotlinx.serialization.json.JsonArray? {
+        when (this) {
+            is kotlinx.serialization.json.JsonArray -> {
+                if (this.any { it is kotlinx.serialization.json.JsonObject }) return this
+                for (el in this) {
+                    val found = el.findFirstArrayWithObjects()
+                    if (found != null) return found
+                }
+            }
+            is kotlinx.serialization.json.JsonObject -> {
+                for ((_, v) in this) {
+                    val found = v.findFirstArrayWithObjects()
+                    if (found != null) return found
+                }
+            }
+            else -> {}
+        }
+        return null
     }
 }

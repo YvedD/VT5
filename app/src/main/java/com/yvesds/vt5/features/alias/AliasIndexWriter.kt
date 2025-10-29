@@ -326,6 +326,87 @@ object AliasIndexWriter {
         }
     }
 
+    /**
+     * Public helper: preflight check for SAF environment focused on JSON serverfiles.
+     *
+     * - Validates Documents/VT5 root is set
+     * - Validates presence of subfolders (assets, serverdata, binaries)
+     * - Validates presence of the required server JSON files in serverdata:
+     *     - checkuser.json
+     *     - codes.json
+     *     - protocolinfo.json
+     *     - protocolspecies.json
+     *     - site_heights.json
+     *     - site_locations.json
+     *     - site_species.json
+     *     - sites.json
+     *     - species.json
+     *
+     * Returns a list of human-readable status lines that can be shown to the user.
+     */
+    fun preflightCheckSafOnly(context: android.content.Context, saf: com.yvesds.vt5.core.opslag.SaFStorageHelper): List<String> {
+        val messages = mutableListOf<String>()
+
+        val vt5 = saf.getVt5DirIfExists()
+        if (vt5 == null) {
+            messages += "SAF VT5 root niet ingesteld: kies 'Kies documenten' en selecteer Documents/VT5."
+            return messages
+        }
+
+        // assets
+        val assets = vt5.findFile("assets")?.takeIf { it.isDirectory }
+        messages += if (assets == null) {
+            "map: Documents/VT5/assets → NIET AANWEZIG"
+        } else {
+            "map: Documents/VT5/assets → aanwezig"
+        }
+
+        // serverdata
+        val serverdata = vt5.findFile("serverdata")?.takeIf { it.isDirectory }
+        if (serverdata == null) {
+            messages += "map: Documents/VT5/serverdata → NIET AANWEZIG"
+        } else {
+            messages += "map: Documents/VT5/serverdata → aanwezig"
+
+            // list of required server-side JSON files
+            val required = listOf(
+                "checkuser.json",
+                "codes.json",
+                "protocolinfo.json",
+                "protocolspecies.json",
+                "site_heights.json",
+                "site_locations.json",
+                "site_species.json",
+                "sites.json",
+                "species.json"
+            )
+
+            required.forEach { name ->
+                val doc = serverdata.findFile(name)?.takeIf { it.isFile }
+                if (doc == null) messages += "  - $name: NIET AANWEZIG"
+                else messages += "  - $name: gevonden"
+            }
+        }
+
+        // binaries
+        val binaries = vt5.findFile("binaries")?.takeIf { it.isDirectory }
+        if (binaries == null) {
+            messages += "map: Documents/VT5/binaries → NIET AANWEZIG"
+        } else {
+            messages += "map: Documents/VT5/binaries → aanwezig"
+            val cbor = binaries.findFile("aliases_optimized.cbor.gz")?.takeIf { it.isFile }
+            if (cbor == null) messages += "  - aliases_optimized.cbor.gz: NIET AANWEZIG"
+            else messages += "  - aliases_optimized.cbor.gz: gevonden"
+        }
+
+        // helpful summary hint (keeps user informed about JSON-based flow)
+        messages += ""
+        messages += "Opmerking: de app gebruikt JSON-based reindex (species.json/site_species.json)."
+        messages += "Précompute genereert alias_master.json (assets) en aliases_optimized.cbor.gz (binaries). CSV's worden niet meer aangemaakt."
+
+        return messages
+    }
+
     private fun writeStringToSaFOverwrite(context: Context, saf: SaFStorageHelper, subDirName: String, filename: String, content: String, mimeType: String = "text/plain"): Boolean {
         return writeBytesToSaFOverwrite(context, saf, subDirName, filename, content.toByteArray(Charsets.UTF_8), mimeType)
     }

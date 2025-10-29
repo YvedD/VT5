@@ -32,6 +32,13 @@ import java.time.Instant
  *  - The canonical runtime models are in AliasModels.kt (AliasMaster, SpeciesEntry, AliasData, AliasIndex, AliasRecord).
  */
 
+// Reused Json instance for this file to avoid repeated allocations
+private val json = Json {
+    prettyPrint = true
+    encodeDefaults = true
+    ignoreUnknownKeys = true
+}
+
 class AliasRepository(private val context: Context) {
 
     companion object {
@@ -167,7 +174,7 @@ class AliasRepository(private val context: Context) {
             val jsonString = appContext.contentResolver.openInputStream(masterDoc.uri)?.bufferedReader()?.use { it.readText() }
                 ?: return false
 
-            val master = Json.decodeFromString(AliasMaster.serializer(), jsonString)
+            val master = json.decodeFromString(AliasMaster.serializer(), jsonString)
 
             aliasCache.clear()
             for (entry in master.species) {
@@ -196,7 +203,7 @@ class AliasRepository(private val context: Context) {
 
             // Decode legacy wrapper structure
             val legacy = try {
-                Json.decodeFromString(LegacyAliasWrapper.serializer(), jsonString)
+                json.decodeFromString(LegacyAliasWrapper.serializer(), jsonString)
             } catch (ex: Exception) {
                 Log.w(TAG, "loadFromLegacyJson: cannot decode legacy wrapper: ${ex.message}")
                 return false
@@ -348,7 +355,7 @@ class AliasRepository(private val context: Context) {
             // Write to binaries/aliases_master.json
             val binaries = vt5Dir.findFile("binaries")?.takeIf { it.isDirectory } ?: vt5Dir.createDirectory("binaries") ?: return@withContext false
             val outFile = binaries.findFile(ALIAS_MASTER_FILE)?.also { it.delete() } ?: binaries.createFile("application/json", ALIAS_MASTER_FILE) ?: return@withContext false
-            val jsonText = Json { prettyPrint = true; encodeDefaults = true }.encodeToString(AliasMaster.serializer(), master)
+            val jsonText = json.encodeToString(AliasMaster.serializer(), master)
             appContext.contentResolver.openOutputStream(outFile.uri)?.use { os ->
                 os.write(jsonText.toByteArray(Charsets.UTF_8))
                 os.flush()
