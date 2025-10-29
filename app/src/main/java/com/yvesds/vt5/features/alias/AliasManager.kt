@@ -2,6 +2,7 @@ package com.yvesds.vt5.features.alias
 
 import android.content.Context
 import android.util.Log
+import androidx.documentfile.provider.DocumentFile
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.features.serverdata.model.ServerDataCache
 import com.yvesds.vt5.features.speech.ColognePhonetic
@@ -31,6 +32,10 @@ import kotlinx.serialization.json.contentOrNull
  * Focus: seed generation from site_species.json + species.json,
  * writing alias_master.json to /assets and aliases_optimized.cbor.gz to /binaries,
  * plus hotpatch + batched write queue.
+ *
+ * Important behavior:
+ * - If an existing alias_master.json is present, user aliases (source starting with "user" or "user_field_training")
+ *   are merged into any newly generated master before writing to disk — no user aliases are lost.
  */
 
 object AliasManager {
@@ -98,17 +103,24 @@ object AliasManager {
                     it.readBytes().toString(Charsets.UTF_8)
                 }
                 if (!masterJson.isNullOrBlank()) {
-                    val master = jsonPretty.decodeFromString(AliasMaster.serializer(), masterJson)
-                    Log.i(TAG, "Loaded ${master.species.size} species, ${master.species.sumOf { it.aliases.size }} total aliases")
-                    // Ensure CBOR exists else rebuild
-                    val cborDoc = binaries.findFile(CBOR_FILE)
-                    if (cborDoc == null || !cborDoc.exists()) {
-                        Log.w(TAG, "CBOR cache missing, regenerating...")
-                        rebuildCborCache(master, binaries, context)
+                    val master = try {
+                        jsonPretty.decodeFromString(AliasMaster.serializer(), masterJson)
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "Failed to decode existing alias_master.json: ${ex.message}")
+                        null
                     }
-                    // Hot-load
-                    try { com.yvesds.vt5.features.speech.AliasMatcher.ensureLoaded(context, saf) } catch (_: Exception) {}
-                    return@withContext true
+                    if (master != null) {
+                        Log.i(TAG, "Loaded ${master.species.size} species, ${master.species.sumOf { it.aliases.size }} total aliases")
+                        // Ensure CBOR exists else rebuild
+                        val cborDoc = binaries.findFile(CBOR_FILE)
+                        if (cborDoc == null || !cborDoc.exists()) {
+                            Log.w(TAG, "CBOR cache missing, regenerating...")
+                            rebuildCborCache(master, binaries, context)
+                        }
+                        // Hot-load
+                        try { com.yvesds.vt5.features.speech.AliasMatcher.ensureLoaded(context, saf) } catch (_: Exception) {}
+                        return@withContext true
+                    }
                 }
             }
 
@@ -120,16 +132,23 @@ object AliasManager {
                     it.readBytes().toString(Charsets.UTF_8)
                 }
                 if (!masterJson.isNullOrBlank()) {
-                    val master = jsonPretty.decodeFromString(AliasMaster.serializer(), masterJson)
-                    Log.i(TAG, "Loaded ${master.species.size} species (from binaries), ${master.species.sumOf { it.aliases.size }} total aliases")
-                    // Ensure CBOR exists
-                    val cborDoc = binaries.findFile(CBOR_FILE)
-                    if (cborDoc == null || !cborDoc.exists()) {
-                        Log.w(TAG, "CBOR cache missing, regenerating...")
-                        rebuildCborCache(master, binaries, context)
+                    val master = try {
+                        jsonPretty.decodeFromString(AliasMaster.serializer(), masterJson)
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "Failed to decode legacy master: ${ex.message}")
+                        null
                     }
-                    try { com.yvesds.vt5.features.speech.AliasMatcher.ensureLoaded(context, saf) } catch (_: Exception) {}
-                    return@withContext true
+                    if (master != null) {
+                        Log.i(TAG, "Loaded ${master.species.size} species (from binaries), ${master.species.sumOf { it.aliases.size }} total aliases")
+                        // Ensure CBOR exists
+                        val cborDoc = binaries.findFile(CBOR_FILE)
+                        if (cborDoc == null || !cborDoc.exists()) {
+                            Log.w(TAG, "CBOR cache missing, regenerating...")
+                            rebuildCborCache(master, binaries, context)
+                        }
+                        try { com.yvesds.vt5.features.speech.AliasMatcher.ensureLoaded(context, saf) } catch (_: Exception) {}
+                        return@withContext true
+                    }
                 }
             }
 
@@ -217,7 +236,7 @@ object AliasManager {
     private suspend fun writeMasterAndCborToSaf(
         context: android.content.Context,
         master: AliasMaster,
-        vt5RootDir: androidx.documentfile.provider.DocumentFile
+        vt5RootDir: DocumentFile
     ) = withContext(Dispatchers.IO) {
         try {
             val jsonPrettyLocal = Json { prettyPrint = true; encodeDefaults = true; ignoreUnknownKeys = true }
@@ -231,6 +250,7 @@ object AliasManager {
 
             val masterName = MASTER_FILE
             // try to find existing or create new
+            // prefer openOutputStream truncation write (atomic enough for our use)
             val existingMaster = assetsDir.findFile(masterName)?.takeIf { it.isFile }
             val masterDoc = existingMaster ?: kotlin.runCatching { assetsDir.createFile("application/json", masterName) }.getOrNull()
             if (masterDoc == null) {
@@ -293,7 +313,7 @@ object AliasManager {
     private suspend fun generateSeedFromSpeciesJson(
         context: android.content.Context,
         saf: SaFStorageHelper,
-        vt5RootDir: androidx.documentfile.provider.DocumentFile
+        vt5RootDir: DocumentFile
     ) = withContext(Dispatchers.IO) {
         try {
             // locate serverdata
@@ -432,16 +452,151 @@ object AliasManager {
                 )
             }
 
+            // Build new master, then merge user aliases from any existing master BEFORE writing
+            val newMaster = AliasMaster(version = "2.1", timestamp = Instant.now().toString(), species = speciesList)
+            val mergedMaster = mergeUserAliasesIntoMaster(context, vt5RootDir, newMaster)
+
             // Write master (to assets) and CBOR (to binaries)
-            val master = AliasMaster(version = "2.1", timestamp = Instant.now().toString(), species = speciesList)
-            writeMasterAndCborToSaf(context, master, vt5RootDir)
+            writeMasterAndCborToSaf(context, mergedMaster, vt5RootDir)
 
             // Hot-load CBOR into matcher
             try { com.yvesds.vt5.features.speech.AliasMatcher.ensureLoaded(context, saf) } catch (_: Exception) {}
 
-            Log.i(TAG, "Seed generated: ${speciesList.size} species, ${speciesList.sumOf { it.aliases.size }} total aliases")
+            Log.i(TAG, "Seed generated: ${mergedMaster.species.size} species, ${mergedMaster.species.sumOf { it.aliases.size }} total aliases")
         } catch (ex: Exception) {
             Log.e(TAG, "Seed generation failed: ${ex.message}", ex)
+        }
+    }
+
+    /**
+     * Merge user-added aliases from the existing master (if any) into the new master.
+     *
+     * - Reads existing assets/alias_master.json if present.
+     * - Collects aliases with source starting with "user" (incl. "user_field_training").
+     * - Ensures norm/cologne/phonemes are present (computes if missing).
+     * - Inserts aliases into the corresponding species in newMaster (creates species entry if needed).
+     * - Avoids duplicates by norm within a species.
+     * - Logs conflicts (alias norm mapped to other species) but keeps user alias on their species.
+     */
+    private suspend fun mergeUserAliasesIntoMaster(
+        context: android.content.Context,
+        vt5RootDir: DocumentFile,
+        newMaster: AliasMaster
+    ): AliasMaster = withContext(Dispatchers.IO) {
+        try {
+            val assets = vt5RootDir.findFile(ASSETS)?.takeIf { it.isDirectory } ?: return@withContext newMaster
+
+            val existingDoc = assets.findFile(MASTER_FILE)?.takeIf { it.isFile }
+            if (existingDoc == null) return@withContext newMaster
+
+            val existingJson = try {
+                context.contentResolver.openInputStream(existingDoc.uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+            } catch (ex: Exception) {
+                Log.w(TAG, "mergeUserAliasesIntoMaster: cannot read existing master: ${ex.message}")
+                null
+            }
+            if (existingJson.isNullOrBlank()) return@withContext newMaster
+
+            val existingMaster = try {
+                jsonPretty.decodeFromString(AliasMaster.serializer(), existingJson)
+            } catch (ex: Exception) {
+                Log.w(TAG, "mergeUserAliasesIntoMaster: failed to decode existing master: ${ex.message}")
+                return@withContext newMaster
+            }
+
+            // collect user aliases grouped by speciesId
+            val userAliasesBySpecies = mutableMapOf<String, MutableList<AliasData>>()
+            existingMaster.species.forEach { sp ->
+                sp.aliases.forEach { a ->
+                    val src = a.source ?: ""
+                    if (src.startsWith("user") || src == "user_field_training") {
+                        var alias = a
+                        // ensure norm
+                        if (alias.norm.isBlank()) {
+                            alias = alias.copy(norm = normalizeLowerNoDiacritics(alias.text))
+                        }
+                        // ensure cologne
+                        if (alias.cologne.isBlank()) {
+                            alias = alias.copy(cologne = runCatching { ColognePhonetic.encode(alias.norm) }.getOrNull() ?: "")
+                        }
+                        // ensure phonemes
+                        if (alias.phonemes.isBlank()) {
+                            alias = alias.copy(phonemes = runCatching { DutchPhonemizer.phonemize(alias.norm) }.getOrNull() ?: "")
+                        }
+                        userAliasesBySpecies.getOrPut(sp.speciesId) { mutableListOf() }.add(alias)
+                    }
+                }
+            }
+
+            if (userAliasesBySpecies.isEmpty()) {
+                Log.i(TAG, "mergeUserAliasesIntoMaster: no user aliases to merge")
+                return@withContext newMaster
+            }
+
+            // Build quick lookup for norms present in newMaster and map norms -> species
+            val newSpeciesMap = newMaster.species.associateBy { it.speciesId }.toMutableMap()
+            val normToSpecies = mutableMapOf<String, MutableSet<String>>()
+            newSpeciesMap.forEach { (sid, sp) ->
+                sp.aliases.forEach { a -> if (a.norm.isNotBlank()) normToSpecies.getOrPut(a.norm) { mutableSetOf() }.add(sid) }
+                val canonNorm = normalizeLowerNoDiacritics(sp.canonical)
+                if (canonNorm.isNotBlank()) normToSpecies.getOrPut(canonNorm) { mutableSetOf() }.add(sid)
+                sp.tilename?.let {
+                    val tilNorm = normalizeLowerNoDiacritics(it)
+                    if (tilNorm.isNotBlank()) normToSpecies.getOrPut(tilNorm) { mutableSetOf() }.add(sid)
+                }
+            }
+
+            val conflicts = mutableListOf<String>()
+            var mergedAdded = 0
+
+            // Merge user aliases into new species map
+            for ((sid, uAliases) in userAliasesBySpecies) {
+                val target = newSpeciesMap.getOrPut(sid) {
+                    val existingSpecies = existingMaster.species.firstOrNull { it.speciesId == sid }
+                    val canonical = existingSpecies?.canonical ?: sid
+                    val tilename = existingSpecies?.tilename
+                    SpeciesEntry(speciesId = sid, canonical = canonical, tilename = tilename, aliases = emptyList())
+                }
+
+                val existingNorms = target.aliases.map { it.norm }.toMutableSet()
+
+                val toAppend = mutableListOf<AliasData>()
+                for (ua in uAliases) {
+                    val norm = ua.norm.ifBlank { normalizeLowerNoDiacritics(ua.text) }
+                    val mapped = normToSpecies[norm]
+                    if (mapped != null && !(mapped.size == 1 && mapped.contains(sid))) {
+                        conflicts.add("alias='${ua.text}' norm='$norm' mappedTo=${mapped.joinToString(",")} userSpecies=$sid")
+                    }
+                    if (!existingNorms.contains(norm)) {
+                        var finalAlias = ua
+                        if (finalAlias.norm.isBlank()) finalAlias = finalAlias.copy(norm = norm)
+                        if (finalAlias.cologne.isBlank()) finalAlias = finalAlias.copy(cologne = runCatching { ColognePhonetic.encode(norm) }.getOrNull() ?: "")
+                        if (finalAlias.phonemes.isBlank()) finalAlias = finalAlias.copy(phonemes = runCatching { DutchPhonemizer.phonemize(norm) }.getOrNull() ?: "")
+                        val source = if (finalAlias.source.isNullOrBlank()) "user_field_training" else finalAlias.source
+                        val timestamp = finalAlias.timestamp ?: Instant.now().toString()
+                        finalAlias = finalAlias.copy(source = source, timestamp = timestamp)
+                        toAppend.add(finalAlias)
+                        existingNorms.add(norm)
+                        normToSpecies.getOrPut(norm) { mutableSetOf() }.add(sid)
+                    }
+                }
+
+                if (toAppend.isNotEmpty()) {
+                    newSpeciesMap[sid] = target.copy(aliases = target.aliases + toAppend)
+                    mergedAdded += toAppend.size
+                }
+            }
+
+            if (conflicts.isNotEmpty()) {
+                Log.w(TAG, "mergeUserAliasesIntoMaster: conflicts detected (${conflicts.size}); example: ${conflicts.firstOrNull()}")
+            }
+
+            val merged = newMaster.copy(species = newSpeciesMap.values.sortedBy { it.speciesId })
+            Log.i(TAG, "mergeUserAliasesIntoMaster: merged user aliases; added=$mergedAdded conflicts=${conflicts.size}")
+            return@withContext merged
+        } catch (ex: Exception) {
+            Log.e(TAG, "mergeUserAliasesIntoMaster failed: ${ex.message}", ex)
+            return@withContext newMaster
         }
     }
 
@@ -549,7 +704,7 @@ object AliasManager {
 
     /* CBOR CACHE GENERATION */
     @OptIn(ExperimentalSerializationApi::class)
-    private suspend fun rebuildCborCache(master: AliasMaster, binariesDir: androidx.documentfile.provider.DocumentFile, context: Context) = withContext(Dispatchers.IO) {
+    private suspend fun rebuildCborCache(master: AliasMaster, binariesDir: DocumentFile, context: Context) = withContext(Dispatchers.IO) {
         try {
             val index = master.toAliasIndex()
 
