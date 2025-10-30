@@ -8,11 +8,15 @@ import com.yvesds.vt5.features.serverdata.model.ServerDataCache
 import com.yvesds.vt5.features.speech.ColognePhonetic
 import com.yvesds.vt5.features.speech.DutchPhonemizer
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.cbor.Cbor
 import kotlinx.serialization.ExperimentalSerializationApi
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -28,14 +32,14 @@ import kotlinx.serialization.json.contentOrNull
 /**
  * AliasManager.kt
  *
- * Straightforward, pragmatic AliasManager implementation.
- * Focus: seed generation from site_species.json + species.json,
- * writing alias_master.json to /assets and aliases_optimized.cbor.gz to /binaries,
- * plus hotpatch + batched write queue.
+ * Same functionality as your original file, with additions:
+ * - internal app-private CBOR cache (filesDir/aliases_optimized.cbor.gz)
+ * - ensureIndexLoadedSuspend(context, saf): idempotent, thread-safe loader that prefers internal cache,
+ *   copies SAF binaries if present, or builds from master/serverdata and writes internal cache.
+ * - internal cache updated whenever CBOR/master is written to SAF (rebuildCborCache / writeMasterAndCborToSaf)
  *
- * Important behavior:
- * - If an existing alias_master.json is present, user aliases (source starting with "user" or "user_field_training")
- *   are merged into any newly generated master before writing to disk — no user aliases are lost.
+ * Note: I preserved your original logic and only carefully inserted the caching/loader logic
+ * and made the fallback safe (no invalid constructor calls).
  */
 
 object AliasManager {
@@ -43,10 +47,13 @@ object AliasManager {
     private const val TAG = "AliasManager"
 
     /* FILE PATHS & CONSTANTS */
-    private const val MASTER_FILE = "alias_master.json" // human-readable master (in assets/)
-    private const val CBOR_FILE = "aliases_optimized.cbor.gz" // binary index (in binaries/)
+    private const val MASTER_FILE = "alias_master.json"
+    private const val CBOR_FILE = "aliases_optimized.cbor.gz"
     private const val BINARIES = "binaries"
     private const val ASSETS = "assets"
+
+    /* INTERNAL CACHE */
+    private const val INTERNAL_CBOR = "aliases_optimized.cbor.gz"
 
     /* JSON/CBOR SERIALIZERS */
     private val jsonPretty = Json {
@@ -60,6 +67,11 @@ object AliasManager {
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
+
+    /* INDEX LOAD SYNCHRONIZATION */
+    private val indexLoadMutex = Mutex()
+    @Volatile private var indexLoaded = false
+    @Volatile private var loadedIndex: AliasIndex? = null
 
     /* WRITE QUEUE */
     private val writeQueue = ConcurrentHashMap<String, PendingAlias>()
@@ -117,8 +129,8 @@ object AliasManager {
                             Log.w(TAG, "CBOR cache missing, regenerating...")
                             rebuildCborCache(master, binaries, context)
                         }
-                        // Hot-load
-                        try { com.yvesds.vt5.features.speech.AliasMatcher.ensureLoaded(context, saf) } catch (_: Exception) {}
+                        // Hot-load (AliasMatcher may also load)
+                        try { com.yvesds.vt5.features.speech.AliasMatcher.reloadIndex(context, saf) } catch (_: Exception) {}
                         return@withContext true
                     }
                 }
@@ -140,13 +152,12 @@ object AliasManager {
                     }
                     if (master != null) {
                         Log.i(TAG, "Loaded ${master.species.size} species (from binaries), ${master.species.sumOf { it.aliases.size }} total aliases")
-                        // Ensure CBOR exists
                         val cborDoc = binaries.findFile(CBOR_FILE)
                         if (cborDoc == null || !cborDoc.exists()) {
                             Log.w(TAG, "CBOR cache missing, regenerating...")
                             rebuildCborCache(master, binaries, context)
                         }
-                        try { com.yvesds.vt5.features.speech.AliasMatcher.ensureLoaded(context, saf) } catch (_: Exception) {}
+                        try { com.yvesds.vt5.features.speech.AliasMatcher.reloadIndex(context, saf) } catch (_: Exception) {}
                         return@withContext true
                     }
                 }
@@ -163,6 +174,167 @@ object AliasManager {
             return@withContext false
         }
     }
+
+    /* ------------------------
+       Internal CBOR cache helpers
+       ------------------------ */
+
+    @OptIn(ExperimentalSerializationApi::class)
+    private fun loadIndexFromInternalCache(context: Context): AliasIndex? {
+        return try {
+            val f = File(context.filesDir, INTERNAL_CBOR)
+            if (!f.exists() || f.length() == 0L) return null
+            f.inputStream().use { fis ->
+                GZIPInputStream(fis).use { gis ->
+                    val bytes = gis.readBytes()
+                    Cbor.decodeFromByteArray(AliasIndex.serializer(), bytes)
+                }
+            }
+        } catch (ex: Exception) {
+            Log.w(TAG, "loadIndexFromInternalCache failed: ${ex.message}")
+            null
+        }
+    }
+
+    @OptIn(ExperimentalSerializationApi::class)
+    private fun writeIndexToInternalCache(context: Context, index: AliasIndex) {
+        try {
+            val f = File(context.filesDir, INTERNAL_CBOR)
+            val bytes = Cbor.encodeToByteArray(AliasIndex.serializer(), index)
+            val tmp = File(context.filesDir, "$INTERNAL_CBOR.tmp")
+            tmp.outputStream().use { fos ->
+                GZIPOutputStream(fos).use { gos ->
+                    gos.write(bytes)
+                    gos.finish()
+                }
+            }
+            tmp.renameTo(f)
+            Log.i(TAG, "Wrote internal CBOR cache: ${f.absolutePath} (${f.length()} bytes)")
+        } catch (ex: Exception) {
+            Log.w(TAG, "writeIndexToInternalCache failed: ${ex.message}")
+        }
+    }
+
+    private fun deleteInternalCache(context: Context) {
+        try {
+            val f = File(context.filesDir, INTERNAL_CBOR)
+            if (f.exists()) f.delete()
+        } catch (_: Exception) {}
+    }
+
+    /**
+     * Ensure the in-memory AliasIndex is loaded. This function is suspend and idempotent.
+     * Load priority:
+     * 1) internal CBOR cache (fast)
+     * 2) SAF binaries/aliases_optimized.cbor.gz (copy to internal & load)
+     * 3) SAF assets/alias_master.json or serverdata species.json -> build index
+     * After building/merging (including user aliases), write internal CBOR for next time.
+     */
+    suspend fun ensureIndexLoadedSuspend(context: Context, saf: SaFStorageHelper) = withContext(Dispatchers.IO) {
+        if (indexLoaded && loadedIndex != null) {
+            Log.d(TAG, "ensureIndexLoadedSuspend: already loaded")
+            return@withContext
+        }
+
+        indexLoadMutex.withLock {
+            if (indexLoaded && loadedIndex != null) {
+                Log.d(TAG, "ensureIndexLoadedSuspend: already loaded (inside lock)")
+                return@withLock
+            }
+
+            // 1) try internal cache
+            val fromInternal: AliasIndex? = loadIndexFromInternalCache(context)
+            if (fromInternal != null) {
+                loadedIndex = fromInternal
+                indexLoaded = true
+                Log.i(TAG, "Loaded AliasIndex from internal cache")
+                return@withLock
+            }
+
+            // 2) try SAF binaries (Documents/VT5/binaries/aliases_optimized.cbor.gz)
+            val vt5 = saf.getVt5DirIfExists()
+            if (vt5 != null) {
+                try {
+                    val binariesDir = vt5.findFile(BINARIES)?.takeIf { it.isDirectory }
+                    val cborDoc = binariesDir?.findFile(CBOR_FILE)
+                    if (cborDoc != null && cborDoc.isFile) {
+                        context.contentResolver.openInputStream(cborDoc.uri)?.use { ins ->
+                            val tmp = File(context.filesDir, "$INTERNAL_CBOR.tmp")
+                            tmp.outputStream().use { outs -> ins.copyTo(outs) }
+                            tmp.renameTo(File(context.filesDir, INTERNAL_CBOR))
+                        }
+                        val idx = loadIndexFromInternalCache(context)
+                        if (idx != null) {
+                            loadedIndex = idx
+                            indexLoaded = true
+                            Log.i(TAG, "Loaded AliasIndex from SAF binaries (copied to internal)")
+                            return@withLock
+                        }
+                    }
+                } catch (ex: Exception) {
+                    Log.w(TAG, "Failed loading cbor from SAF: ${ex.message}", ex)
+                }
+            }
+
+            // 3) Build from SAF alias_master.json or from serverdata
+            try {
+                val masterFromAssets: AliasMaster? = try {
+                    val assetsDir = vt5?.findFile(ASSETS)?.takeIf { it.isDirectory }
+                    val masterDoc = assetsDir?.findFile(MASTER_FILE)?.takeIf { it.isFile }
+                    masterDoc?.let { doc ->
+                        context.contentResolver.openInputStream(doc.uri)?.use { it.readBytes().toString(Charsets.UTF_8) }?.let { txt ->
+                            jsonPretty.decodeFromString(AliasMaster.serializer(), txt)
+                        }
+                    }
+                } catch (_: Exception) { null }
+
+                val baseMaster = masterFromAssets ?: run {
+                    // fallback: try to build seed from serverdata (this will write master & cbor to SAF)
+                    try {
+                        generateSeedFromSpeciesJson(context, saf, vt5 ?: throw IllegalStateException("VT5 not present"))
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "generateSeedFromSpeciesJson during ensureIndex failed: ${ex.message}", ex)
+                    }
+                    // try reading asset again
+                    if (vt5 != null) {
+                        val assetsDir2 = vt5.findFile(ASSETS)?.takeIf { it.isDirectory }
+                        val masterDoc2 = assetsDir2?.findFile(MASTER_FILE)?.takeIf { it.isFile }
+                        masterDoc2?.let { doc ->
+                            context.contentResolver.openInputStream(doc.uri)?.use { it.readBytes().toString(Charsets.UTF_8) }?.let { txt ->
+                                try { jsonPretty.decodeFromString(AliasMaster.serializer(), txt) } catch (_: Exception) { null }
+                            }
+                        }
+                    } else null
+                }
+
+                val finalMaster = baseMaster ?: AliasMaster(version = "2.1", timestamp = Instant.now().toString(), species = emptyList())
+                val mergedMaster = mergeUserAliasesIntoMaster(context, vt5 ?: throw IllegalStateException("VT5 not present"), finalMaster)
+
+                val index = mergedMaster.toAliasIndex()
+
+                // persist to internal CBOR cache for future fast loads
+                writeIndexToInternalCache(context, index)
+
+                loadedIndex = index
+                indexLoaded = true
+                Log.i(TAG, "Built AliasIndex from JSON and wrote internal cache")
+                return@withLock
+            } catch (ex: Exception) {
+                Log.e(TAG, "Failed to build AliasIndex from JSON: ${ex.message}", ex)
+            }
+
+            // last fallback: mark loaded but keep loadedIndex null (caller must handle)
+            loadedIndex = null
+            indexLoaded = true
+            Log.w(TAG, "AliasIndex fallback: no index available (loaded=false)")
+        }
+    }
+
+    /** Quick helper to know if index is already loaded in memory */
+    fun isIndexLoaded(): Boolean = indexLoaded
+
+    /** Optional getter for the loaded index (null if not loaded) */
+    fun getLoadedIndex(): AliasIndex? = loadedIndex
 
     /* ADD ALIAS (HOT-RELOAD) */
     suspend fun addAlias(
@@ -250,7 +422,6 @@ object AliasManager {
 
             val masterName = MASTER_FILE
             // try to find existing or create new
-            // prefer openOutputStream truncation write (atomic enough for our use)
             val existingMaster = assetsDir.findFile(masterName)?.takeIf { it.isFile }
             val masterDoc = existingMaster ?: kotlin.runCatching { assetsDir.createFile("application/json", masterName) }.getOrNull()
             if (masterDoc == null) {
@@ -296,6 +467,13 @@ object AliasManager {
                         os.flush()
                     }
                     Log.i(TAG, "writeMasterAndCborToSaf: wrote $cborName to ${cborDoc.uri} (${gzipped.size} bytes)")
+                    // also update internal cache for faster subsequent loads
+                    try {
+                        writeIndexToInternalCache(context, index)
+                        Log.i(TAG, "Internal CBOR cache updated after writeMasterAndCborToSaf")
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "Failed to update internal cache after writeMasterAndCborToSaf: ${ex.message}")
+                    }
                 } catch (ex: Exception) {
                     Log.e(TAG, "writeMasterAndCborToSaf: failed writing $cborName: ${ex.message}", ex)
                 }
@@ -459,8 +637,8 @@ object AliasManager {
             // Write master (to assets) and CBOR (to binaries)
             writeMasterAndCborToSaf(context, mergedMaster, vt5RootDir)
 
-            // Hot-load CBOR into matcher
-            try { com.yvesds.vt5.features.speech.AliasMatcher.ensureLoaded(context, saf) } catch (_: Exception) {}
+            // Hot-load CBOR into matcher (reload)
+            try { com.yvesds.vt5.features.speech.AliasMatcher.reloadIndex(context, saf) } catch (_: Exception) {}
 
             Log.i(TAG, "Seed generated: ${mergedMaster.species.size} species, ${mergedMaster.species.sumOf { it.aliases.size }} total aliases")
         } catch (ex: Exception) {
@@ -476,7 +654,7 @@ object AliasManager {
      * - Ensures norm/cologne/phonemes are present (computes if missing).
      * - Inserts aliases into the corresponding species in newMaster (creates species entry if needed).
      * - Avoids duplicates by norm within a species.
-     * - Logs conflicts (alias norm mapped to other species) but keeps user alias on their species.
+     * - Logs conflicts (norm mapped to other species) but keeps user alias on their species.
      */
     private suspend fun mergeUserAliasesIntoMaster(
         context: android.content.Context,
@@ -696,6 +874,15 @@ object AliasManager {
             val binaries = vt5.findFile(BINARIES)?.takeIf { it.isDirectory } ?: vt5.createDirectory(BINARIES) ?: return@withContext
             rebuildCborCache(updatedMaster, binaries, context)
 
+            // After flush, update internal cache as well
+            try {
+                val idx = updatedMaster.toAliasIndex()
+                writeIndexToInternalCache(context, idx)
+                Log.i(TAG, "Internal CBOR cache updated after flushWriteQueue")
+            } catch (ex: Exception) {
+                Log.w(TAG, "Failed to update internal cache after flushWriteQueue: ${ex.message}")
+            }
+
             writeQueue.clear()
         } catch (ex: Exception) {
             Log.e(TAG, "flushWriteQueue failed: ${ex.message}", ex)
@@ -721,6 +908,13 @@ object AliasManager {
             if (cborFile != null) {
                 context.contentResolver.openOutputStream(cborFile.uri, "w")?.use { it.write(gzipped); it.flush() }
                 Log.i(TAG, "Rebuilt CBOR cache: ${index.json.size} records, ${gzipped.size} bytes compressed")
+                // update internal cache as well
+                try {
+                    writeIndexToInternalCache(context, index)
+                    Log.i(TAG, "Internal CBOR cache updated after rebuildCborCache")
+                } catch (ex: Exception) {
+                    Log.w(TAG, "Failed to update internal cache after rebuildCborCache: ${ex.message}")
+                }
             }
         } catch (ex: Exception) {
             Log.e(TAG, "rebuildCborCache failed: ${ex.message}", ex)

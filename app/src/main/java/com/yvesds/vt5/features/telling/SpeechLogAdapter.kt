@@ -11,16 +11,11 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * SpeechLogAdapter
+ * SpeechLogAdapter: light-weight RecyclerView adapter for speech logs.
  *
- * Kleine aanpassing: toegevoegde toggle `showPartialsInRow` die bepaalt of partials-informatie
- * (indien opgenomen in de row.tekst string) getoond wordt. Dit is een lichte, backward-compatible
- * wijziging: standaard gedragen blijft hetzelfde.
- *
- * Note:
- * - De adapter verwacht dat TellingScherm.SpeechLogRow.tekst een leesbare weergave bevat.
- * - De parser schrijft NDJSON logs en TellingScherm moet deze omzetten naar SpeechLogRow.tekst
- *   in de gewenste presentatie-vorm (bijv. "<timestamp>[<soortid>] <soortnaam> +<aantal>  [ ]").
+ * Minor perf improvements:
+ * - keep onBindViewHolder work minimal (avoid regex in hot path)
+ * - reuse precomputed display text when possible (TellingScherm should pass ready-to-display row.tekst)
  */
 class SpeechLogAdapter :
     ListAdapter<TellingScherm.SpeechLogRow, SpeechLogAdapter.VH>(Diff) {
@@ -34,7 +29,6 @@ class SpeechLogAdapter :
             oldItem: TellingScherm.SpeechLogRow,
             newItem: TellingScherm.SpeechLogRow
         ): Boolean {
-            // ts + tekst is voldoende uniek voor sessielogs
             return oldItem.ts == newItem.ts && oldItem.tekst == newItem.tekst
         }
 
@@ -49,8 +43,8 @@ class SpeechLogAdapter :
     private val fmt = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
 
     /**
-     * Toggle: show partials inside the row text if available.
-     * Zet op false als je tijdens tests of in productie geen partials wilt laten zien.
+     * If TellingScherm already composes the display text, keep showPartialsInRow=false to avoid
+     * additional work here. Default true for backward compatibility.
      */
     var showPartialsInRow: Boolean = true
 
@@ -63,23 +57,18 @@ class SpeechLogAdapter :
         val row = getItem(position)
         holder.vb.tvTime.text = fmt.format(Date(row.ts * 1000L))
 
-        // If row.tekst already contains the desired formatted string, show it.
-        // Optionally append a visual "[ ]" checkbox representation if row indicates a parsed item.
-        // The actual interactive checkbox control is not added here to avoid layout coupling;
-        // if interactive checkboxes are required, add a CheckBox to item_speech_log.xml and bind here.
-        var displayText = row.tekst
+        // Assume row.tekst is already formatted by TellingScherm (cheap). Only fall back to light heuristics.
+        var displayText = row.tekst ?: ""
 
-        if (showPartialsInRow) {
-            // If the row contains explicit partials marker (e.g. "partials:"), keep them,
-            // otherwise do nothing. TellingScherm is responsible for crafting row.tekst with partials.
-            displayText = row.tekst
-        } else {
-            // remove any partials markers if present (simple heuristic)
-            displayText = row.tekst.replace(Regex("(?i)partials?:\\s*\\[.*\\]\$"), "").trim()
+        if (!showPartialsInRow) {
+            // Remove a simple partials suffix if present (cheap operation)
+            if (displayText.contains("partials:", ignoreCase = true)) {
+                val idx = displayText.indexOf("partials:", ignoreCase = true)
+                if (idx > 0) displayText = displayText.substring(0, idx).trim()
+            }
         }
 
-        // Append a visual checkbox placeholder for parsed lines if not already present.
-        // The placeholder "[ ]" appears after the message; downstream UI can replace with an interactive widget.
+        // Append placeholder only if the caller didn't include it (cheap check)
         if (!displayText.contains("[ ]") && (displayText.contains("+") || displayText.matches(Regex(".*\\+\\d+.*")))) {
             displayText = "$displayText  [ ]"
         }
@@ -89,7 +78,6 @@ class SpeechLogAdapter :
 
     override fun getItemId(position: Int): Long {
         val item = getItem(position)
-        // samenstelling voor stabiel-ish id
         return (31 * item.ts + item.tekst.hashCode()).toLong()
     }
 }

@@ -58,9 +58,16 @@ import java.time.Instant
  * Full activity for the counting screen. Integrates AliasManager hot-patch flow,
  * AddAliasDialog usage, multi-match handling, ASR N-best orchestration and the UI.
  *
+ * Performance fixes in this version:
+ * - Heavy parsing (AliasSpeechParser.parse...) is run off the UI thread (Dispatchers.Default)
+ * - addLog now builds the new list off the UI thread to avoid blocking RecyclerView
+ * - updateSoortCount no longer does submitList(null) and notifyItemChanged; it updates via submitList once
+ * - addSpeciesToTiles simplified to avoid nested launches
+ * - limits log growth (keeps recent N entries)
+ *
  * Author: VT5 Team (YvedD)
- * Date: 2025-10-28
- * Version: 2.1
+ * Date: 2025-10-30
+ * Version: 2.1 (perf)
  */
 class TellingScherm : AppCompatActivity() {
 
@@ -71,7 +78,10 @@ class TellingScherm : AppCompatActivity() {
         // SharedPreferences keys for ASR silence ms
         private const val PREFS_NAME = "vt5_prefs"
         private const val PREF_ASR_SILENCE_MS = "pref_asr_silence_ms"
-        private const val DEFAULT_SILENCE_MS = 2000
+        private const val DEFAULT_SILENCE_MS = 400
+
+        // Limit for log rows to avoid very large lists
+        private const val MAX_LOG_ROWS = 600
     }
 
     // Spraakherkenning componenten
@@ -204,10 +214,7 @@ class TellingScherm : AppCompatActivity() {
                                 return true
                             }
 
-                            // Extract count from raw text (e.g., "ali 5" → count=5)
                             val extractedCount = extractCountFromText(row.tekst)
-
-                            // Use the AddAliasDialog signature common in this repo:
                             val dlg = AddAliasDialog.newInstance(listOf(row.tekst), availableSpeciesFlat)
 
                             dlg.listener = object : AddAliasDialog.AddAliasListener {
@@ -316,7 +323,6 @@ class TellingScherm : AppCompatActivity() {
     }
 
     private fun tryConvertCsvToJson() {
-        // Convenience wrapper to invoke existing repository conversion (if present).
         lifecycleScope.launch {
             try {
                 val ok = aliasRepository.convertCsvToJson()
@@ -357,7 +363,6 @@ class TellingScherm : AppCompatActivity() {
                 override fun onStopTrackingTouch(seekBar: SeekBar?) {
                     val p = seekBar?.progress ?: 0
                     val ms = 2000 + p * 100
-                    // Use KTX edit extension
                     prefs.edit { putInt(PREF_ASR_SILENCE_MS, ms) }
                     if (speechInitialized) {
                         speechRecognitionManager.setSilenceStopMillis(ms.toLong())
@@ -476,75 +481,82 @@ class TellingScherm : AppCompatActivity() {
                 speechRecognitionManager.loadAliases()
             }
 
+            // --- IMPORTANT: heavy parsing moved to background to avoid UI blocking ---
             speechRecognitionManager.setOnHypothesesListener { hypotheses, partials ->
-                lifecycleScope.launch {
+                // Launch background parse job to avoid blocking UI thread
+                lifecycleScope.launch(Dispatchers.Default) {
                     Log.d(TAG, "Hypotheses received: $hypotheses")
                     try {
+                        // buildMatchContext is suspend and uses IO internally
                         val matchContext = buildMatchContext()
+
+                        // Parser creation is cheap; the parse call can be heavy
                         val parser = AliasSpeechParser(this@TellingScherm, safHelper)
-
                         val result = parser.parseSpokenWithHypotheses(hypotheses, matchContext, partials, asrWeight = 0.4)
-                        Log.d(TAG, "Parse result: $result")
 
-                        when (result) {
-                            is MatchResult.AutoAccept -> {
-                                updateSoortCount(result.candidate.speciesId, result.amount)
-                                addLog("Herkend: ${result.candidate.displayName} ${result.amount} (auto)", "spraak")
-                                RecentSpeciesStore.recordUse(this@TellingScherm, result.candidate.speciesId, maxEntries = 25)
-                            }
-                            is MatchResult.AutoAcceptAddPopup -> {
-                                val cnt = result.amount
-                                runOnUiThread {
-                                    val prettyName = result.candidate.displayName
-                                    val msg = "Soort \"$prettyName\" herkend met aantal $cnt.\n\nToevoegen?"
-                                    AlertDialog.Builder(this@TellingScherm)
-                                        .setTitle("Soort toevoegen?")
-                                        .setMessage(msg)
-                                        .setPositiveButton("Ja") { _, _ ->
-                                            addSpeciesToTiles(result.candidate.speciesId, result.candidate.displayName, cnt)
-                                        }
-                                        .setNegativeButton("Nee", null)
-                                        .show()
-                                }
-                            }
-                            is MatchResult.MultiMatch -> {
-                                result.matches.forEach { match ->
-                                    if (match.candidate.isInTiles) {
-                                        updateSoortCount(match.candidate.speciesId, match.amount)
-                                        addLog("Herkend: ${match.candidate.displayName} ${match.amount} (multi)", "spraak")
-                                        RecentSpeciesStore.recordUse(this@TellingScherm, match.candidate.speciesId, maxEntries = 25)
-                                    } else {
-                                        runOnUiThread {
-                                            val prettyName = match.candidate.displayName
-                                            val msg = "Soort \"$prettyName\" (${match.amount}x) herkend.\n\nToevoegen?"
-                                            AlertDialog.Builder(this@TellingScherm)
-                                                .setTitle("Soort toevoegen?")
-                                                .setMessage(msg)
-                                                .setPositiveButton("Ja") { _, _ ->
-                                                    addSpeciesToTiles(match.candidate.speciesId, prettyName, match.amount)
-                                                }
-                                                .setNegativeButton("Nee", null)
-                                                .show()
+                        // Post result handling back to Main
+                        withContext(Dispatchers.Main) {
+                            try {
+                                when (result) {
+                                    is MatchResult.AutoAccept -> {
+                                        updateSoortCount(result.candidate.speciesId, result.amount)
+                                        addLog("Herkend: ${result.candidate.displayName} ${result.amount} (auto)", "spraak")
+                                        RecentSpeciesStore.recordUse(this@TellingScherm, result.candidate.speciesId, maxEntries = 25)
+                                    }
+                                    is MatchResult.AutoAcceptAddPopup -> {
+                                        val cnt = result.amount
+                                        val prettyName = result.candidate.displayName
+                                        val msg = "Soort \"$prettyName\" herkend met aantal $cnt.\n\nToevoegen?"
+                                        AlertDialog.Builder(this@TellingScherm)
+                                            .setTitle("Soort toevoegen?")
+                                            .setMessage(msg)
+                                            .setPositiveButton("Ja") { _, _ ->
+                                                addSpeciesToTiles(result.candidate.speciesId, result.candidate.displayName, cnt)
+                                            }
+                                            .setNegativeButton("Nee", null)
+                                            .show()
+                                    }
+                                    is MatchResult.MultiMatch -> {
+                                        result.matches.forEach { match ->
+                                            if (match.candidate.isInTiles) {
+                                                updateSoortCount(match.candidate.speciesId, match.amount)
+                                                addLog("Herkend: ${match.candidate.displayName} ${match.amount} (multi)", "spraak")
+                                                RecentSpeciesStore.recordUse(this@TellingScherm, match.candidate.speciesId, maxEntries = 25)
+                                            } else {
+                                                val prettyName = match.candidate.displayName
+                                                val msg = "Soort \"$prettyName\" (${match.amount}x) herkend.\n\nToevoegen?"
+                                                AlertDialog.Builder(this@TellingScherm)
+                                                    .setTitle("Soort toevoegen?")
+                                                    .setMessage(msg)
+                                                    .setPositiveButton("Ja") { _, _ ->
+                                                        addSpeciesToTiles(match.candidate.speciesId, prettyName, match.amount)
+                                                    }
+                                                    .setNegativeButton("Nee", null)
+                                                    .show()
+                                            }
                                         }
                                     }
+                                    is MatchResult.SuggestionList -> {
+                                        val cnt = extractCountFromText(result.hypothesis)
+                                        showSuggestionBottomSheet(result.candidates, cnt)
+                                    }
+                                    is MatchResult.NoMatch -> {
+                                        addLog(result.hypothesis, "raw")
+                                    }
                                 }
-                            }
-                            is MatchResult.SuggestionList -> {
-                                val cnt = extractCountFromText(result.hypothesis)
-                                runOnUiThread { showSuggestionBottomSheet(result.candidates, cnt) }
-                            }
-                            is MatchResult.NoMatch -> {
-                                addLog(result.hypothesis, "raw")
+                            } catch (ex: Exception) {
+                                Log.w(TAG, "Hypotheses handling (UI) failed: ${ex.message}", ex)
                             }
                         }
                     } catch (ex: Exception) {
-                        Log.w(TAG, "Hypotheses handling failed: ${ex.message}", ex)
+                        Log.w(TAG, "Hypotheses handling (background) failed: ${ex.message}", ex)
                     }
                 }
             }
 
             speechRecognitionManager.setOnRawResultListener { rawText ->
-                runOnUiThread {
+                // Keep UI update minimal and on Main
+                lifecycleScope.launch(Dispatchers.Main) {
                     lastRawPartial = rawText
                     addLog(rawText, "raw")
                 }
@@ -587,10 +599,6 @@ class TellingScherm : AppCompatActivity() {
             .show()
     }
 
-    /**
-     * Helper: add species to tiles if not present; if present only update count.
-     * This keeps the original behavior used by AddAliasDialog handler.
-     */
     private fun addSpeciesToTilesIfNeeded(speciesId: String, canonical: String, extractedCount: Int) {
         val current = tilesAdapter.currentList
         if (current.any { it.soortId == speciesId }) {
@@ -616,7 +624,8 @@ class TellingScherm : AppCompatActivity() {
                 val updated = ArrayList(current)
                 updated.add(newRow)
 
-                lifecycleScope.launch(Dispatchers.Main) {
+                // submit on Main
+                withContext(Dispatchers.Main) {
                     tilesAdapter.submitList(updated)
                     updateSelectedSpeciesMap()
                     RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
@@ -629,23 +638,38 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
+    /**
+     * Append a log row. Do list-building off the UI thread to avoid blocking RecyclerView.
+     */
     private fun addLog(msgIn: String, bron: String) {
-        var msg = msgIn
-        msg = msg.replace(Regex("(?i)^\\s*asr:\\s*"), "")
-        if (bron == "raw") {
-            msg = msg.replace(Regex("\\s+\\d+(?:[.,]\\d+)?$"), "")
-            msg = msg.trim()
-        }
         val now = System.currentTimeMillis() / 1000L
-        val newRow = SpeechLogRow(ts = now, tekst = msg, bron = bron)
+        val cleaned = run {
+            var m = msgIn.replace(Regex("(?i)^\\s*asr:\\s*"), "")
+            if (bron == "raw") {
+                m = m.replace(Regex("\\s+\\d+(?:[.,]\\d+)?$"), "")
+            }
+            m.trim()
+        }
+        val newRow = SpeechLogRow(ts = now, tekst = cleaned, bron = bron)
 
-        val currentSize = logAdapter.currentList.size
-        val newList = ArrayList<SpeechLogRow>(currentSize + 1)
-        newList.addAll(logAdapter.currentList)
-        newList.add(newRow)
+        lifecycleScope.launch {
+            // Build new list off-main
+            val newList = withContext(Dispatchers.Default) {
+                val current = logAdapter.currentList
+                val list = ArrayList(current)
+                list.add(newRow)
+                // limit growth
+                if (list.size > MAX_LOG_ROWS) {
+                    val drop = list.size - MAX_LOG_ROWS
+                    repeat(drop) { list.removeAt(0) }
+                }
+                list
+            }
 
-        logAdapter.submitList(newList) {
-            binding.recyclerViewSpeechLog.scrollToPosition(newList.size - 1)
+            // Submit on main and scroll
+            logAdapter.submitList(newList) {
+                binding.recyclerViewSpeechLog.scrollToPosition(newList.size - 1)
+            }
         }
     }
 
@@ -709,28 +733,31 @@ class TellingScherm : AppCompatActivity() {
     }
 
     private fun updateSoortCount(soortId: String, count: Int) {
-        val currentList = tilesAdapter.currentList
-        val position = currentList.indexOfFirst { it.soortId == soortId }
+        lifecycleScope.launch {
+            val currentList = tilesAdapter.currentList
+            val pos = currentList.indexOfFirst { it.soortId == soortId }
+            if (pos == -1) {
+                Log.e(TAG, "Species with ID $soortId not found in the list!")
+                return@launch
+            }
 
-        if (position == -1) {
-            Log.e(TAG, "Species with ID $soortId not found in the list!")
-            return
-        }
+            val item = currentList[pos]
+            val oldCount = item.count
+            val newCount = oldCount + count
 
-        val item = currentList[position]
-        val oldCount = item.count
-        val newCount = oldCount + count
+            // Build updated list off-main if heavy
+            val updatedList = withContext(Dispatchers.Default) {
+                val tmp = ArrayList(currentList)
+                tmp[pos] = item.copy(count = newCount)
+                tmp
+            }
 
-        val updatedList = ArrayList(currentList)
-        updatedList[position] = item.copy(count = newCount)
-
-        RecentSpeciesStore.recordUse(this, soortId, maxEntries = 25)
-
-        lifecycleScope.launch(Dispatchers.Main.immediate) {
-            tilesAdapter.submitList(null)
-            tilesAdapter.submitList(updatedList)
-            tilesAdapter.notifyItemChanged(position)
-            addLog("Bijgewerkt: ${item.naam} $oldCount → $newCount", "spraak")
+            // Submit once on main
+            withContext(Dispatchers.Main) {
+                tilesAdapter.submitList(updatedList)
+                addLog("Bijgewerkt: ${item.naam} $oldCount → $newCount", "spraak")
+                RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
+            }
         }
     }
 
@@ -778,11 +805,19 @@ class TellingScherm : AppCompatActivity() {
                 if (n == null || n < 0) {
                     Toast.makeText(this, "Ongeldig aantal.", Toast.LENGTH_SHORT).show()
                 } else {
-                    val updated = ArrayList(current)
-                    updated[position] = row.copy(count = n)
-                    tilesAdapter.submitList(updated)
-                    addLog("Set ${row.naam} = $n", "manueel")
-                    RecentSpeciesStore.recordUse(this, row.soortId, maxEntries = 25)
+                    lifecycleScope.launch {
+                        val updated = withContext(Dispatchers.Default) {
+                            val cur = tilesAdapter.currentList
+                            val tmp = ArrayList(cur)
+                            tmp[position] = row.copy(count = n)
+                            tmp
+                        }
+                        withContext(Dispatchers.Main) {
+                            tilesAdapter.submitList(updated)
+                            addLog("Set ${row.naam} = $n", "manueel")
+                            RecentSpeciesStore.recordUse(this@TellingScherm, row.soortId, maxEntries = 25)
+                        }
+                    }
                 }
             }
             .show()

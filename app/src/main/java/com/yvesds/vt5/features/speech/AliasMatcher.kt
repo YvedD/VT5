@@ -7,167 +7,176 @@ import com.yvesds.vt5.features.alias.AliasIndex as RepoAliasIndex
 import com.yvesds.vt5.features.alias.AliasRecord
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.cbor.Cbor
 import kotlinx.serialization.json.Json
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.zip.GZIPInputStream
 import kotlin.math.max
 
 /**
  * AliasMatcher (updated)
  *
- * - Loads aliases_flat.cbor.gz into an in-memory index.
- * - Uses only three matching layers: norm (text), cologne, phonemes.
- * - Provides: ensureLoaded(), reloadIndex(), findExact(), findFuzzyCandidates(), addAliasHotpatch().
- *
- * Legacy fields (minhash/simhash/dmetapho/beidermorse/ngrams) removed.
+ * - Loads aliases into an in-memory index.
+ * - Uses three matching layers: norm (text), cologne, phonemes.
+ * - Does NOT import AliasManager to avoid circular compile dependencies.
+ * - First attempts to load internal cache file from context.filesDir (aliases_optimized.cbor.gz).
+ * - If not present, falls back once to SAF binary CBOR and builds the maps.
  */
 
 internal object AliasMatcher {
     private const val TAG = "AliasMatcher"
-    private const val ALIASES_CBOR_GZ = "aliases_flat.cbor.gz"
+    private const val ALIASES_CBOR_GZ = "aliases_optimized.cbor.gz"
     private const val BINARIES = "binaries"
+
     private val json = Json { prettyPrint = false }
 
+    // In-memory structures (volatile for quick visibility)
     @Volatile private var loadedIndex: RepoAliasIndex? = null
-
-    // Map normalized key -> records
     @Volatile private var aliasMap: Map<String, List<AliasRecord>>? = null
-
-    // phonetic cache: normalized -> cologne code (string)
     @Volatile private var phoneticCache: Map<String, String>? = null
-
-    // buckets by first char to shorten search space
     @Volatile private var firstCharBuckets: Map<Char, List<String>>? = null
-
-    // lightweight bloom-like set (hashes) for quick rejection
     @Volatile private var bloomFilter: Set<Long>? = null
 
+    // Synchronization primitives to avoid duplicate loads / spamming logs
+    private val loadMutex = Mutex()
+    private val cborMissingWarned = AtomicBoolean(false)
+
+    /**
+     * Ensure internal in-memory alias index is loaded and ready for matching.
+     * Preferred path: internal cache in context.filesDir/aliases_optimized.cbor.gz
+     * Fallback: read SAF binaries/CBOR once.
+     */
     @OptIn(ExperimentalSerializationApi::class)
     suspend fun ensureLoaded(context: Context, saf: SaFStorageHelper) = withContext(Dispatchers.IO) {
-        if (loadedIndex != null && aliasMap != null) return@withContext
-        synchronized(this@AliasMatcher) {
-            if (loadedIndex != null && aliasMap != null) return@synchronized
+        // Fast path
+        if (aliasMap != null && phoneticCache != null) return@withContext
+
+        loadMutex.withLock {
+            if (aliasMap != null && phoneticCache != null) return@withLock
+
             try {
-                val vt5 = saf.getVt5DirIfExists() ?: run {
-                    Log.w(TAG, "SAF VT5 root not set; cannot load aliases")
-                    return@synchronized
+                // Try internal cache first (app-private)
+                val internalFile = File(context.filesDir, ALIASES_CBOR_GZ)
+                if (internalFile.exists() && internalFile.length() > 0L) {
+                    try {
+                        internalFile.inputStream().use { fis ->
+                            GZIPInputStream(fis).use { gis ->
+                                val bytes = gis.readBytes()
+                                val idx: RepoAliasIndex = Cbor.decodeFromByteArray(RepoAliasIndex.serializer(), bytes)
+                                buildMapsFromIndex(idx)
+                                Log.i(TAG, "ensureLoaded: loaded internal CBOR cache (records=${idx.json.size})")
+                                return@withLock
+                            }
+                        }
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "ensureLoaded: failed loading internal cache: ${ex.message}", ex)
+                        // fallthrough to SAF fallback
+                    }
                 }
+
+                // Fallback: attempt to read SAF binaries/CBOR once.
+                val vt5 = saf.getVt5DirIfExists()
+                if (vt5 == null) {
+                    if (cborMissingWarned.compareAndSet(false, true)) {
+                        Log.w(TAG, "SAF VT5 root not set; cannot load aliases")
+                    }
+                    return@withLock
+                }
+
                 val binaries = vt5.findFile(BINARIES)?.takeIf { it.isDirectory }
                 val cborDoc = binaries?.findFile(ALIASES_CBOR_GZ)
                 if (cborDoc == null) {
-                    Log.w(TAG, "aliases cbor not found")
-                    return@synchronized
+                    if (cborMissingWarned.compareAndSet(false, true)) {
+                        Log.w(TAG, "aliases cbor not found")
+                    }
+                    return@withLock
                 }
 
                 val bytes = context.contentResolver.openInputStream(cborDoc.uri)?.use { it.readBytes() }
                 if (bytes == null || bytes.isEmpty()) {
-                    Log.w(TAG, "Failed to read aliases cbor bytes")
-                    return@synchronized
+                    if (cborMissingWarned.compareAndSet(false, true)) {
+                        Log.w(TAG, "Failed to read aliases cbor bytes")
+                    }
+                    return@withLock
                 }
 
                 val ungz = gunzip(bytes)
-                val idx = Cbor.decodeFromByteArray(RepoAliasIndex.serializer(), ungz)
-                loadedIndex = idx
+                val idxFromCbor: RepoAliasIndex = Cbor.decodeFromByteArray(RepoAliasIndex.serializer(), ungz)
+                buildMapsFromIndex(idxFromCbor)
+                Log.i(TAG, "ensureLoaded: loaded index from SAF CBOR (records=${idxFromCbor.json.size}, keys=${aliasMap?.size ?: 0})")
 
-                val map = mutableMapOf<String, MutableList<AliasRecord>>()
-                val phonCache = mutableMapOf<String, String>()
-                val buckets = mutableMapOf<Char, MutableList<String>>()
-                val bloomSet = mutableSetOf<Long>()
-
-                for (r in idx.json) {
-                    // index alias surface
-                    val keys = mutableSetOf<String>()
-                    r.alias.trim().takeIf { it.isNotEmpty() }?.let { keys += it.lowercase() }
-                    r.canonical.trim().takeIf { it.isNotEmpty() }?.let { keys += it.lowercase() }
-                    r.norm.trim().takeIf { it.isNotEmpty() }?.let { keys += r.norm }
-
-                    for (k in keys) {
-                        map.getOrPut(k) { mutableListOf() }.add(r)
-                        if (k.isNotEmpty()) {
-                            val first = k[0]
-                            buckets.getOrPut(first) { mutableListOf() }.add(k)
-                            val col = runCatching { ColognePhonetic.encode(k) }.getOrDefault("")
-                            phonCache[k] = col
-                            bloomSet.add(k.hashCode().toLong())
-                        }
-                    }
-                }
-
-                aliasMap = map.mapValues { it.value.toList() }
-                phoneticCache = phonCache
-                firstCharBuckets = buckets.mapValues { it.value.toList() }
-                bloomFilter = bloomSet
-                Log.i(TAG, "Loaded alias index: ${idx.json.size} records, keys=${aliasMap!!.size}")
             } catch (ex: Exception) {
-                Log.w(TAG, "Error loading alias index: ${ex.message}", ex)
+                Log.w(TAG, "Error loading alias index in ensureLoaded: ${ex.message}", ex)
             }
         }
     }
 
+    /**
+     * Force reload from SAF or internal cache.
+     */
     @OptIn(ExperimentalSerializationApi::class)
     suspend fun reloadIndex(context: Context, saf: SaFStorageHelper) = withContext(Dispatchers.IO) {
-        synchronized(this@AliasMatcher) {
+        loadMutex.withLock {
+            // clear current
+            loadedIndex = null
+            aliasMap = null
+            phoneticCache = null
+            firstCharBuckets = null
+            bloomFilter = null
+            cborMissingWarned.set(false)
             try {
+                // Try internal cache first
+                val internalFile = File(context.filesDir, ALIASES_CBOR_GZ)
+                if (internalFile.exists() && internalFile.length() > 0L) {
+                    try {
+                        internalFile.inputStream().use { fis ->
+                            GZIPInputStream(fis).use { gis ->
+                                val bytes = gis.readBytes()
+                                val idx: RepoAliasIndex = Cbor.decodeFromByteArray(RepoAliasIndex.serializer(), bytes)
+                                buildMapsFromIndex(idx)
+                                Log.i(TAG, "reloadIndex: reloaded from internal cache (records=${idx.json.size})")
+                                return@withLock
+                            }
+                        }
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "reloadIndex: failed loading internal cache: ${ex.message}", ex)
+                    }
+                }
+
+                // fallback to SAF CBOR load
                 val vt5 = saf.getVt5DirIfExists() ?: run {
                     Log.w(TAG, "SAF VT5 root not set; cannot reload aliases")
-                    loadedIndex = null; aliasMap = null; phoneticCache = null; firstCharBuckets = null; bloomFilter = null
-                    return@synchronized
+                    return@withLock
                 }
                 val binaries = vt5.findFile(BINARIES)?.takeIf { it.isDirectory }
                 val cborDoc = binaries?.findFile(ALIASES_CBOR_GZ)
                 if (cborDoc == null) {
                     Log.w(TAG, "aliases cbor not found during reload")
-                    loadedIndex = null; aliasMap = null; phoneticCache = null; firstCharBuckets = null; bloomFilter = null
-                    return@synchronized
+                    return@withLock
                 }
-
                 val bytes = context.contentResolver.openInputStream(cborDoc.uri)?.use { it.readBytes() }
                 if (bytes == null || bytes.isEmpty()) {
                     Log.w(TAG, "Failed to read aliases cbor bytes during reload")
-                    loadedIndex = null; aliasMap = null; phoneticCache = null; firstCharBuckets = null; bloomFilter = null
-                    return@synchronized
+                    return@withLock
                 }
-
                 val ungz = gunzip(bytes)
-                val idx = Cbor.decodeFromByteArray(RepoAliasIndex.serializer(), ungz)
-                loadedIndex = idx
-
-                val map = mutableMapOf<String, MutableList<AliasRecord>>()
-                val phonCache = mutableMapOf<String, String>()
-                val buckets = mutableMapOf<Char, MutableList<String>>()
-                val bloomSet = mutableSetOf<Long>()
-
-                for (r in idx.json) {
-                    val keys = mutableSetOf<String>()
-                    r.alias.trim().takeIf { it.isNotBlank() }?.let { keys += it.lowercase() }
-                    r.canonical.trim().takeIf { it.isNotBlank() }?.let { keys += it.lowercase() }
-                    r.norm.trim().takeIf { it.isNotBlank() }?.let { keys += r.norm }
-
-                    for (k in keys) {
-                        map.getOrPut(k) { mutableListOf() }.add(r)
-                        if (k.isNotEmpty()) {
-                            val first = k[0]
-                            buckets.getOrPut(first) { mutableListOf() }.add(k)
-                            val col = runCatching { ColognePhonetic.encode(k) }.getOrDefault("")
-                            phonCache[k] = col
-                            bloomSet.add(k.hashCode().toLong())
-                        }
-                    }
-                }
-
-                aliasMap = map.mapValues { it.value.toList() }
-                phoneticCache = phonCache
-                firstCharBuckets = buckets.mapValues { it.value.toList() }
-                bloomFilter = bloomSet
-                Log.i(TAG, "Reloaded alias index: ${idx.json.size} records, keys=${aliasMap!!.size}")
+                val idxFromCbor: RepoAliasIndex = Cbor.decodeFromByteArray(RepoAliasIndex.serializer(), ungz)
+                buildMapsFromIndex(idxFromCbor)
+                Log.i(TAG, "reloadIndex: reloaded index from SAF CBOR (records=${idxFromCbor.json.size}, keys=${aliasMap?.size ?: 0})")
             } catch (ex: Exception) {
                 Log.w(TAG, "Error reloading alias index: ${ex.message}", ex)
             }
         }
     }
 
+    /**
+     * Find exact matches by normalized phrase (quick lookup).
+     */
     suspend fun findExact(aliasPhrase: String, context: Context, saf: SaFStorageHelper): List<AliasRecord> = withContext(Dispatchers.Default) {
         ensureLoaded(context, saf)
         val map = aliasMap ?: return@withContext emptyList()
@@ -175,10 +184,7 @@ internal object AliasMatcher {
     }
 
     /**
-     * Fuzzy candidate search using combined scoring:
-     * - text similarity (normalized Levenshtein ratio)
-     * - cologne phonetic similarity
-     * - phoneme similarity (if phonemes available)
+     * Fuzzy candidate search using combined scoring.
      */
     suspend fun findFuzzyCandidates(
         phrase: String,
@@ -220,7 +226,6 @@ internal object AliasMatcher {
         for (k in shortlist) {
             val lev = normalizedLevenshteinRatio(q, k)
             val colSim = runCatching { ColognePhonetic.similarity(q, k) }.getOrDefault(0.0)
-            // Evaluate candidates (for each record)
             val recs = map[k] ?: continue
             for (r in recs) {
                 val phonSim = if (!r.phonemes.isNullOrBlank()) {
@@ -228,7 +233,6 @@ internal object AliasMatcher {
                     runCatching { DutchPhonemizer.phonemeSimilarity(qPh, r.phonemes) }.getOrDefault(0.0)
                 } else 0.0
 
-                // Weights: text 45%, cologne 35%, phonemes 20%
                 val score = (0.45 * lev + 0.35 * colSim + 0.20 * phonSim).coerceIn(0.0, 1.0)
                 if (score >= threshold) scored += Pair(r, score)
             }
@@ -243,7 +247,6 @@ internal object AliasMatcher {
 
     /**
      * Hot-patch: add a minimal AliasRecord in-memory so new alias is immediately visible.
-     * The created record uses only the agreed fields.
      */
     fun addAliasHotpatch(speciesId: String, aliasRaw: String, canonical: String? = null, tilename: String? = null) {
         try {
@@ -296,7 +299,45 @@ internal object AliasMatcher {
         }
     }
 
-    // Helpers
+    // ----------------------
+    // Internal helpers
+    // ----------------------
+
+    private fun buildMapsFromIndex(idx: RepoAliasIndex) {
+        try {
+            val map = mutableMapOf<String, MutableList<AliasRecord>>()
+            val phonCache = mutableMapOf<String, String>()
+            val buckets = mutableMapOf<Char, MutableList<String>>()
+            val bloomSet = mutableSetOf<Long>()
+
+            for (r in idx.json) {
+                val keys = mutableSetOf<String>()
+                r.alias.trim().takeIf { it.isNotEmpty() }?.let { keys += it.lowercase() }
+                r.canonical.trim().takeIf { it.isNotEmpty() }?.let { keys += it.lowercase() }
+                r.norm.trim().takeIf { it.isNotEmpty() }?.let { keys += r.norm }
+
+                for (k in keys) {
+                    map.getOrPut(k) { mutableListOf() }.add(r)
+                    if (k.isNotEmpty()) {
+                        val first = k[0]
+                        buckets.getOrPut(first) { mutableListOf() }.add(k)
+                        val col = runCatching { ColognePhonetic.encode(k) }.getOrDefault("")
+                        phonCache[k] = col
+                        bloomSet.add(k.hashCode().toLong())
+                    }
+                }
+            }
+
+            aliasMap = map.mapValues { it.value.toList() }
+            phoneticCache = phonCache
+            firstCharBuckets = buckets.mapValues { it.value.toList() }
+            bloomFilter = bloomSet
+            loadedIndex = idx
+        } catch (ex: Exception) {
+            Log.w(TAG, "buildMapsFromIndex failed: ${ex.message}", ex)
+        }
+    }
+
     private fun gunzip(input: ByteArray): ByteArray {
         GZIPInputStream(input.inputStream()).use { gis ->
             val baos = ByteArrayOutputStream()
