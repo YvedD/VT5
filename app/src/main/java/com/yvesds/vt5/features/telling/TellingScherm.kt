@@ -41,6 +41,8 @@ import com.yvesds.vt5.features.speech.MatchContext
 import com.yvesds.vt5.features.speech.MatchResult
 import com.yvesds.vt5.features.speech.Candidate
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.Manifest
@@ -58,20 +60,12 @@ import java.time.Instant
  * Full activity for the counting screen. Integrates AliasManager hot-patch flow,
  * AddAliasDialog usage, multi-match handling, ASR N-best orchestration and the UI.
  *
- * NOTE: CSV support has been fully removed from runtime. The app now uses alias_master.json /
- * aliases_optimized.cbor.gz (SAF Documents/VT5) as canonical sources. Any CSV migration must be
- * performed offline or via an external migration tool and placed into Documents/VT5/binaries/.
- *
- * Performance fixes in this version:
- * - Heavy parsing (AliasSpeechParser.parse...) is run off the UI thread (Dispatchers.Default)
- * - addLog now builds the new list off the UI thread to avoid blocking RecyclerView
- * - updateSoortCount no longer does submitList(null) and notifyItemChanged; it updates via submitList once
- * - addSpeciesToTiles simplified to avoid nested launches
- * - limits log growth (keeps recent N entries)
- *
- * Author: VT5 Team (YvedD)
- * Date: 2025-10-30
- * Version: 2.1 (perf, CSV removed)
+ * Performance and lifecycle improvements:
+ * - Preload and heavy IO/CPU moved off Main via explicit dispatchers.
+ * - Aliases preload guarded (idempotent).
+ * - SpeechRecognitionManager.loadAliases invoked on IO.
+ * - onDestroy flush uses an independent background scope so flush can run after Activity is destroyed.
+ * - Minor defensive checks and UI-thread marshaling for shared state updates.
  */
 class TellingScherm : AppCompatActivity() {
 
@@ -119,6 +113,10 @@ class TellingScherm : AppCompatActivity() {
 
     // Keep last raw partial (optional)
     private var lastRawPartial: String? = null
+
+    // Simple guard to avoid duplicate alias preloads
+    @Volatile
+    private var aliasesPreloaded = false
 
     // Activity Result Launcher for soortenselectie
     private val addSoortenLauncher = registerForActivityResult(
@@ -228,6 +226,7 @@ class TellingScherm : AppCompatActivity() {
                                         val canonical = snapshot.speciesById[speciesId]?.soortnaam ?: aliasText
                                         val tilename = snapshot.speciesById[speciesId]?.soortkey
 
+                                        // 1) addAlias hotpatches in-memory and enqueues for batched persistence
                                         val added = AliasManager.addAlias(
                                             context = this@TellingScherm,
                                             saf = safHelper,
@@ -238,10 +237,28 @@ class TellingScherm : AppCompatActivity() {
                                         )
 
                                         if (added) {
-                                            addSpeciesToTilesIfNeeded(speciesId, canonical, extractedCount)
-                                            updateSoortCount(speciesId, extractedCount)
-                                            addLog("Alias toegevoegd: '$aliasText' → $canonical (+$extractedCount)", "alias")
+                                            // Immediate UI feedback (alias is active in-memory)
+                                            addSpeciesToTilesIfNeeded(speciesId, canonical, extractCountFromText(aliasText))
+                                            updateSoortCount(speciesId, extractCountFromText(aliasText))
+                                            addLog("Alias toegevoegd: '$aliasText' → $canonical (in geheugen)", "alias")
                                             Toast.makeText(this@TellingScherm, "Alias actief en opgeslagen (buffer).", Toast.LENGTH_SHORT).show()
+
+                                            // 2) Best-effort: flush write-queue to SAF in background so alias becomes persistent now
+                                            lifecycleScope.launch(Dispatchers.IO) {
+                                                try {
+                                                    AliasManager.forceFlush(this@TellingScherm, safHelper)
+                                                    // notify user on main thread
+                                                    withContext(Dispatchers.Main) {
+                                                        Toast.makeText(this@TellingScherm, "Alias permanent opgeslagen voor soort \"$canonical\"", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                } catch (ex: Exception) {
+                                                    // on failure, still inform user (we already have the in-memory alias)
+                                                    withContext(Dispatchers.Main) {
+                                                        Toast.makeText(this@TellingScherm, "Alias toegevoegd (buffer). Opslaan naar schijf mislukt: ${ex.message}", Toast.LENGTH_LONG).show()
+                                                    }
+                                                    Log.w(TAG, "Immediate flush after addAlias failed: ${ex.message}", ex)
+                                                }
+                                            }
                                         } else {
                                             Toast.makeText(this@TellingScherm, "Alias niet toegevoegd (duplicaat of ongeldig)", Toast.LENGTH_SHORT).show()
                                         }
@@ -359,22 +376,38 @@ class TellingScherm : AppCompatActivity() {
     }
 
     private fun preloadAliases() {
-        lifecycleScope.launch {
+        // Idempotent and off-main
+        if (aliasesPreloaded) return
+        aliasesPreloaded = true
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            val messages = mutableListOf<String>()
             try {
-                // Ensure alias seed/cache exists and load it in AliasManager
-                AliasManager.initialize(this@TellingScherm, safHelper)
-                // Ensure internal index is loaded for fast lookup
-                withContext(Dispatchers.IO) {
-                    try {
-                        AliasManager.ensureIndexLoadedSuspend(this@TellingScherm, safHelper)
-                    } catch (ex: Exception) {
-                        Log.w(TAG, "preloadAliases: ensureIndexLoadedSuspend failed: ${ex.message}", ex)
-                    }
+                // Ensure alias seed/cache exists and load it in AliasManager (AliasManager handles IO internally)
+                try {
+                    AliasManager.initialize(this@TellingScherm, safHelper)
+                } catch (ex: Exception) {
+                    messages += "AliasManager.initialize failed: ${ex.message}"
+                    Log.w(TAG, "AliasManager.initialize failed: ${ex.message}", ex)
                 }
-                // Populate availableSpeciesFlat for AddAliasDialog dropdown
+
+                // Ensure internal index is loaded for fast lookup (AliasMatcher)
+                try {
+                    AliasManager.ensureIndexLoadedSuspend(this@TellingScherm, safHelper)
+                } catch (ex: Exception) {
+                    messages += "ensureIndexLoadedSuspend failed: ${ex.message}"
+                    Log.w(TAG, "preloadAliases: ensureIndexLoadedSuspend failed: ${ex.message}", ex)
+                }
+
+                // Populate availableSpeciesFlat for AddAliasDialog dropdown (fetch snapshot on IO)
                 val snapshot = ServerDataCache.getOrLoad(this@TellingScherm)
-                availableSpeciesFlat = snapshot.speciesById.map { (id, s) -> "$id||${s.soortnaam}" }.toList()
-                Log.d(TAG, "Aliases preloaded successfully")
+                val flat = snapshot.speciesById.map { (id, s) -> "$id||${s.soortnaam}" }.toList()
+
+                // Publish to UI thread
+                withContext(Dispatchers.Main) {
+                    availableSpeciesFlat = flat
+                    Log.d(TAG, "Aliases preloaded successfully (${availableSpeciesFlat.size})")
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "Error preloading aliases: ${e.message}", e)
             }
@@ -469,8 +502,13 @@ class TellingScherm : AppCompatActivity() {
 
             updateSelectedSpeciesMap()
 
-            lifecycleScope.launch {
-                speechRecognitionManager.loadAliases()
+            // loadAliases may perform IO — run on IO
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    speechRecognitionManager.loadAliases()
+                } catch (ex: Exception) {
+                    Log.w(TAG, "speechRecognitionManager.loadAliases failed: ${ex.message}", ex)
+                }
             }
 
             // --- IMPORTANT: heavy parsing moved to background to avoid UI blocking ---
@@ -831,9 +869,14 @@ class TellingScherm : AppCompatActivity() {
             volumeKeyHandler.unregister()
         }
 
-        // Ensure pending alias writes are flushed
-        lifecycleScope.launch {
-            AliasManager.forceFlush(this@TellingScherm, safHelper)
+        // Ensure pending alias writes are flushed. Use an independent background scope
+        // so flush continues even if this Activity's lifecycle is ending.
+        CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+            try {
+                AliasManager.forceFlush(this@TellingScherm, safHelper)
+            } catch (ex: Exception) {
+                Log.w(TAG, "forceFlush in onDestroy failed: ${ex.message}", ex)
+            }
         }
     }
 }

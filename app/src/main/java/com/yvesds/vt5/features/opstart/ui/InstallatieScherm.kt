@@ -9,6 +9,7 @@ import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import com.yvesds.vt5.R
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.core.secure.CredentialsStore
@@ -19,9 +20,7 @@ import com.yvesds.vt5.features.opstart.usecases.ServerJsonDownloader
 import com.yvesds.vt5.features.opstart.usecases.TrektellenAuth
 import com.yvesds.vt5.features.serverdata.model.ServerDataCache
 import com.yvesds.vt5.hoofd.HoofdActiviteit
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -42,7 +41,6 @@ import androidx.documentfile.provider.DocumentFile as DFile
  *
  * CSV support has been removed from runtime — all flows now use alias_master.json and aliases_optimized.cbor.gz.
  */
-
 class InstallatieScherm : AppCompatActivity() {
     companion object {
         private const val TAG = "InstallatieScherm"
@@ -52,7 +50,6 @@ class InstallatieScherm : AppCompatActivity() {
     private lateinit var saf: SaFStorageHelper
     private lateinit var creds: CredentialsStore
 
-    private val uiScope = CoroutineScope(Job() + Dispatchers.Main)
     private var dataPreloaded = false
 
     // JSON helper for metadata
@@ -174,7 +171,7 @@ class InstallatieScherm : AppCompatActivity() {
 
     private fun preloadDataIfExists() {
         if (dataPreloaded) return
-        uiScope.launch {
+        lifecycleScope.launch {
             try {
                 Log.d(TAG, "Preloading data in background")
                 withContext(Dispatchers.IO) {
@@ -221,7 +218,7 @@ class InstallatieScherm : AppCompatActivity() {
 
     private fun doLoginTestAndPersist(username: String, password: String) {
         val dlg = ProgressDialogHelper.show(this, "Login testen...")
-        uiScope.launch {
+        lifecycleScope.launch {
             val res = withContext(Dispatchers.IO) {
                 TrektellenAuth.checkUser(
                     username = username,
@@ -233,7 +230,10 @@ class InstallatieScherm : AppCompatActivity() {
             dlg.dismiss()
             res.onSuccess { pretty ->
                 showInfoDialog(getString(R.string.dlg_titel_result), pretty)
-                saveCheckUserJson(pretty)
+                // persist checkuser.json on IO
+                lifecycleScope.launch {
+                    withContext(Dispatchers.IO) { saveCheckUserJson(pretty) }
+                }
             }.onFailure { e ->
                 showInfoDialog("checkuser — fout", e.message ?: e.toString())
             }
@@ -259,7 +259,7 @@ class InstallatieScherm : AppCompatActivity() {
         val binaries = vt5Dir.findFile("binaries")?.takeIf { it.isDirectory } ?: vt5Dir.createDirectory("binaries")
 
         val dlg = ProgressDialogHelper.show(this, "JSONs downloaden...")
-        uiScope.launch {
+        lifecycleScope.launch {
             val msgs = withContext(Dispatchers.IO) {
                 ServerJsonDownloader.downloadAll(
                     context = this@InstallatieScherm,
@@ -273,34 +273,37 @@ class InstallatieScherm : AppCompatActivity() {
             }
 
             // Invalidate cache
-            ServerDataCache.invalidate()
+            withContext(Dispatchers.IO) {
+                ServerDataCache.invalidate()
+            }
             dataPreloaded = false
 
-            // Compute checksum of server files
-            val newChecksum = computeServerFilesChecksum(vt5Dir)
-            val oldMeta = readAliasMeta(vt5Dir)
-            val oldChecksum = oldMeta?.sourceChecksum
-
-            val needRegen = (oldChecksum == null) || (oldChecksum != newChecksum) || !isAliasIndexPresent()
+            // Compute checksum and metadata on IO
+            val (newChecksum, oldMeta, needRegen) = withContext(Dispatchers.IO) {
+                val newChecksumLocal = computeServerFilesChecksum(vt5Dir)
+                val oldMetaLocal = readAliasMeta(vt5Dir)
+                val oldChecksumLocal = oldMetaLocal?.sourceChecksum
+                val need = (oldChecksumLocal == null) || (oldChecksumLocal != newChecksumLocal) || !isAliasIndexPresent()
+                Triple(newChecksumLocal, oldMetaLocal, need)
+            }
 
             if (needRegen) {
-                uiScope.launch {
-                    try {
-                        val reindexDialog = ProgressDialogHelper.show(this@InstallatieScherm, "Alias index bijwerken...")
-                        withContext(Dispatchers.IO) {
-                            // Ensure existing files removed so AliasManager.initialize will regenerate seed
-                            removeExistingAliasFiles(vt5Dir)
-                            AliasManager.initialize(this@InstallatieScherm, saf)
-                        }
-                        reindexDialog.dismiss()
-                        // write metadata
-                        writeAliasMeta(vt5Dir, AliasMasterMeta(sourceChecksum = newChecksum, sourceFiles = requiredServerFiles, timestamp = isoNow()))
-                        Log.i(TAG, "Alias index regenerated (checksum changed or missing)")
-                    } catch (ex: Exception) {
-                        Log.w(TAG, "Alias reindex failed: ${ex.message}", ex)
-                    } finally {
-                        updatePrecomputeButtonState()
+                val reindexDialog = ProgressDialogHelper.show(this@InstallatieScherm, "Alias index bijwerken...")
+                try {
+                    withContext(Dispatchers.IO) {
+                        // Ensure existing files removed so AliasManager.initialize will regenerate seed
+                        removeExistingAliasFiles(vt5Dir)
+                        AliasManager.initialize(this@InstallatieScherm, saf)
+                        // compute new checksum and write meta on IO
+                        val computed = computeServerFilesChecksum(vt5Dir)
+                        writeAliasMeta(vt5Dir, AliasMasterMeta(sourceChecksum = computed, sourceFiles = requiredServerFiles, timestamp = isoNow()))
                     }
+                    Log.i(TAG, "Alias index regenerated (checksum changed or missing)")
+                } catch (ex: Exception) {
+                    Log.w(TAG, "Alias reindex failed: ${ex.message}", ex)
+                } finally {
+                    reindexDialog.dismiss()
+                    updatePrecomputeButtonState()
                 }
             } else {
                 Log.i(TAG, "No alias regeneration needed (checksum unchanged)")
@@ -324,7 +327,7 @@ class InstallatieScherm : AppCompatActivity() {
         binding.btnAliasPrecompute.isEnabled = false
         binding.btnAliasPrecompute.alpha = 0.5f
 
-        uiScope.launch {
+        lifecycleScope.launch {
             val dlg = ProgressDialogHelper.show(this@InstallatieScherm, "Forceer heropbouw alias index...")
             try {
                 withContext(Dispatchers.IO) {
@@ -497,7 +500,7 @@ class InstallatieScherm : AppCompatActivity() {
 
     // Debug helper to inspect Documents/VT5 via SAF
     private fun verifyOutputsAndShowDialog() {
-        uiScope.launch {
+        lifecycleScope.launch {
             val sb = StringBuilder()
             val vt5Dir = saf.getVt5DirIfExists()
             if (vt5Dir == null) {

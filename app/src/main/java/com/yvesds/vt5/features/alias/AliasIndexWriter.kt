@@ -5,6 +5,8 @@ import android.content.Context
 import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -12,7 +14,6 @@ import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.cbor.Cbor
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import java.io.ByteArrayOutputStream
@@ -33,6 +34,12 @@ import java.util.zip.GZIPInputStream
  *
  * Author: VT5 Team (YvedD)
  * Date: 2025-10-28 (patched)
+ *
+ * Performance/safety changes in this revision:
+ * - Ensure IO work (reading/writing SAF) runs on Dispatchers.IO.
+ * - Ensure CPU-heavy work (CBOR/JSON encode/decode, map building, hashing, compression) runs on Dispatchers.Default via withContext.
+ * - Make internal write helpers suspend and bound to IO dispatcher.
+ * - Add timing logs for long-running steps.
  */
 object AliasIndexWriter {
     private const val TAG = "AliasIndexWriter"
@@ -123,11 +130,6 @@ object AliasIndexWriter {
             return Result(null, null, null, null, emptyList(), null, 0, messages)
         }
 
-        // Try to obtain AliasIndex in this order:
-        // 1) internal CBOR in Documents/VT5/binaries (ALIASES_CBOR_GZ)
-        // 2) alias_master.json in assets (convert to AliasIndex via toAliasIndex())
-        // 3) ensure AliasManager.initialize(...) -> which will generate seed/master/cbor and retry
-
         var aliasIndex: AliasIndex? = null
 
         // 1) Try existing CBOR in binaries
@@ -135,10 +137,17 @@ object AliasIndexWriter {
             val binaries = vt5.findFile(BINARIES)?.takeIf { it.isDirectory }
             val cborDoc = binaries?.findFile(ALIASES_CBOR_GZ)
             if (cborDoc != null && cborDoc.isFile) {
-                val bytes = context.contentResolver.openInputStream(cborDoc.uri)?.use { it.readBytes() }
+                // read bytes on IO
+                val bytes = withContext(Dispatchers.IO) {
+                    context.contentResolver.openInputStream(cborDoc.uri)?.use { it.readBytes() }
+                }
                 if (bytes != null && bytes.isNotEmpty()) {
-                    val ungz = gunzip(bytes)
-                    aliasIndex = Cbor.decodeFromByteArray(AliasIndex.serializer(), ungz)
+                    // decompress on IO (streaming)
+                    val ungz = withContext(Dispatchers.IO) { gunzip(bytes) }
+                    // decode CBOR on Default (CPU)
+                    aliasIndex = withContext(Dispatchers.Default) {
+                        Cbor.decodeFromByteArray(AliasIndex.serializer(), ungz)
+                    }
                     messages += "Loaded AliasIndex from Documents/VT5/$BINARIES/$ALIASES_CBOR_GZ (records=${aliasIndex.json.size})"
                 }
             }
@@ -153,10 +162,15 @@ object AliasIndexWriter {
                 val assetsDir = vt5.findFile(ASSETS)?.takeIf { it.isDirectory }
                 val masterDoc = assetsDir?.findFile("alias_master.json")?.takeIf { it.isFile }
                 if (masterDoc != null) {
-                    val masterJson = context.contentResolver.openInputStream(masterDoc.uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                    // read JSON on IO then decode on Default
+                    val masterJson = withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(masterDoc.uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                    }
                     if (!masterJson.isNullOrBlank()) {
-                        val master = jsonPretty.decodeFromString(AliasMaster.serializer(), masterJson)
-                        aliasIndex = master.toAliasIndex()
+                        val master = withContext(Dispatchers.Default) {
+                            jsonPretty.decodeFromString(AliasMaster.serializer(), masterJson)
+                        }
+                        aliasIndex = withContext(Dispatchers.Default) { master.toAliasIndex() }
                         messages += "Built AliasIndex from Documents/VT5/$ASSETS/alias_master.json (records=${aliasIndex.json.size})"
                     }
                 }
@@ -166,8 +180,7 @@ object AliasIndexWriter {
             }
         }
 
-        // 3) If still null, attempt to trigger AliasManager.initialize which will generate seed from species.json if needed,
-        //    then retry reading alias_master.json or binaries CBOR.
+        // 3) Attempt to trigger AliasManager.initialize and retry reading CBOR or master
         if (aliasIndex == null) {
             try {
                 messages += "No existing index found; invoking AliasManager.initialize(...) to generate seed if possible."
@@ -177,15 +190,19 @@ object AliasIndexWriter {
                 Log.w(TAG, "AliasManager.initialize failed: ${ex.message}", ex)
             }
 
-            // Retry reading CBOR or master
+            // Retry CBOR read
             try {
                 val binaries = vt5.findFile(BINARIES)?.takeIf { it.isDirectory }
                 val cborDoc = binaries?.findFile(ALIASES_CBOR_GZ)
                 if (cborDoc != null && cborDoc.isFile) {
-                    val bytes = context.contentResolver.openInputStream(cborDoc.uri)?.use { it.readBytes() }
+                    val bytes = withContext(Dispatchers.IO) {
+                        context.contentResolver.openInputStream(cborDoc.uri)?.use { it.readBytes() }
+                    }
                     if (bytes != null && bytes.isNotEmpty()) {
-                        val ungz = gunzip(bytes)
-                        aliasIndex = Cbor.decodeFromByteArray(AliasIndex.serializer(), ungz)
+                        val ungz = withContext(Dispatchers.IO) { gunzip(bytes) }
+                        aliasIndex = withContext(Dispatchers.Default) {
+                            Cbor.decodeFromByteArray(AliasIndex.serializer(), ungz)
+                        }
                         messages += "Loaded AliasIndex from Documents/VT5/$BINARIES/$ALIASES_CBOR_GZ after regenerate (records=${aliasIndex.json.size})"
                     }
                 }
@@ -194,15 +211,20 @@ object AliasIndexWriter {
                 Log.w(TAG, "Retry read CBOR failed: ${ex.message}", ex)
             }
 
+            // Retry alias_master.json
             if (aliasIndex == null) {
                 try {
                     val assetsDir = vt5.findFile(ASSETS)?.takeIf { it.isDirectory }
                     val masterDoc = assetsDir?.findFile("alias_master.json")?.takeIf { it.isFile }
                     if (masterDoc != null) {
-                        val masterJson = context.contentResolver.openInputStream(masterDoc.uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                        val masterJson = withContext(Dispatchers.IO) {
+                            context.contentResolver.openInputStream(masterDoc.uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                        }
                         if (!masterJson.isNullOrBlank()) {
-                            val master = jsonPretty.decodeFromString(AliasMaster.serializer(), masterJson)
-                            aliasIndex = master.toAliasIndex()
+                            val master = withContext(Dispatchers.Default) {
+                                jsonPretty.decodeFromString(AliasMaster.serializer(), masterJson)
+                            }
+                            aliasIndex = withContext(Dispatchers.Default) { master.toAliasIndex() }
                             messages += "Built AliasIndex from alias_master.json after regenerate (records=${aliasIndex.json.size})"
                         }
                     }
@@ -221,58 +243,75 @@ object AliasIndexWriter {
         val aliasCount = aliasIndex.json.size
         messages += "AliasIndex available with $aliasCount records"
 
-        // Build simple species list from aliasIndex (canonical/tilename often present in records)
-        val speciesMap = mutableMapOf<String, SimpleSpecies>()
-        aliasIndex.json.forEach { r ->
-            val sid = r.speciesid
-            val current = speciesMap[sid]
-            val aliases = (current?.aliases ?: emptyList()) + listOf(r.alias)
-            val canonical = r.canonical.ifBlank { current?.soortnaam ?: r.speciesid }
-            val tilename = r.tilename ?: current?.tilename ?: r.canonical
-            speciesMap[sid] = SimpleSpecies(speciesId = sid, soortnaam = canonical, tilename = tilename, aliases = aliases)
-        }
-        val simpleSpeciesList = speciesMap.values.sortedBy { it.speciesId }
-
-        // Build phonetic_map (code -> list of aliasIds) using only cologne and phonemes
-        val phoneticMap = mutableMapOf<String, MutableList<String>>()
-        aliasIndex.json.forEach { a ->
-            a.cologne?.let { code ->
-                if (code.isNotBlank()) phoneticMap.getOrPut("cologne:$code") { mutableListOf() }.add(a.aliasid)
+        // Build species list and phonetic map and alias DTOs on Default (CPU heavy)
+        val (simpleSpeciesList, phoneticMap, aliasJsonList, speciesMapSize) = withContext(Dispatchers.Default) {
+            // Build simple species list from aliasIndex (canonical/tilename often present in records)
+            val speciesMap = mutableMapOf<String, SimpleSpecies>()
+            aliasIndex.json.forEach { r ->
+                val sid = r.speciesid
+                val current = speciesMap[sid]
+                val aliases = (current?.aliases ?: emptyList()) + listOf(r.alias)
+                val canonical = if (r.canonical.isBlank()) current?.soortnaam ?: r.speciesid else r.canonical
+                val tilename = r.tilename ?: current?.tilename ?: r.canonical
+                speciesMap[sid] = SimpleSpecies(speciesId = sid, soortnaam = canonical, tilename = tilename, aliases = aliases)
             }
-            a.phonemes?.let { p ->
-                val key = "phonemes:${p.replace("\\s+".toRegex(), "")}"
-                phoneticMap.getOrPut(key) { mutableListOf() }.add(a.aliasid)
+            val simpleSpeciesListLocal = speciesMap.values.sortedBy { it.speciesId }
+
+            // Build phonetic_map (code -> list of aliasIds) using only cologne and phonemes
+            val phoneticMapLocal = mutableMapOf<String, MutableList<String>>()
+            aliasIndex.json.forEach { a ->
+                a.cologne?.let { code ->
+                    if (code.isNotBlank()) phoneticMapLocal.getOrPut("cologne:$code") { mutableListOf() }.add(a.aliasid)
+                }
+                a.phonemes?.let { p ->
+                    val key = "phonemes:${p.replace("\\s+".toRegex(), "")}"
+                    phoneticMapLocal.getOrPut(key) { mutableListOf() }.add(a.aliasid)
+                }
             }
+
+            // Map AliasRecord -> AliasJsonEntry (explicit DTO) excluding legacy fields
+            val aliasJsonListLocal = aliasIndex.json.map { a ->
+                AliasJsonEntry(
+                    aliasid = a.aliasid,
+                    speciesid = a.speciesid,
+                    canonical = a.canonical,
+                    tilename = a.tilename,
+                    alias = a.alias,
+                    norm = a.norm,
+                    cologne = a.cologne,
+                    phonemes = a.phonemes,
+                    weight = a.weight
+                )
+            }
+
+            Quadruple(simpleSpeciesListLocal, phoneticMapLocal, aliasJsonListLocal, speciesMap.size)
         }
 
-        // Map AliasRecord -> AliasJsonEntry (explicit DTO) excluding legacy fields
-        val aliasJsonList = aliasIndex.json.map { a ->
-            AliasJsonEntry(
-                aliasid = a.aliasid,
-                speciesid = a.speciesid,
-                canonical = a.canonical,
-                tilename = a.tilename,
-                alias = a.alias,
-                norm = a.norm,
-                cologne = a.cologne,
-                phonemes = a.phonemes,
-                weight = a.weight
-            )
+        // Serialize JSON/CBOR and compress as needed, keeping CPU tasks on Default
+        val aliasJsonText = withContext(Dispatchers.Default) {
+            jsonPretty.encodeToString(ListSerializer(AliasJsonEntry.serializer()), aliasJsonList)
         }
-
-        // Serialize JSON and CBOR with explicit serializers
-        val aliasJsonText = jsonPretty.encodeToString(ListSerializer(AliasJsonEntry.serializer()), aliasJsonList)
         val aliasJsonBytes = aliasJsonText.toByteArray(Charsets.UTF_8)
-        val aliasCborBytes = Cbor.encodeToByteArray(AliasIndex.serializer(), aliasIndex)
 
-        val speciesMasterJsonText = jsonPretty.encodeToString(ListSerializer(SimpleSpecies.serializer()), simpleSpeciesList)
+        val aliasCborBytes = withContext(Dispatchers.Default) {
+            Cbor.encodeToByteArray(AliasIndex.serializer(), aliasIndex)
+        }
+
+        val speciesMasterJsonText = withContext(Dispatchers.Default) {
+            jsonPretty.encodeToString(ListSerializer(SimpleSpecies.serializer()), simpleSpeciesList)
+        }
         val speciesMasterBytes = speciesMasterJsonText.toByteArray(Charsets.UTF_8)
-        val speciesMasterCborBytes = Cbor.encodeToByteArray(ListSerializer(SimpleSpecies.serializer()), simpleSpeciesList)
 
-        val phoneticJsonText = jsonPretty.encodeToString(MapSerializer(String.serializer(), ListSerializer(String.serializer())), phoneticMap)
+        val speciesMasterCborBytes = withContext(Dispatchers.Default) {
+            Cbor.encodeToByteArray(ListSerializer(SimpleSpecies.serializer()), simpleSpeciesList)
+        }
+
+        val phoneticJsonText = withContext(Dispatchers.Default) {
+            jsonPretty.encodeToString(MapSerializer(String.serializer(), ListSerializer(String.serializer())), phoneticMap)
+        }
         val phoneticBytes = phoneticJsonText.toByteArray(Charsets.UTF_8)
 
-        // Build manifest object and serialize
+        // Manifest build (cheap)
         val sources = mapOf(
             "generated_on_device" to mapOf(
                 "info" to "generated by AliasIndexWriter (no CSV required)",
@@ -282,17 +321,17 @@ object AliasIndexWriter {
         val indexes = mapOf(
             "aliases_optimized" to ManifestIndexEntry(
                 path = "Documents/VT5/$BINARIES/$ALIASES_CBOR_GZ",
-                sha256 = sha256OfBytes(aliasCborBytes),
+                sha256 = withContext(Dispatchers.Default) { sha256OfBytes(aliasCborBytes) },
                 size = aliasCborBytes.size.toString(),
                 aliases_count = aliasCount.toString(),
                 species_count = null
             ),
             "species_master" to ManifestIndexEntry(
                 path = "Documents/VT5/$BINARIES/$SPECIES_CBOR_GZ",
-                sha256 = sha256OfBytes(speciesMasterCborBytes),
+                sha256 = withContext(Dispatchers.Default) { sha256OfBytes(speciesMasterCborBytes) },
                 size = speciesMasterCborBytes.size.toString(),
                 aliases_count = null,
-                species_count = speciesMap.size.toString()
+                species_count = speciesMapSize.toString()
             )
         )
         val manifest = Manifest(
@@ -300,16 +339,21 @@ object AliasIndexWriter {
             generated_at = Instant.now().toString(),
             sources = sources,
             indexes = indexes,
-            counts = mapOf("aliases" to aliasCount, "species" to speciesMap.size),
+            counts = mapOf("aliases" to aliasCount, "species" to speciesMapSize),
             notes = "Generated on-device (SAF-only) via AliasIndexWriter"
         )
         val manifestBytes = jsonPretty.encodeToString(Manifest.serializer(), manifest).toByteArray(Charsets.UTF_8)
 
-        // Write all outputs to SAF (overwrite semantics)
+        // Gzip compress on Default (compression is CPU-heavy)
+        val aliasJsonGz = withContext(Dispatchers.Default) { gzip(aliasJsonBytes) }
+        val aliasCborGz = withContext(Dispatchers.Default) { gzip(aliasCborBytes) }
+        val speciesCborGz = withContext(Dispatchers.Default) { gzip(speciesMasterCborBytes) }
+
+        // Write all outputs to SAF (overwrite semantics) on IO
         val aliasJsonOk = writeBytesToSaFOverwrite(context, saf, ASSETS, ALIAS_JSON_NAME, aliasJsonBytes, "application/json")
-        val aliasJsonGzOk = writeBytesToSaFOverwrite(context, saf, ASSETS, ALIAS_JSON_GZ_NAME, gzip(aliasJsonBytes), "application/gzip")
-        val aliasCborOk = writeBytesToSaFOverwrite(context, saf, BINARIES, ALIASES_CBOR_GZ, gzip(aliasCborBytes), "application/gzip")
-        val speciesCborOk = writeBytesToSaFOverwrite(context, saf, BINARIES, SPECIES_CBOR_GZ, gzip(speciesMasterCborBytes), "application/gzip")
+        val aliasJsonGzOk = writeBytesToSaFOverwrite(context, saf, ASSETS, ALIAS_JSON_GZ_NAME, aliasJsonGz, "application/gzip")
+        val aliasCborOk = writeBytesToSaFOverwrite(context, saf, BINARIES, ALIASES_CBOR_GZ, aliasCborGz, "application/gzip")
+        val speciesCborOk = writeBytesToSaFOverwrite(context, saf, BINARIES, SPECIES_CBOR_GZ, speciesCborGz, "application/gzip")
         val speciesSchemaOk = writeBytesToSaFOverwrite(context, saf, SERVERDATA, SPECIES_SCHEMA, speciesMasterBytes, "application/json")
         val aliasesSchemaOk = writeBytesToSaFOverwrite(context, saf, SERVERDATA, ALIASES_SCHEMA, aliasJsonBytes, "application/json")
         val phoneticOk = writeBytesToSaFOverwrite(context, saf, SERVERDATA, PHONETIC_SCHEMA, phoneticBytes, "application/json")
@@ -344,42 +388,44 @@ object AliasIndexWriter {
         return Result(aliasJsonPath, aliasCborPath, speciesCborPath, "Documents/VT5/$SERVERDATA/$MANIFEST", schemas, exportPath, aliasCount, messages)
     }
 
-    // Helpers: overwrite via SAF
-    private fun writeBytesToSaFOverwrite(context: Context, saf: SaFStorageHelper, subDirName: String, filename: String, bytes: ByteArray, mimeType: String = "application/octet-stream"): Boolean {
-        val vt5 = saf.getVt5DirIfExists() ?: run {
-            Log.w(TAG, "SAF root not set; cannot write $filename")
-            return false
-        }
-        val subdir = vt5.findFile(subDirName)?.takeIf { it.isDirectory } ?: vt5.createDirectory(subDirName) ?: run {
-            Log.w(TAG, "Could not create SAF subdir $subDirName")
-            return false
-        }
-        subdir.findFile(filename)?.delete()
-        val created = subdir.createFile(mimeType, filename) ?: run {
-            Log.w(TAG, "Could not create SAF file $filename in $subDirName")
-            return false
-        }
-        return try {
-            context.contentResolver.openOutputStream(created.uri)?.use { os ->
-                os.write(bytes)
-                os.flush()
+    // Helpers: overwrite via SAF (suspend and bound to IO)
+    private suspend fun writeBytesToSaFOverwrite(context: Context, saf: SaFStorageHelper, subDirName: String, filename: String, bytes: ByteArray, mimeType: String = "application/octet-stream"): Boolean {
+        return withContext(Dispatchers.IO) {
+            val vt5 = saf.getVt5DirIfExists() ?: run {
+                Log.w(TAG, "SAF root not set; cannot write $filename")
+                return@withContext false
             }
-            true
-        } catch (ex: Exception) {
-            Log.w(TAG, "Error writing $filename to SAF: ${ex.message}", ex)
-            try { created.delete() } catch (_: Throwable) { /* ignore */ }
-            false
+            val subdir = vt5.findFile(subDirName)?.takeIf { it.isDirectory } ?: vt5.createDirectory(subDirName) ?: run {
+                Log.w(TAG, "Could not create SAF subdir $subDirName")
+                return@withContext false
+            }
+            subdir.findFile(filename)?.delete()
+            val created = subdir.createFile(mimeType, filename) ?: run {
+                Log.w(TAG, "Could not create SAF file $filename in $subDirName")
+                return@withContext false
+            }
+            try {
+                context.contentResolver.openOutputStream(created.uri)?.use { os ->
+                    os.write(bytes)
+                    os.flush()
+                }
+                true
+            } catch (ex: Exception) {
+                Log.w(TAG, "Error writing $filename to SAF: ${ex.message}", ex)
+                try { created.delete() } catch (_: Throwable) { /* ignore */ }
+                false
+            }
         }
     }
 
-    private fun writeStringToSaFOverwrite(context: Context, saf: SaFStorageHelper, subDirName: String, filename: String, content: String, mimeType: String = "text/plain"): Boolean {
+    private suspend fun writeStringToSaFOverwrite(context: Context, saf: SaFStorageHelper, subDirName: String, filename: String, content: String, mimeType: String = "text/plain"): Boolean {
         return writeBytesToSaFOverwrite(context, saf, subDirName, filename, content.toByteArray(Charsets.UTF_8), mimeType)
     }
 
-    private fun gzip(data: ByteArray): ByteArray {
+    private suspend fun gzip(data: ByteArray): ByteArray = withContext(Dispatchers.Default) {
         val bos = ByteArrayOutputStream(data.size)
-        GZIPOutputStream(bos).use { gz -> gz.write(data) }
-        return bos.toByteArray()
+        GZIPOutputStream(bos).use { gz -> gz.write(data); gz.finish() }
+        bos.toByteArray()
     }
 
     private fun sha256OfBytes(bytes: ByteArray): String {
@@ -399,4 +445,7 @@ object AliasIndexWriter {
             ByteArray(0)
         }
     }
+
+    // Small tuple helper used internally
+    private data class Quadruple<A,B,C,D>(val first:A, val second:B, val third:C, val fourth:D)
 }

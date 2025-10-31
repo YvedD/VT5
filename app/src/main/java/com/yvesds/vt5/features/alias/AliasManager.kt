@@ -38,6 +38,11 @@ import kotlinx.serialization.json.contentOrNull
  *     3) SAF assets/alias_master.json or regenerate from serverdata/species.json
  * - Provide batched user-alias persistence (write queue -> assets master + binaries CBOR)
  *
+ * Enhancement applied:
+ * - Per-alias immediate persistence to alias_master.json (safe, idempotent update) on addAlias.
+ * - Debounced CBOR rebuild scheduled after alias adds to avoid expensive repeated work.
+ * - Preserve original batched write queue logic for compatibility.
+ *
  * Notes:
  * - CSV references have been removed entirely from runtime. Any CSV migration must be done offline
  *   into alias_master.json and aliases_optimized.cbor.gz placed in Documents/VT5/binaries/.
@@ -68,7 +73,7 @@ object AliasManager {
     @Volatile private var indexLoaded = false
     @Volatile private var loadedIndex: AliasIndex? = null
 
-    /* WRITE QUEUE */
+    /* WRITE QUEUE (legacy batched writes) */
     private val writeQueue = ConcurrentHashMap<String, PendingAlias>()
     private val writePending = AtomicBoolean(false)
     private val writeScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -84,6 +89,12 @@ object AliasManager {
         val tilename: String?,
         val timestamp: String
     )
+
+    /* Immediate-write synchronization + CBOR rebuild debounce */
+    private val masterWriteMutex = Mutex()
+    private val cborMutex = Mutex()
+    private var cborRebuildJob: Job? = null
+    private const val CBOR_REBUILD_DEBOUNCE_MS = 30_000L
 
     /* INITIALIZATION: ensure SAF structure and optionally generate initial seed */
     suspend fun initialize(context: Context, saf: SaFStorageHelper): Boolean = withContext(Dispatchers.IO) {
@@ -368,21 +379,17 @@ object AliasManager {
                 tilename = tilename
             )
 
-            // 2) Add to in-memory write queue for batched persistence
-            val key = "$speciesId||${normalizeLowerNoDiacritics(normalizedText)}"
-            val pending = PendingAlias(
-                speciesId = speciesId,
-                aliasText = normalizedText,
-                canonical = canonical,
-                tilename = tilename,
-                timestamp = Instant.now().toString()
-            )
-            writeQueue[key] = pending
+            // 2) Persist alias immediately to alias_master.json (lightweight per-alias write). This makes the alias durable quickly.
+            val timestamp = Instant.now().toString()
+            val persisted = writeSingleAliasToMasterImmediate(context, saf, speciesId, normalizedText, canonical, tilename, timestamp)
+            if (!persisted) {
+                Log.w(TAG, "addAlias: immediate persist to master.json failed (alias still hotpatched in-memory)")
+            }
 
-            // 3) Schedule batched write (existing logic)
-            scheduleBatchWrite(context, saf)
+            // 3) Schedule debounced CBOR rebuild (coalesced for many adds)
+            scheduleCborRebuildDebounced(context, saf)
 
-            Log.i(TAG, "addAlias: hotpatched and queued alias='$normalizedText' for species=$speciesId")
+            Log.i(TAG, "addAlias: hotpatched and persisted alias='$normalizedText' for species=$speciesId (master.json immediate)")
             return@withContext true
         } catch (ex: Exception) {
             Log.e(TAG, "addAlias failed: ${ex.message}", ex)
@@ -392,10 +399,73 @@ object AliasManager {
 
     /* FORCE FLUSH */
     suspend fun forceFlush(context: Context, saf: SaFStorageHelper) {
+        // force immediate CBOR rebuild now (synchronous)
+        // Also keep legacy flushWriteQueue behavior for queued entries
         writeJob?.cancel()
         if (writeQueue.isNotEmpty()) {
-            Log.i(TAG, "Force flushing ${writeQueue.size} pending aliases...")
+            Log.i(TAG, "Force flushing ${writeQueue.size} pending aliases (legacy batch path)...")
             flushWriteQueue(context, saf)
+        }
+        // Also ensure debounced CBOR rebuild runs now
+        scheduleCborRebuildDebounced(context, saf, immediate = true)
+    }
+
+    /**
+     * Debounced CBOR rebuild scheduling.
+     * - If immediate=true then perform rebuild as soon as possible on writer scope.
+     * - Otherwise debounce for CBOR_REBUILD_DEBOUNCE_MS to coalesce multiple alias adds.
+     */
+    private fun scheduleCborRebuildDebounced(context: Context, saf: SaFStorageHelper, immediate: Boolean = false) {
+        writeScope.launch {
+            cborMutex.withLock {
+                cborRebuildJob?.cancel()
+                cborRebuildJob = writeScope.launch {
+                    try {
+                        if (!immediate) {
+                            delay(CBOR_REBUILD_DEBOUNCE_MS)
+                        }
+                        // Read current master.json from SAF and rebuild CBOR
+                        val vt5 = saf.getVt5DirIfExists() ?: run {
+                            Log.w(TAG, "scheduleCborRebuildDebounced: VT5 not available")
+                            return@launch
+                        }
+                        val assets = vt5.findFile(ASSETS)?.takeIf { it.isDirectory } ?: run {
+                            Log.w(TAG, "scheduleCborRebuildDebounced: assets dir missing")
+                            return@launch
+                        }
+                        val masterDoc = assets.findFile(MASTER_FILE)?.takeIf { it.isFile }
+                        if (masterDoc == null) {
+                            Log.w(TAG, "scheduleCborRebuildDebounced: master.json missing")
+                            return@launch
+                        }
+                        val masterJson = runCatching { context.contentResolver.openInputStream(masterDoc.uri)?.use { it.readBytes().toString(Charsets.UTF_8) } }.getOrNull()
+                        if (masterJson.isNullOrBlank()) {
+                            Log.w(TAG, "scheduleCborRebuildDebounced: master.json empty")
+                            return@launch
+                        }
+                        val master = try { jsonPretty.decodeFromString(AliasMaster.serializer(), masterJson) } catch (ex: Exception) {
+                            Log.w(TAG, "scheduleCborRebuildDebounced: decode failed: ${ex.message}")
+                            return@launch
+                        }
+
+                        // Rebuild CBOR using existing function (runs on IO inside)
+                        val binaries = vt5.findFile(BINARIES)?.takeIf { it.isDirectory } ?: vt5.createDirectory(BINARIES) ?: run {
+                            Log.w(TAG, "scheduleCborRebuildDebounced: cannot create binaries dir")
+                            return@launch
+                        }
+                        rebuildCborCache(master, binaries, context)
+
+                        // internal cache will be updated by rebuildCborCache
+                        Log.i(TAG, "scheduleCborRebuildDebounced: CBOR rebuild finished")
+                    } catch (ex: CancellationException) {
+                        Log.i(TAG, "CBOR rebuild job cancelled/rescheduled")
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "CBOR rebuild failed: ${ex.message}", ex)
+                    } finally {
+                        cborRebuildJob = null
+                    }
+                }
+            }
         }
     }
 
@@ -784,7 +854,7 @@ object AliasManager {
         )
     }
 
-    /* BATCH WRITE SYSTEM */
+    /* BATCH WRITE SYSTEM (legacy; still available) */
     private fun scheduleBatchWrite(context: Context, saf: SaFStorageHelper) {
         if (writePending.compareAndSet(false, true)) {
             writeJob?.cancel()
@@ -906,6 +976,91 @@ object AliasManager {
             }
         } catch (ex: Exception) {
             Log.e(TAG, "rebuildCborCache failed: ${ex.message}", ex)
+        }
+    }
+
+    /* ---------------------------------
+       New helper: single-alias master.json update
+       --------------------------------- */
+
+    /**
+     * Atomically insert a single alias into alias_master.json in SAF assets.
+     * Returns true if write succeeded or alias already existed (idempotent).
+     */
+    private suspend fun writeSingleAliasToMasterImmediate(
+        context: Context,
+        saf: SaFStorageHelper,
+        speciesId: String,
+        aliasText: String,
+        canonical: String,
+        tilename: String?,
+        timestamp: String
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            masterWriteMutex.withLock {
+                val vt5 = saf.getVt5DirIfExists() ?: run {
+                    Log.w(TAG, "writeSingleAliasToMasterImmediate: VT5 not available")
+                    return@withContext false
+                }
+
+                val assetsDir = vt5.findFile(ASSETS)?.takeIf { it.isDirectory } ?: vt5.createDirectory(ASSETS)
+                if (assetsDir == null) {
+                    Log.w(TAG, "writeSingleAliasToMasterImmediate: cannot access/create assets dir")
+                    return@withContext false
+                }
+
+                val masterDoc = assetsDir.findFile(MASTER_FILE)?.takeIf { it.isFile } ?: assetsDir.createFile("application/json", MASTER_FILE)
+                if (masterDoc == null) {
+                    Log.w(TAG, "writeSingleAliasToMasterImmediate: cannot create master.json")
+                    return@withContext false
+                }
+
+                // Read existing master
+                val masterJson = runCatching {
+                    context.contentResolver.openInputStream(masterDoc.uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                }.getOrNull()
+                val master: AliasMaster = if (masterJson.isNullOrBlank()) {
+                    AliasMaster(version = "2.1", timestamp = Instant.now().toString(), species = emptyList())
+                } else {
+                    runCatching { jsonPretty.decodeFromString(AliasMaster.serializer(), masterJson) }.getOrElse {
+                        Log.w(TAG, "writeSingleAliasToMasterImmediate: failed decode existing master; creating new master")
+                        AliasMaster(version = "2.1", timestamp = Instant.now().toString(), species = emptyList())
+                    }
+                }
+
+                val speciesMap = master.species.associateBy { it.speciesId }.toMutableMap()
+
+                val speciesEntry = speciesMap.getOrElse(speciesId) {
+                    SpeciesEntry(speciesId = speciesId, canonical = canonical, tilename = tilename, aliases = emptyList()).also { speciesMap[speciesId] = it }
+                }
+
+                val newAlias = generateAliasData(aliasText, source = "user_field_training").copy(timestamp = timestamp)
+                val existingNorms = speciesEntry.aliases.map { it.norm }.toMutableSet()
+                if (existingNorms.contains(newAlias.norm)) {
+                    // already present -> update master timestamp and write to ensure updated timestamp
+                    val updatedMaster = master.copy(timestamp = Instant.now().toString(), species = speciesMap.values.sortedBy { it.speciesId })
+                    val prettyJson = jsonPretty.encodeToString(AliasMaster.serializer(), updatedMaster)
+                    context.contentResolver.openOutputStream(masterDoc.uri, "w")?.use { os ->
+                        os.write(prettyJson.toByteArray(Charsets.UTF_8)); os.flush()
+                    }
+                    Log.i(TAG, "writeSingleAliasToMasterImmediate: alias already existed (norm=${newAlias.norm}) for species=$speciesId")
+                    return@withContext true
+                } else {
+                    // append
+                    val updatedSpeciesEntry = speciesEntry.copy(aliases = speciesEntry.aliases + newAlias)
+                    speciesMap[speciesId] = updatedSpeciesEntry
+                    val updatedMaster = master.copy(timestamp = Instant.now().toString(), species = speciesMap.values.sortedBy { it.speciesId })
+                    val prettyJson = jsonPretty.encodeToString(AliasMaster.serializer(), updatedMaster)
+                    context.contentResolver.openOutputStream(masterDoc.uri, "w")?.use { os ->
+                        os.write(prettyJson.toByteArray(Charsets.UTF_8)); os.flush()
+                    }
+                    Log.i(TAG, "writeSingleAliasToMasterImmediate: wrote alias to master.json for species=$speciesId")
+                    return@withContext true
+                }
+            }
+        } catch (ex: Exception) {
+            Log.w(TAG, "writeSingleAliasToMasterImmediate failed: ${ex.message}", ex)
+            false
         }
     }
 
