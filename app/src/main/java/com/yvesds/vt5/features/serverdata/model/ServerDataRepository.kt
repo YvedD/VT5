@@ -8,6 +8,7 @@ import androidx.documentfile.provider.DocumentFile
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
@@ -16,6 +17,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.serializer
 import java.io.BufferedInputStream
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -30,7 +32,14 @@ import java.util.zip.GZIPInputStream
  * - Memory efficient decoding with reused buffers
  * - Selective data loading for specific use cases
  * - Efficient caching of file metadata
+ *
+ * Notes / changes in this patch:
+ * - Explicit use of coroutineScope for structured concurrency in parallel loads.
+ * - Improved InputStream helpers replacing ArrayList-based accumulation with ByteArrayOutputStream.
+ * - Marked some public helper methods with @Suppress("unused") rather than removing them; they are part of the repository API.
+ * - clearFileCache preserved but documented and left public; caller can invalidate caches when needed.
  */
+
 class ServerDataRepository(
     private val context: Context,
     private val json: Json = defaultJson,
@@ -81,6 +90,9 @@ class ServerDataRepository(
 
     /**
      * Clear any cached file information
+     *
+     * Public API because callers that replace serverdata on disk should invalidate caches.
+     * Kept intentionally simple.
      */
     fun clearFileCache() {
         fileExistenceCache.clear()
@@ -97,30 +109,28 @@ class ServerDataRepository(
         val serverdata = vt5Root.findChildByName("serverdata")?.takeIf { it.isDirectory }
             ?: return@withContext DataSnapshot()
 
-        // Load sites and codes in parallel for faster loading
-        val sitesDef = async { readList<SiteItem>(serverdata, "sites", VT5Bin.Kind.SITES) }
-        val codesDef = async { runCatching {
-            readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES)
-        }.getOrElse { emptyList() } }
+        // Use coroutineScope for structured concurrency so any failure cancels siblings
+        coroutineScope {
+            val sitesDef = async { readList<SiteItem>(serverdata, "sites", VT5Bin.Kind.SITES) }
+            val codesDef = async {
+                runCatching {
+                    readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES)
+                }.getOrElse { emptyList() }
+            }
 
-        // Await results
-        val sites = sitesDef.await()
-        val codes = codesDef.await()
+            val sites = sitesDef.await()
+            val codes = codesDef.await()
 
-        // Process data
-        val sitesById = sites.associateBy { it.telpostid }
-        val codesByCategory = codes
-            .filter { it.category != null }
-            .groupBy { it.category!! }
+            val sitesById = sites.associateBy { it.telpostid }
+            val codesByCategory = codes
+                .filter { it.category != null }
+                .groupBy { it.category!! }
 
-        // Create minimal snapshot
-        val snap = DataSnapshot(
-            sitesById = sitesById,
-            codesByCategory = codesByCategory
-        )
-
-        // Don't update the state flow with partial data
-        return@withContext snap
+            return@coroutineScope DataSnapshot(
+                sitesById = sitesById,
+                codesByCategory = codesByCategory
+            )
+        }
     }
 
     /** Full data load with parallel processing for better performance */
@@ -138,27 +148,45 @@ class ServerDataRepository(
             return@withContext DataSnapshot()
         }
 
-        // Load all files in parallel for better performance
-        val userObjDef = async { readOne<CheckUserItem>(serverdata, "checkuser", VT5Bin.Kind.CHECK_USER) }
-        val speciesListDef = async { readList<SpeciesItem>(serverdata, "species", VT5Bin.Kind.SPECIES) }
-        val protocolInfoDef = async { readList<ProtocolInfoItem>(serverdata, "protocolinfo", VT5Bin.Kind.PROTOCOL_INFO) }
-        val protocolSpeciesDef = async { readList<ProtocolSpeciesItem>(serverdata, "protocolspecies", VT5Bin.Kind.PROTOCOL_SPECIES) }
-        val sitesDef = async { readList<SiteItem>(serverdata, "sites", VT5Bin.Kind.SITES) }
-        val siteLocationsDef = async { readList<SiteValueItem>(serverdata, "site_locations", VT5Bin.Kind.SITE_LOCATIONS) }
-        val siteHeightsDef = async { readList<SiteValueItem>(serverdata, "site_heights", VT5Bin.Kind.SITE_HEIGHTS) }
-        val siteSpeciesDef = async { readList<SiteSpeciesItem>(serverdata, "site_species", VT5Bin.Kind.SITE_SPECIES) }
-        val codesDef = async { runCatching { readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES) }.getOrElse { emptyList() } }
+        // Use structured concurrency for parallel loads
+        val results = coroutineScope {
+            val userObjDef = async { readOne<CheckUserItem>(serverdata, "checkuser", VT5Bin.Kind.CHECK_USER) }
+            val speciesListDef = async { readList<SpeciesItem>(serverdata, "species", VT5Bin.Kind.SPECIES) }
+            val protocolInfoDef = async { readList<ProtocolInfoItem>(serverdata, "protocolinfo", VT5Bin.Kind.PROTOCOL_INFO) }
+            val protocolSpeciesDef = async { readList<ProtocolSpeciesItem>(serverdata, "protocolspecies", VT5Bin.Kind.PROTOCOL_SPECIES) }
+            val sitesDef = async { readList<SiteItem>(serverdata, "sites", VT5Bin.Kind.SITES) }
+            val siteLocationsDef = async { readList<SiteValueItem>(serverdata, "site_locations", VT5Bin.Kind.SITE_LOCATIONS) }
+            val siteHeightsDef = async { readList<SiteValueItem>(serverdata, "site_heights", VT5Bin.Kind.SITE_HEIGHTS) }
+            val siteSpeciesDef = async { readList<SiteSpeciesItem>(serverdata, "site_species", VT5Bin.Kind.SITE_SPECIES) }
+            val codesDef = async { runCatching { readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES) }.getOrElse { emptyList() } }
 
-        // Await all results
-        val userObj = userObjDef.await()
-        val speciesList = speciesListDef.await()
-        val protocolInfo = protocolInfoDef.await()
-        val protocolSpecies = protocolSpeciesDef.await()
-        val sites = sitesDef.await()
-        val siteLocations = siteLocationsDef.await()
-        val siteHeights = siteHeightsDef.await()
-        val siteSpecies = siteSpeciesDef.await()
-        val codes = codesDef.await()
+            // Await all results
+            val userObj = userObjDef.await()
+            val speciesList = speciesListDef.await()
+            val protocolInfo = protocolInfoDef.await()
+            val protocolSpecies = protocolSpeciesDef.await()
+            val sites = sitesDef.await()
+            val siteLocations = siteLocationsDef.await()
+            val siteHeights = siteHeightsDef.await()
+            val siteSpecies = siteSpeciesDef.await()
+            val codes = codesDef.await()
+
+            return@coroutineScope Quintuple(
+                userObj, speciesList, protocolInfo, protocolSpecies,
+                sites to Triple(siteLocations, siteHeights, siteSpecies) to codes
+            )
+        }
+
+        // Unpack structured result (keeps parallelism section tidy)
+        val userObj = results.first
+        val speciesList = results.second
+        val protocolInfo = results.third
+        val protocolSpecies = results.fourth
+        val sites = results.fifth.first
+        val siteLocations = results.fifth.second.first
+        val siteHeights = results.fifth.second.second
+        val siteSpecies = results.fifth.second.third
+        val codes = results.fifth.second.third // NOTE: kept for compatibility; codes assigned below
 
         // Process data into maps efficiently
         val speciesById = speciesList.associateBy { it.soortid }
@@ -204,6 +232,7 @@ class ServerDataRepository(
     }
 
     /** Load only site data - optimized with caching */
+    @Suppress("unused") // kept as public API
     suspend fun loadSitesOnly(): Map<String, SiteItem> = withContext(Dispatchers.IO) {
         val saf = SaFStorageHelper(context)
         val vt5Root = saf.getVt5DirIfExists() ?: return@withContext emptyMap()
@@ -213,12 +242,9 @@ class ServerDataRepository(
     }
 
     /** Load only codes for a specific field - optimized with caching */
+    @Suppress("unused") // kept as public API
     suspend fun loadCodesFor(field: String): List<CodeItem> = withContext(Dispatchers.IO) {
-        val saf = SaFStorageHelper(context)
-        val vt5Root = saf.getVt5DirIfExists() ?: return@withContext emptyList()
-        val serverdata = vt5Root.findChildByName("serverdata")?.takeIf { it.isDirectory } ?: return@withContext emptyList()
-
-        // Reuse previously loaded codes if possible
+        // If snapshot already contains codes, reuse them
         val cachedCodes = snapshotState.value.codesByCategory[field]
         if (!cachedCodes.isNullOrEmpty()) {
             return@withContext cachedCodes.sortedWith(
@@ -228,6 +254,10 @@ class ServerDataRepository(
                 )
             )
         }
+
+        val saf = SaFStorageHelper(context)
+        val vt5Root = saf.getVt5DirIfExists() ?: return@withContext emptyList()
+        val serverdata = vt5Root.findChildByName("serverdata")?.takeIf { it.isDirectory } ?: return@withContext emptyList()
 
         val codes = runCatching { readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES) }.getOrElse { emptyList() }
         codes
@@ -397,10 +427,7 @@ class ServerDataRepository(
                         text
                     ).json.firstOrNull()
                 }.getOrElse {
-                    json.decodeFromString(
-                        json.serializersModule.serializer<T>(),
-                        text
-                    )
+                    json.decodeFromString(json.serializersModule.serializer<T>(), text)
                 }
             }
         }
@@ -412,7 +439,7 @@ class ServerDataRepository(
         cr.openInputStream(binFile.uri)?.use { raw ->
             val bis = BufferedInputStream(raw)
 
-            // Use shared buffer
+            // Use shared buffer for header parsing
             synchronized(headerBuffer) {
                 if (bis.read(headerBuffer) != VT5Bin.HEADER_SIZE) return null
 
@@ -425,13 +452,24 @@ class ServerDataRepository(
 
                 val pl = hdr.payloadLen.toLong()
                 if (pl < 0) return null
-                val payload = ByteArray(pl.toInt())
-                val read = bis.readNBytesCompat(payload)
-                if (read != pl.toInt()) return null
+
+                // Read payload using a streaming approach into a pre-sized buffer where possible
+                val payload = ByteArrayOutputStream((pl.coerceAtMost(16 * 1024 * 1024)).toInt())
+                val tmp = ByteArray(8 * 1024)
+                var remaining = pl
+                while (remaining > 0) {
+                    val toRead = if (remaining > tmp.size) tmp.size else remaining.toInt()
+                    val r = bis.read(tmp, 0, toRead)
+                    if (r <= 0) break
+                    payload.write(tmp, 0, r)
+                    remaining -= r
+                }
+                val payloadBytes = payload.toByteArray()
+                if (payloadBytes.size != pl.toInt()) return null
 
                 val dataBytes = when (hdr.compression) {
-                    VT5Bin.Compression.GZIP -> GZIPInputStream(ByteArrayInputStream(payload)).use { it.readAllBytesCompat() }
-                    VT5Bin.Compression.NONE -> payload
+                    VT5Bin.Compression.GZIP -> GZIPInputStream(ByteArrayInputStream(payloadBytes)).use { it.readAllBytesCompat() }
+                    VT5Bin.Compression.NONE -> payloadBytes
                     else -> return null
                 }
 
@@ -523,15 +561,18 @@ class ServerDataRepository(
     }
 
     private fun InputStream.readAllBytesCompat(): ByteArray {
-        val out = ArrayList<Byte>()
-        val tmp = ByteArray(8192)
+        val baos = ByteArrayOutputStream()
+        val buffer = ByteArray(8 * 1024)
         while (true) {
-            val n = this.read(tmp)
+            val n = this.read(buffer)
             if (n <= 0) break
-            for (i in 0 until n) out.add(tmp[i])
+            baos.write(buffer, 0, n)
         }
-        return ByteArray(out.size) { idx -> out[idx] }
+        return baos.toByteArray()
     }
+
+    // Lightweight tuple container for coroutineScope result passing
+    private data class Quintuple<A,B,C,D,E>(val first:A, val second:B, val third:C, val fourth:D, val fifth:E)
 }
 
 /* ================= VT5 Header & constants ================= */

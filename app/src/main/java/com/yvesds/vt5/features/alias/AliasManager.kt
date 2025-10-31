@@ -63,12 +63,6 @@ object AliasManager {
         encodeDefaults = true
     }
 
-    private val jsonCompact = Json {
-        prettyPrint = false
-        ignoreUnknownKeys = true
-        encodeDefaults = true
-    }
-
     /* INDEX LOAD SYNCHRONIZATION */
     private val indexLoadMutex = Mutex()
     @Volatile private var indexLoaded = false
