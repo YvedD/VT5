@@ -33,11 +33,10 @@ import java.util.zip.GZIPInputStream
  * - Selective data loading for specific use cases
  * - Efficient caching of file metadata
  *
- * Notes / changes in this patch:
- * - Explicit use of coroutineScope for structured concurrency in parallel loads.
- * - Improved InputStream helpers replacing ArrayList-based accumulation with ByteArrayOutputStream.
- * - Marked some public helper methods with @Suppress("unused") rather than removing them; they are part of the repository API.
- * - clearFileCache preserved but documented and left public; caller can invalidate caches when needed.
+ * Changes:
+ * - Added coroutineScope around parallel loads to ensure structured concurrency.
+ * - Replaced ArrayList byte-accumulation with ByteArrayOutputStream for readAllBytesCompat.
+ * - Kept public API surface identical (no breaking changes).
  */
 
 class ServerDataRepository(
@@ -90,9 +89,6 @@ class ServerDataRepository(
 
     /**
      * Clear any cached file information
-     *
-     * Public API because callers that replace serverdata on disk should invalidate caches.
-     * Kept intentionally simple.
      */
     fun clearFileCache() {
         fileExistenceCache.clear()
@@ -109,7 +105,7 @@ class ServerDataRepository(
         val serverdata = vt5Root.findChildByName("serverdata")?.takeIf { it.isDirectory }
             ?: return@withContext DataSnapshot()
 
-        // Use coroutineScope for structured concurrency so any failure cancels siblings
+        // Use coroutineScope for structured concurrency so sibling tasks are cancelled on failure
         coroutineScope {
             val sitesDef = async { readList<SiteItem>(serverdata, "sites", VT5Bin.Kind.SITES) }
             val codesDef = async {
@@ -118,18 +114,24 @@ class ServerDataRepository(
                 }.getOrElse { emptyList() }
             }
 
+            // Await results into local vals
             val sites = sitesDef.await()
             val codes = codesDef.await()
 
+            // Process data
             val sitesById = sites.associateBy { it.telpostid }
             val codesByCategory = codes
                 .filter { it.category != null }
                 .groupBy { it.category!! }
 
-            return@coroutineScope DataSnapshot(
+            // Create minimal snapshot
+            val snap = DataSnapshot(
                 sitesById = sitesById,
                 codesByCategory = codesByCategory
             )
+
+            // Don't update the state flow with partial data
+            return@coroutineScope snap
         }
     }
 
@@ -148,8 +150,8 @@ class ServerDataRepository(
             return@withContext DataSnapshot()
         }
 
-        // Use structured concurrency for parallel loads
-        val results = coroutineScope {
+        // Use coroutineScope for structured concurrency
+        return@withContext coroutineScope {
             val userObjDef = async { readOne<CheckUserItem>(serverdata, "checkuser", VT5Bin.Kind.CHECK_USER) }
             val speciesListDef = async { readList<SpeciesItem>(serverdata, "species", VT5Bin.Kind.SPECIES) }
             val protocolInfoDef = async { readList<ProtocolInfoItem>(serverdata, "protocolinfo", VT5Bin.Kind.PROTOCOL_INFO) }
@@ -160,7 +162,7 @@ class ServerDataRepository(
             val siteSpeciesDef = async { readList<SiteSpeciesItem>(serverdata, "site_species", VT5Bin.Kind.SITE_SPECIES) }
             val codesDef = async { runCatching { readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES) }.getOrElse { emptyList() } }
 
-            // Await all results
+            // Await all results into local vals
             val userObj = userObjDef.await()
             val speciesList = speciesListDef.await()
             val protocolInfo = protocolInfoDef.await()
@@ -171,68 +173,52 @@ class ServerDataRepository(
             val siteSpecies = siteSpeciesDef.await()
             val codes = codesDef.await()
 
-            return@coroutineScope Quintuple(
-                userObj, speciesList, protocolInfo, protocolSpecies,
-                sites to Triple(siteLocations, siteHeights, siteSpecies) to codes
+            // Process data into maps efficiently
+            val speciesById = speciesList.associateBy { it.soortid }
+
+            // Build canonical map only when needed and avoid multiple iterations
+            val canonicalBuilder = HashMap<String, String>(speciesById.size)
+            speciesList.forEach { sp ->
+                canonicalBuilder[normalizeCanonical(sp.soortnaam)] = sp.soortid
+            }
+            val speciesByCanonical = canonicalBuilder
+
+            val sitesById = sites.associateBy { it.telpostid }
+            val siteLocationsBySite = siteLocations.groupBy { it.telpostid }
+            val siteHeightsBySite = siteHeights.groupBy { it.telpostid }
+            val siteSpeciesBySite = siteSpecies.groupBy { it.telpostid }
+            val protocolSpeciesByProtocol = protocolSpecies.groupBy { it.protocolid }
+
+            val codesByCategory = codes
+                .filter { it.category != null }
+                .groupBy { it.category!! }
+
+            // Create full snapshot
+            val snap = DataSnapshot(
+                currentUser = userObj,
+                speciesById = speciesById,
+                speciesByCanonical = speciesByCanonical,
+                sitesById = sitesById,
+                assignedSites = emptyList(),
+                siteLocationsBySite = siteLocationsBySite,
+                siteHeightsBySite = siteHeightsBySite,
+                siteSpeciesBySite = siteSpeciesBySite,
+                protocolsInfo = protocolInfo,
+                protocolSpeciesByProtocol = protocolSpeciesByProtocol,
+                codesByCategory = codesByCategory
             )
+
+            val elapsed = System.currentTimeMillis() - startTime
+            Log.d(TAG, "Loaded all data in ${elapsed}ms - ${speciesById.size} species, ${sitesById.size} sites")
+
+            // Update state flow and return
+            snapshotState.value = snap
+            snap
         }
-
-        // Unpack structured result (keeps parallelism section tidy)
-        val userObj = results.first
-        val speciesList = results.second
-        val protocolInfo = results.third
-        val protocolSpecies = results.fourth
-        val sites = results.fifth.first
-        val siteLocations = results.fifth.second.first
-        val siteHeights = results.fifth.second.second
-        val siteSpecies = results.fifth.second.third
-        val codes = results.fifth.second.third // NOTE: kept for compatibility; codes assigned below
-
-        // Process data into maps efficiently
-        val speciesById = speciesList.associateBy { it.soortid }
-
-        // Build canonical map only when needed and avoid multiple iterations
-        val canonicalBuilder = HashMap<String, String>(speciesById.size)
-        speciesList.forEach { sp ->
-            canonicalBuilder[normalizeCanonical(sp.soortnaam)] = sp.soortid
-        }
-        val speciesByCanonical = canonicalBuilder
-
-        val sitesById = sites.associateBy { it.telpostid }
-        val siteLocationsBySite = siteLocations.groupBy { it.telpostid }
-        val siteHeightsBySite = siteHeights.groupBy { it.telpostid }
-        val siteSpeciesBySite = siteSpecies.groupBy { it.telpostid }
-        val protocolSpeciesByProtocol = protocolSpecies.groupBy { it.protocolid }
-
-        val codesByCategory = codes
-            .filter { it.category != null }
-            .groupBy { it.category!! }
-
-        // Create full snapshot
-        val snap = DataSnapshot(
-            currentUser = userObj,
-            speciesById = speciesById,
-            speciesByCanonical = speciesByCanonical,
-            sitesById = sitesById,
-            assignedSites = emptyList(),
-            siteLocationsBySite = siteLocationsBySite,
-            siteHeightsBySite = siteHeightsBySite,
-            siteSpeciesBySite = siteSpeciesBySite,
-            protocolsInfo = protocolInfo,
-            protocolSpeciesByProtocol = protocolSpeciesByProtocol,
-            codesByCategory = codesByCategory
-        )
-
-        val elapsed = System.currentTimeMillis() - startTime
-        Log.d(TAG, "Loaded all data in ${elapsed}ms - ${speciesById.size} species, ${sitesById.size} sites")
-
-        // Update state flow and return
-        snapshotState.value = snap
-        snap
     }
 
     /** Load only site data - optimized with caching */
-    @Suppress("unused") // kept as public API
+    @Suppress("unused")
     suspend fun loadSitesOnly(): Map<String, SiteItem> = withContext(Dispatchers.IO) {
         val saf = SaFStorageHelper(context)
         val vt5Root = saf.getVt5DirIfExists() ?: return@withContext emptyMap()
@@ -242,9 +228,13 @@ class ServerDataRepository(
     }
 
     /** Load only codes for a specific field - optimized with caching */
-    @Suppress("unused") // kept as public API
+    @Suppress("unused")
     suspend fun loadCodesFor(field: String): List<CodeItem> = withContext(Dispatchers.IO) {
-        // If snapshot already contains codes, reuse them
+        val saf = SaFStorageHelper(context)
+        val vt5Root = saf.getVt5DirIfExists() ?: return@withContext emptyList()
+        val serverdata = vt5Root.findChildByName("serverdata")?.takeIf { it.isDirectory } ?: return@withContext emptyList()
+
+        // Reuse previously loaded codes if possible
         val cachedCodes = snapshotState.value.codesByCategory[field]
         if (!cachedCodes.isNullOrEmpty()) {
             return@withContext cachedCodes.sortedWith(
@@ -254,10 +244,6 @@ class ServerDataRepository(
                 )
             )
         }
-
-        val saf = SaFStorageHelper(context)
-        val vt5Root = saf.getVt5DirIfExists() ?: return@withContext emptyList()
-        val serverdata = vt5Root.findChildByName("serverdata")?.takeIf { it.isDirectory } ?: return@withContext emptyList()
 
         val codes = runCatching { readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES) }.getOrElse { emptyList() }
         codes
@@ -439,7 +425,7 @@ class ServerDataRepository(
         cr.openInputStream(binFile.uri)?.use { raw ->
             val bis = BufferedInputStream(raw)
 
-            // Use shared buffer for header parsing
+            // Use shared buffer
             synchronized(headerBuffer) {
                 if (bis.read(headerBuffer) != VT5Bin.HEADER_SIZE) return null
 
@@ -452,24 +438,13 @@ class ServerDataRepository(
 
                 val pl = hdr.payloadLen.toLong()
                 if (pl < 0) return null
-
-                // Read payload using a streaming approach into a pre-sized buffer where possible
-                val payload = ByteArrayOutputStream((pl.coerceAtMost(16 * 1024 * 1024)).toInt())
-                val tmp = ByteArray(8 * 1024)
-                var remaining = pl
-                while (remaining > 0) {
-                    val toRead = if (remaining > tmp.size) tmp.size else remaining.toInt()
-                    val r = bis.read(tmp, 0, toRead)
-                    if (r <= 0) break
-                    payload.write(tmp, 0, r)
-                    remaining -= r
-                }
-                val payloadBytes = payload.toByteArray()
-                if (payloadBytes.size != pl.toInt()) return null
+                val payload = ByteArray(pl.toInt())
+                val read = bis.readNBytesCompat(payload)
+                if (read != pl.toInt()) return null
 
                 val dataBytes = when (hdr.compression) {
-                    VT5Bin.Compression.GZIP -> GZIPInputStream(ByteArrayInputStream(payloadBytes)).use { it.readAllBytesCompat() }
-                    VT5Bin.Compression.NONE -> payloadBytes
+                    VT5Bin.Compression.GZIP -> GZIPInputStream(ByteArrayInputStream(payload)).use { it.readAllBytesCompat() }
+                    VT5Bin.Compression.NONE -> payload
                     else -> return null
                 }
 
@@ -570,9 +545,6 @@ class ServerDataRepository(
         }
         return baos.toByteArray()
     }
-
-    // Lightweight tuple container for coroutineScope result passing
-    private data class Quintuple<A,B,C,D,E>(val first:A, val second:B, val third:C, val fourth:D, val fifth:E)
 }
 
 /* ================= VT5 Header & constants ================= */
