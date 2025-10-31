@@ -82,6 +82,7 @@ class AliasRepository(private val context: Context) {
      *
      * CSV import is NOT performed automatically anywhere in the app.
      */
+    @OptIn(ExperimentalSerializationApi::class)
     suspend fun loadAliasData(): Boolean = withContext(Dispatchers.IO) {
         if (isDataLoaded) return@withContext true
 
