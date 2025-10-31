@@ -6,6 +6,7 @@ import android.util.Log
 import android.widget.Toast
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -14,18 +15,17 @@ import java.time.Instant
 import java.util.Locale
 
 /**
- * AliasSpeechParser (UPDATED + FIXED)
+ * AliasSpeechParser (UPDATED)
  *
- * - parseSpokenWithContext(rawAsr, matchContext, partials) remains (single hypothesis).
- * - NEW: parseSpokenWithHypotheses(hypotheses, matchContext, partials) accepts N-best from SRM
- *   and chooses the best MatchResult by combining ASR confidence with matcher score.
+ * - parseSpokenWithContext / parseSpokenWithHypotheses (N-best) as before.
+ * - Logging (writeMatchLog / writeLog) made more robust and non-blocking.
+ * - SAF append fallback rewritten to stream-only tail lines (no full-file in-memory copy).
+ * - Respects coroutine cancellation (ensureActive) so long-running logging can be cancelled.
  *
- * Logging:
- * - FIXED: Pretty-printed JSON for readability
- * - FIXED: Explicit @Serializable data classes (no more 'Any' serialization crash)
- * - FIXED: MultiMatch support in logging
- * - Dual logging: internal storage (reliable) + SAF (export)
+ * Note: relies on external model/data classes (MatchResult, ParseResult, ParseLogEntry, Candidate, etc.)
+ * which must be defined elsewhere in the project as before.
  */
+
 class AliasSpeechParser(
     private val context: Context,
     private val saf: SaFStorageHelper
@@ -35,6 +35,7 @@ class AliasSpeechParser(
         // Pretty print enabled for readability
         private val json = Json { prettyPrint = true }
         private val FILTER_WORDS = setOf("luisteren", "luisteren...", "luister")
+        private const val SAF_TAIL_LINES = 1000
     }
 
     // Serializable data classes for logging (fixes kotlinx.serialization crash)
@@ -89,15 +90,12 @@ class AliasSpeechParser(
         return token.toIntOrNull()
     }
 
-    /**
-     * Public API: parse spoken raw ASR string with full context and return MatchResult.
-     * Use this for single-hypothesis parsing (backwards-compatible).
-     */
     suspend fun parseSpokenWithContext(
         rawAsr: String,
         matchContext: MatchContext,
         partials: List<String> = emptyList()
     ): MatchResult = withContext(Dispatchers.IO) {
+        ensureActive()
         val t0 = System.currentTimeMillis()
 
         // Filter out "Luisteren..." system prompt
@@ -124,23 +122,13 @@ class AliasSpeechParser(
         }
     }
 
-    /**
-     * NEW: Accept N-best hypotheses with ASR confidences, match each and pick best MatchResult.
-     *
-     * hypotheses: list of Pair(hypothesisText, asrConfidence[0..1]) ordered by ASR rank (best first)
-     * matchContext: MatchContext for AliasPriorityMatcher
-     * partials: partials list for logging/training
-     *
-     * Scoring: combine ASR confidence and matcher candidate score.
-     * - If any hypothesis yields AutoAccept -> return immediately.
-     * - Otherwise choose hypothesis with max combinedScore and return its MatchResult.
-     */
     suspend fun parseSpokenWithHypotheses(
         hypotheses: List<Pair<String, Float>>,
         matchContext: MatchContext,
         partials: List<String> = emptyList(),
         asrWeight: Double = 0.4 // weight of ASR confidence vs matcher score
     ): MatchResult = withContext(Dispatchers.IO) {
+        ensureActive()
         val t0 = System.currentTimeMillis()
         if (hypotheses.isEmpty()) return@withContext MatchResult.NoMatch("", "empty-hypotheses")
 
@@ -149,6 +137,7 @@ class AliasSpeechParser(
         var idx = 0
 
         for ((hyp, asrConfFloat) in hypotheses) {
+            ensureActive()
             val rawTrim = hyp.trim()
             val normalized = normalizeLowerNoDiacritics(rawTrim)
             if (normalized.isBlank()) {
@@ -171,12 +160,7 @@ class AliasSpeechParser(
                     is MatchResult.AutoAcceptAddPopup -> mr.candidate.score
                     is MatchResult.SuggestionList -> mr.candidates.firstOrNull()?.score ?: 0.0
                     is MatchResult.MultiMatch -> {
-                        // For multi-match, use average score of all matches
-                        if (mr.matches.isNotEmpty()) {
-                            mr.matches.map { it.candidate.score }.average()
-                        } else {
-                            0.0
-                        }
+                        if (mr.matches.isNotEmpty()) mr.matches.map { it.candidate.score }.average() else 0.0
                     }
                     is MatchResult.NoMatch -> 0.0
                 }
@@ -204,13 +188,9 @@ class AliasSpeechParser(
         return@withContext bestResult
     }
 
-    /**
-     * DEPRECATED: Old parseSpoken() method for backward compatibility.
-     * Use parseSpokenWithContext() with MatchContext
-     */
     @Deprecated("Use parseSpokenWithContext() with MatchContext", ReplaceWith("parseSpokenWithContext(rawAsr, matchContext, partials)"))
     suspend fun parseSpoken(rawAsr: String, partials: List<String> = emptyList()): ParseResult = withContext(Dispatchers.IO) {
-        // Fallback to old behavior (no context, use AliasMatcher directly)
+        ensureActive()
         val t0 = System.currentTimeMillis()
         val rawTrim = rawAsr.trim()
         val rawLowerNoPunct = normalizeLowerNoDiacritics(rawTrim)
@@ -234,6 +214,7 @@ class AliasSpeechParser(
         val items = mutableListOf<ParsedItem>()
         var i = 0
         while (i < tokens.size) {
+            ensureActive()
             val maxWindow = minOf(6, tokens.size - i)
             var chosenWindowEnd = -1
             var chosenRecords: List<com.yvesds.vt5.features.alias.AliasRecord> = emptyList()
@@ -281,6 +262,7 @@ class AliasSpeechParser(
                 var fuzzyFound: Pair<com.yvesds.vt5.features.alias.AliasRecord, Double>? = null
                 var fuzzyWindowPhrase: String? = null
                 for (w in maxWindow downTo 1) {
+                    ensureActive()
                     val phrase = tokens.subList(i, i + w).joinToString(" ")
                     val candidates = AliasMatcher.findFuzzyCandidates(phrase, context, saf, topN = 5, threshold = 0.6)
                     if (candidates.isNotEmpty()) {
@@ -333,18 +315,13 @@ class AliasSpeechParser(
         return@withContext result
     }
 
-    /**
-     * Write NDJSON match log for MatchResult.
-     * FIXED: Dual logging (internal + SAF) with explicit serializable data classes.
-     * FIXED: MultiMatch support.
-     * Real-time flush to internal storage for immediate debugging.
-     */
     private suspend fun writeMatchLog(
         rawInput: String,
         result: MatchResult,
         partials: List<String>,
         asrHypotheses: List<Pair<String, Float>>? = null
     ) = withContext(Dispatchers.IO) {
+        ensureActive()
         try {
             // Build candidate log
             val candidateLog = when (result) {
@@ -406,14 +383,13 @@ class AliasSpeechParser(
             val date = Instant.now().toString().substring(0, 10).replace("-", "")
             val filename = "match_log_$date.ndjson"
 
-            // ========== 1. INTERNAL STORAGE (betrouwbaar, real-time) ==========
+            // ========== 1. INTERNAL STORAGE (reliable, real-time) ==========
             var internalSuccess = false
             try {
                 val internalDir = java.io.File(context.filesDir, "match_logs")
                 if (!internalDir.exists()) internalDir.mkdirs()
                 val internalFile = java.io.File(internalDir, filename)
 
-                // Append mode (true)
                 java.io.FileWriter(internalFile, true).use { writer ->
                     writer.write(logLine + "\n")
                     writer.flush()
@@ -434,7 +410,6 @@ class AliasSpeechParser(
 
                 val exports = vt5.findFile("exports")?.takeIf { it.isDirectory }
                     ?: vt5.createDirectory("exports")
-
                 if (exports == null) {
                     Log.w(TAG, "SAF match log skipped: exports dir creation failed")
                     return@withContext
@@ -442,7 +417,6 @@ class AliasSpeechParser(
 
                 val file = exports.findFile(filename)
                 if (file == null || !file.exists()) {
-                    // Create new file
                     val newFile = exports.createFile("application/x-ndjson", filename)
                     if (newFile == null) {
                         Log.w(TAG, "SAF match log: file creation failed")
@@ -454,7 +428,7 @@ class AliasSpeechParser(
                     }
                     Log.d(TAG, "Match log written to SAF: ${newFile.uri}")
                 } else {
-                    // Append to existing (try "wa" mode, fallback to rewrite)
+                    // Try append mode first
                     var appended = false
                     try {
                         context.contentResolver.openOutputStream(file.uri, "wa")?.use { os ->
@@ -463,31 +437,36 @@ class AliasSpeechParser(
                             appended = true
                         }
                     } catch (ex: Exception) {
-                        Log.w(TAG, "SAF append mode failed, using fallback rewrite: ${ex.message}")
+                        Log.w(TAG, "SAF append mode failed: ${ex.message}")
                     }
 
                     if (!appended) {
-                        // Fallback: read last 1000 lines + rewrite
-                        val existing = context.contentResolver.openInputStream(file.uri)?.use {
-                            it.readBytes()
-                        }?.toString(Charsets.UTF_8) ?: ""
-                        val lines = existing.lines()
-                        val last1000 = if (lines.size > 1000) {
-                            lines.takeLast(1000).joinToString("\n")
-                        } else {
-                            existing
-                        }
-                        val newContent = last1000 + (if (last1000.isNotEmpty()) "\n" else "") + logLine + "\n"
-
-                        // Rewrite file
-                        exports.findFile(filename)?.delete()
-                        val recreated = exports.createFile("application/x-ndjson", filename)
-                        if (recreated != null) {
-                            context.contentResolver.openOutputStream(recreated.uri, "w")?.use { os ->
-                                os.write(newContent.toByteArray(Charsets.UTF_8))
-                                os.flush()
+                        // Fallback: stream last SAF_TAIL_LINES lines only (memory bounded)
+                        try {
+                            val tailDeque = ArrayDeque<String>(SAF_TAIL_LINES)
+                            context.contentResolver.openInputStream(file.uri)?.bufferedReader()?.useLines { lines ->
+                                for (ln in lines) {
+                                    tailDeque.add(ln)
+                                    if (tailDeque.size > SAF_TAIL_LINES) tailDeque.removeFirst()
+                                }
                             }
-                            Log.d(TAG, "Match log rewritten to SAF (fallback)")
+                            val prefix = if (tailDeque.isNotEmpty()) tailDeque.joinToString("\n") + "\n" else ""
+                            val newContent = prefix + logLine + "\n"
+
+                            // Rewrite file
+                            exports.findFile(filename)?.delete()
+                            val recreated = exports.createFile("application/x-ndjson", filename)
+                            if (recreated != null) {
+                                context.contentResolver.openOutputStream(recreated.uri, "w")?.use { os ->
+                                    os.write(newContent.toByteArray(Charsets.UTF_8))
+                                    os.flush()
+                                }
+                                Log.d(TAG, "Match log rewritten to SAF (fallback)")
+                            } else {
+                                Log.w(TAG, "SAF match log fallback recreate failed")
+                            }
+                        } catch (ex: Exception) {
+                            Log.w(TAG, "SAF match log fallback failed: ${ex.message}", ex)
                         }
                     }
                 }
@@ -501,19 +480,18 @@ class AliasSpeechParser(
                     Toast.makeText(context, "⚠️ ASR logging FAILED — check permissions", Toast.LENGTH_LONG).show()
                 }
             }
-
         } catch (ex: Exception) {
             Log.e(TAG, "writeMatchLog CRITICAL FAILURE: ${ex.message}", ex)
-            withContext(Dispatchers.Main) {
-                Toast.makeText(context, "ASR log fatal error: ${ex.message}", Toast.LENGTH_LONG).show()
-            }
+            try {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "ASR log fatal error: ${ex.message}", Toast.LENGTH_LONG).show()
+                }
+            } catch (_: Exception) { /* swallow UI errors */ }
         }
     }
 
-    /**
-     * Write NDJSON parse log (old format for backward compatibility).
-     */
     suspend fun writeLog(result: ParseResult, partials: List<String> = emptyList()) = withContext(Dispatchers.IO) {
+        ensureActive()
         try {
             val entry = ParseLogEntry(
                 timestampIso = Instant.now().toString(),
@@ -537,22 +515,37 @@ class AliasSpeechParser(
                     os.flush()
                 }
             } else {
-                // Same append logic as above
+                var appended = false
                 try {
                     context.contentResolver.openOutputStream(file.uri, "wa")?.use { os ->
                         os.write((logLine + "\n").toByteArray(Charsets.UTF_8))
                         os.flush()
+                        appended = true
                     }
                 } catch (ex: Exception) {
-                    val existing = context.contentResolver.openInputStream(file.uri)?.use { it.readBytes() }?.toString(Charsets.UTF_8) ?: ""
-                    val lines = existing.lines()
-                    val last1000 = if (lines.size > 1000) lines.takeLast(1000).joinToString("\n") else existing
-                    val newContent = last1000 + (if (last1000.isNotEmpty()) "\n" else "") + logLine + "\n"
-                    exports.findFile(filename)?.delete()
-                    val recreated = exports.createFile("application/x-ndjson", filename) ?: return@withContext
-                    context.contentResolver.openOutputStream(recreated.uri, "w")?.use { os ->
-                        os.write(newContent.toByteArray(Charsets.UTF_8))
-                        os.flush()
+                    Log.w(TAG, "SAF append for parsing_log failed: ${ex.message}")
+                }
+                if (!appended) {
+                    // fallback bounded rewrite
+                    try {
+                        val tailDeque = ArrayDeque<String>(SAF_TAIL_LINES)
+                        context.contentResolver.openInputStream(file.uri)?.bufferedReader()?.useLines { lines ->
+                            for (ln in lines) {
+                                tailDeque.add(ln)
+                                if (tailDeque.size > SAF_TAIL_LINES) tailDeque.removeFirst()
+                            }
+                        }
+                        val prefix = if (tailDeque.isNotEmpty()) tailDeque.joinToString("\n") + "\n" else ""
+                        val newContent = prefix + logLine + "\n"
+
+                        exports.findFile(filename)?.delete()
+                        val recreated = exports.createFile("application/x-ndjson", filename) ?: return@withContext
+                        context.contentResolver.openOutputStream(recreated.uri, "w")?.use { os ->
+                            os.write(newContent.toByteArray(Charsets.UTF_8))
+                            os.flush()
+                        }
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "SAF rewrite for parsing_log failed: ${ex.message}", ex)
                     }
                 }
             }

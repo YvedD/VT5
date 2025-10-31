@@ -13,34 +13,29 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.cbor.Cbor
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.zip.GZIPOutputStream
+import java.util.zip.GZIPInputStream
 
 /**
  * AliasIndexWriter (SAF-only, updated)
  *
  * - Produces JSON and CBOR outputs for aliases/species/phonetic map and manifest.
- * - JSON export is compact and no longer contains legacy fields (dmetapho, beidermorse, ngrams, minhash64, simhash64).
- * - CBOR export uses AliasIndex (the canonical structure) — if you want CBOR without legacy fields,
- *   ensure AliasIndex/AliasRecord definitions also omit them (we adapted PrecomputeAliasIndex and will adapt models next).
+ * - Does NOT require CSV. If a precomputed CBOR or alias_master.json exists it will be used.
+ * - If no index exists it requests AliasManager.initialize(...) to generate the seed and retries.
  *
  * Author: VT5 Team (YvedD)
- * Date: 2025-10-28
+ * Date: 2025-10-28 (patched)
  */
-
 object AliasIndexWriter {
     private const val TAG = "AliasIndexWriter"
 
-    private const val CSV_NAME = "aliasmapping.csv"
     private const val ASSETS = "assets"
     private const val SERVERDATA = "serverdata"
     private const val BINARIES = "binaries"
@@ -48,7 +43,7 @@ object AliasIndexWriter {
 
     private const val ALIAS_JSON_NAME = "alias_index.json"
     private const val ALIAS_JSON_GZ_NAME = "alias_index.json.gz"
-    private const val ALIASES_CBOR_GZ = "aliases_flat.cbor.gz"
+    private const val ALIASES_CBOR_GZ = "aliases_optimized.cbor.gz"
     private const val SPECIES_CBOR_GZ = "species_master.cbor.gz"
 
     private const val ALIASES_SCHEMA = "aliases_flat.schema.json"
@@ -113,6 +108,10 @@ object AliasIndexWriter {
         val messages: List<String>
     )
 
+    /**
+     * Ensure an AliasIndex is available (by loading CBOR, reading alias_master.json, or generating via AliasManager).
+     * Then serialize/export JSON/CBOR and write manifest.
+     */
     @OptIn(ExperimentalSerializationApi::class)
     suspend fun ensureComputedSafOnly(context: Context, saf: SaFStorageHelper, q: Int = 3): Result {
         val messages = mutableListOf<String>()
@@ -122,70 +121,115 @@ object AliasIndexWriter {
             return Result(null, null, null, null, emptyList(), null, 0, messages)
         }
 
-        // Validate inputs
-        val assetsDir = vt5.findFile(ASSETS)?.takeIf { it.isDirectory }
-        val csvDoc = assetsDir?.findFile(CSV_NAME)?.takeIf { it.isFile }
-        if (csvDoc == null) {
-            messages += "Required: Documents/VT5/$ASSETS/$CSV_NAME missing."
-            return Result(null, null, null, null, emptyList(), null, 0, messages)
-        }
-        val serverDir = vt5.findFile(SERVERDATA)?.takeIf { it.isDirectory }
-        if (serverDir == null) {
-            messages += "Required: Documents/VT5/$SERVERDATA missing."
-            return Result(null, null, null, null, emptyList(), null, 0, messages)
-        }
-        val speciesDoc = serverDir.findFile("species.json")?.takeIf { it.isFile }
-        val siteSpeciesDoc = serverDir.findFile("site_species.json")?.takeIf { it.isFile }
-        if (speciesDoc == null || siteSpeciesDoc == null) {
-            messages += "Required: species.json and/or site_species.json missing in Documents/VT5/$SERVERDATA."
-            return Result(null, null, null, null, emptyList(), null, 0, messages)
-        }
+        // Try to obtain AliasIndex in this order:
+        // 1) internal CBOR in Documents/VT5/binaries (ALIASES_CBOR_GZ)
+        // 2) alias_master.json in assets (convert to AliasIndex via toAliasIndex())
+        // 3) ensure AliasManager.initialize(...) -> which will generate seed/master/cbor and retry
 
-        // Read input files
-        val csvBytes = runCatching {
-            context.contentResolver.openInputStream(csvDoc.uri)?.use { it.readBytes() }
-        }.getOrNull()
-        if (csvBytes == null || csvBytes.isEmpty()) {
-            messages += "Failed to read $CSV_NAME from SAF."
-            return Result(null, null, null, null, emptyList(), null, 0, messages)
-        }
-        messages += "Read Documents/VT5/$ASSETS/$CSV_NAME"
+        var aliasIndex: AliasIndex? = null
 
-        val speciesBytes = runCatching {
-            context.contentResolver.openInputStream(speciesDoc.uri)?.use { it.readBytes() }
-        }.getOrNull()
-        val siteSpeciesBytes = runCatching {
-            context.contentResolver.openInputStream(siteSpeciesDoc.uri)?.use { it.readBytes() }
-        }.getOrNull()
-        if (speciesBytes == null || siteSpeciesBytes == null) {
-            messages += "Failed to read species/site_species from SAF."
-            return Result(null, null, null, null, emptyList(), null, 0, messages)
-        }
-        messages += "Read Documents/VT5/$SERVERDATA/species.json and site_species.json"
-
-        // Build alias index using the new API (csvText, q)
-        val csvText = csvBytes.toString(Charsets.UTF_8)
-        val aliasIndex = try {
-            PrecomputeAliasIndex.buildFromCsv(csvText, q)
+        // 1) Try existing CBOR in binaries
+        try {
+            val binaries = vt5.findFile(BINARIES)?.takeIf { it.isDirectory }
+            val cborDoc = binaries?.findFile(ALIASES_CBOR_GZ)
+            if (cborDoc != null && cborDoc.isFile) {
+                val bytes = context.contentResolver.openInputStream(cborDoc.uri)?.use { it.readBytes() }
+                if (bytes != null && bytes.isNotEmpty()) {
+                    val ungz = gunzip(bytes)
+                    aliasIndex = Cbor.decodeFromByteArray(AliasIndex.serializer(), ungz)
+                    messages += "Loaded AliasIndex from Documents/VT5/$BINARIES/$ALIASES_CBOR_GZ (records=${aliasIndex.json.size})"
+                }
+            }
         } catch (ex: Exception) {
-            messages += "Error building alias index: ${ex.message}"
+            messages += "Failed reading existing CBOR: ${ex.message}"
+            Log.w(TAG, "Failed reading existing CBOR: ${ex.message}", ex)
+        }
+
+        // 2) If not found, try alias_master.json in assets
+        if (aliasIndex == null) {
+            try {
+                val assetsDir = vt5.findFile(ASSETS)?.takeIf { it.isDirectory }
+                val masterDoc = assetsDir?.findFile("alias_master.json")?.takeIf { it.isFile }
+                if (masterDoc != null) {
+                    val masterJson = context.contentResolver.openInputStream(masterDoc.uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                    if (!masterJson.isNullOrBlank()) {
+                        val master = jsonPretty.decodeFromString(AliasMaster.serializer(), masterJson)
+                        aliasIndex = master.toAliasIndex()
+                        messages += "Built AliasIndex from Documents/VT5/$ASSETS/alias_master.json (records=${aliasIndex.json.size})"
+                    }
+                }
+            } catch (ex: Exception) {
+                messages += "Failed reading alias_master.json: ${ex.message}"
+                Log.w(TAG, "Failed reading alias_master.json: ${ex.message}", ex)
+            }
+        }
+
+        // 3) If still null, attempt to trigger AliasManager.initialize which will generate seed from species.json if needed,
+        //    then retry reading alias_master.json or binaries CBOR.
+        if (aliasIndex == null) {
+            try {
+                messages += "No existing index found; invoking AliasManager.initialize(...) to generate seed if possible."
+                AliasManager.initialize(context, saf)
+            } catch (ex: Exception) {
+                messages += "AliasManager.initialize failed: ${ex.message}"
+                Log.w(TAG, "AliasManager.initialize failed: ${ex.message}", ex)
+            }
+
+            // Retry reading CBOR or master
+            try {
+                val binaries = vt5.findFile(BINARIES)?.takeIf { it.isDirectory }
+                val cborDoc = binaries?.findFile(ALIASES_CBOR_GZ)
+                if (cborDoc != null && cborDoc.isFile) {
+                    val bytes = context.contentResolver.openInputStream(cborDoc.uri)?.use { it.readBytes() }
+                    if (bytes != null && bytes.isNotEmpty()) {
+                        val ungz = gunzip(bytes)
+                        aliasIndex = Cbor.decodeFromByteArray(AliasIndex.serializer(), ungz)
+                        messages += "Loaded AliasIndex from Documents/VT5/$BINARIES/$ALIASES_CBOR_GZ after regenerate (records=${aliasIndex.json.size})"
+                    }
+                }
+            } catch (ex: Exception) {
+                messages += "Retry read CBOR failed: ${ex.message}"
+                Log.w(TAG, "Retry read CBOR failed: ${ex.message}", ex)
+            }
+
+            if (aliasIndex == null) {
+                try {
+                    val assetsDir = vt5.findFile(ASSETS)?.takeIf { it.isDirectory }
+                    val masterDoc = assetsDir?.findFile("alias_master.json")?.takeIf { it.isFile }
+                    if (masterDoc != null) {
+                        val masterJson = context.contentResolver.openInputStream(masterDoc.uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                        if (!masterJson.isNullOrBlank()) {
+                            val master = jsonPretty.decodeFromString(AliasMaster.serializer(), masterJson)
+                            aliasIndex = master.toAliasIndex()
+                            messages += "Built AliasIndex from alias_master.json after regenerate (records=${aliasIndex.json.size})"
+                        }
+                    }
+                } catch (ex: Exception) {
+                    messages += "Retry read alias_master.json failed: ${ex.message}"
+                    Log.w(TAG, "Retry read alias_master.json failed: ${ex.message}", ex)
+                }
+            }
+        }
+
+        if (aliasIndex == null) {
+            messages += "No alias index could be constructed (no CBOR and no alias_master.json). Aborting."
             return Result(null, null, null, null, emptyList(), null, 0, messages)
         }
+
         val aliasCount = aliasIndex.json.size
-        messages += "Built alias index: $aliasCount records"
+        messages += "AliasIndex available with $aliasCount records"
 
-        // Build species_master list by extracting minimal fields from species.json
-        val speciesJsonElement = Json.parseToJsonElement(speciesBytes.toString(Charsets.UTF_8))
-        val speciesArray = speciesJsonElement.jsonObject["json"]?.jsonArray ?: JsonArray(emptyList())
-        val speciesMapById = speciesArray.associateBy { it.jsonObject["soortid"]?.jsonPrimitive?.content ?: "" }
-
-        val speciesIdsInIndex = aliasIndex.json.map { it.speciesid }.toSet()
-        val simpleSpeciesList = speciesIdsInIndex.map { sid ->
-            val entry = speciesMapById[sid]
-            val soortnaam = entry?.jsonObject?.get("soortnaam")?.jsonPrimitive?.content ?: sid
-            val soortkey = entry?.jsonObject?.get("soortkey")?.jsonPrimitive?.content ?: soortnaam
-            SimpleSpecies(speciesId = sid, soortnaam = soortnaam, tilename = soortkey)
+        // Build simple species list from aliasIndex (canonical/tilename often present in records)
+        val speciesMap = mutableMapOf<String, SimpleSpecies>()
+        aliasIndex.json.forEach { r ->
+            val sid = r.speciesid
+            val current = speciesMap[sid]
+            val aliases = (current?.aliases ?: emptyList()) + listOf(r.alias)
+            val canonical = r.canonical.ifBlank { current?.soortnaam ?: r.speciesid }
+            val tilename = r.tilename ?: current?.tilename ?: r.canonical
+            speciesMap[sid] = SimpleSpecies(speciesId = sid, soortnaam = canonical, tilename = tilename, aliases = aliases)
         }
+        val simpleSpeciesList = speciesMap.values.sortedBy { it.speciesId }
 
         // Build phonetic_map (code -> list of aliasIds) using only cologne and phonemes
         val phoneticMap = mutableMapOf<String, MutableList<String>>()
@@ -228,9 +272,9 @@ object AliasIndexWriter {
 
         // Build manifest object and serialize
         val sources = mapOf(
-            "aliasmapping.csv" to mapOf(
-                "sha256" to sha256OfBytes(csvBytes),
-                "size" to csvBytes.size.toString()
+            "generated_on_device" to mapOf(
+                "info" to "generated by AliasIndexWriter (no CSV required)",
+                "timestamp" to Instant.now().toString()
             )
         )
         val indexes = mapOf(
@@ -246,7 +290,7 @@ object AliasIndexWriter {
                 sha256 = sha256OfBytes(speciesMasterCborBytes),
                 size = speciesMasterCborBytes.size.toString(),
                 aliases_count = null,
-                species_count = speciesIdsInIndex.size.toString()
+                species_count = speciesMap.size.toString()
             )
         )
         val manifest = Manifest(
@@ -254,8 +298,8 @@ object AliasIndexWriter {
             generated_at = Instant.now().toString(),
             sources = sources,
             indexes = indexes,
-            counts = mapOf("aliases" to aliasCount, "species" to speciesIdsInIndex.size),
-            notes = "Generated on-device (SAF-only)"
+            counts = mapOf("aliases" to aliasCount, "species" to speciesMap.size),
+            notes = "Generated on-device (SAF-only) via AliasIndexWriter"
         )
         val manifestBytes = jsonPretty.encodeToString(Manifest.serializer(), manifest).toByteArray(Charsets.UTF_8)
 
@@ -326,87 +370,6 @@ object AliasIndexWriter {
         }
     }
 
-    /**
-     * Public helper: preflight check for SAF environment focused on JSON serverfiles.
-     *
-     * - Validates Documents/VT5 root is set
-     * - Validates presence of subfolders (assets, serverdata, binaries)
-     * - Validates presence of the required server JSON files in serverdata:
-     *     - checkuser.json
-     *     - codes.json
-     *     - protocolinfo.json
-     *     - protocolspecies.json
-     *     - site_heights.json
-     *     - site_locations.json
-     *     - site_species.json
-     *     - sites.json
-     *     - species.json
-     *
-     * Returns a list of human-readable status lines that can be shown to the user.
-     */
-    fun preflightCheckSafOnly(context: android.content.Context, saf: com.yvesds.vt5.core.opslag.SaFStorageHelper): List<String> {
-        val messages = mutableListOf<String>()
-
-        val vt5 = saf.getVt5DirIfExists()
-        if (vt5 == null) {
-            messages += "SAF VT5 root niet ingesteld: kies 'Kies documenten' en selecteer Documents/VT5."
-            return messages
-        }
-
-        // assets
-        val assets = vt5.findFile("assets")?.takeIf { it.isDirectory }
-        messages += if (assets == null) {
-            "map: Documents/VT5/assets → NIET AANWEZIG"
-        } else {
-            "map: Documents/VT5/assets → aanwezig"
-        }
-
-        // serverdata
-        val serverdata = vt5.findFile("serverdata")?.takeIf { it.isDirectory }
-        if (serverdata == null) {
-            messages += "map: Documents/VT5/serverdata → NIET AANWEZIG"
-        } else {
-            messages += "map: Documents/VT5/serverdata → aanwezig"
-
-            // list of required server-side JSON files
-            val required = listOf(
-                "checkuser.json",
-                "codes.json",
-                "protocolinfo.json",
-                "protocolspecies.json",
-                "site_heights.json",
-                "site_locations.json",
-                "site_species.json",
-                "sites.json",
-                "species.json"
-            )
-
-            required.forEach { name ->
-                val doc = serverdata.findFile(name)?.takeIf { it.isFile }
-                if (doc == null) messages += "  - $name: NIET AANWEZIG"
-                else messages += "  - $name: gevonden"
-            }
-        }
-
-        // binaries
-        val binaries = vt5.findFile("binaries")?.takeIf { it.isDirectory }
-        if (binaries == null) {
-            messages += "map: Documents/VT5/binaries → NIET AANWEZIG"
-        } else {
-            messages += "map: Documents/VT5/binaries → aanwezig"
-            val cbor = binaries.findFile("aliases_optimized.cbor.gz")?.takeIf { it.isFile }
-            if (cbor == null) messages += "  - aliases_optimized.cbor.gz: NIET AANWEZIG"
-            else messages += "  - aliases_optimized.cbor.gz: gevonden"
-        }
-
-        // helpful summary hint (keeps user informed about JSON-based flow)
-        messages += ""
-        messages += "Opmerking: de app gebruikt JSON-based reindex (species.json/site_species.json)."
-        messages += "Précompute genereert alias_master.json (assets) en aliases_optimized.cbor.gz (binaries). CSV's worden niet meer aangemaakt."
-
-        return messages
-    }
-
     private fun writeStringToSaFOverwrite(context: Context, saf: SaFStorageHelper, subDirName: String, filename: String, content: String, mimeType: String = "text/plain"): Boolean {
         return writeBytesToSaFOverwrite(context, saf, subDirName, filename, content.toByteArray(Charsets.UTF_8), mimeType)
     }
@@ -423,5 +386,15 @@ object AliasIndexWriter {
             md.update(bytes)
             md.digest().joinToString("") { "%02x".format(it) }
         }.getOrDefault("0")
+    }
+
+    private fun gunzip(input: ByteArray): ByteArray {
+        return try {
+            GZIPInputStream(input.inputStream()).use { gis ->
+                gis.readBytes()
+            }
+        } catch (ex: Exception) {
+            ByteArray(0)
+        }
     }
 }

@@ -58,6 +58,10 @@ import java.time.Instant
  * Full activity for the counting screen. Integrates AliasManager hot-patch flow,
  * AddAliasDialog usage, multi-match handling, ASR N-best orchestration and the UI.
  *
+ * NOTE: CSV support has been fully removed from runtime. The app now uses alias_master.json /
+ * aliases_optimized.cbor.gz (SAF Documents/VT5) as canonical sources. Any CSV migration must be
+ * performed offline or via an external migration tool and placed into Documents/VT5/binaries/.
+ *
  * Performance fixes in this version:
  * - Heavy parsing (AliasSpeechParser.parse...) is run off the UI thread (Dispatchers.Default)
  * - addLog now builds the new list off the UI thread to avoid blocking RecyclerView
@@ -67,7 +71,7 @@ import java.time.Instant
  *
  * Author: VT5 Team (YvedD)
  * Date: 2025-10-30
- * Version: 2.1 (perf)
+ * Version: 2.1 (perf, CSV removed)
  */
 class TellingScherm : AppCompatActivity() {
 
@@ -78,7 +82,7 @@ class TellingScherm : AppCompatActivity() {
         // SharedPreferences keys for ASR silence ms
         private const val PREFS_NAME = "vt5_prefs"
         private const val PREF_ASR_SILENCE_MS = "pref_asr_silence_ms"
-        private const val DEFAULT_SILENCE_MS = 400
+        private const val DEFAULT_SILENCE_MS = 2000
 
         // Limit for log rows to avoid very large lists
         private const val MAX_LOG_ROWS = 600
@@ -299,11 +303,7 @@ class TellingScherm : AppCompatActivity() {
             Toast.makeText(this, "Afronden (batch-upload) volgt later.", Toast.LENGTH_LONG).show()
         }
 
-        binding.btnAfronden.setOnLongClickListener {
-            tryConvertCsvToJson()
-            Toast.makeText(this@TellingScherm, "CSV naar JSON conversie gestart...", Toast.LENGTH_SHORT).show()
-            true
-        }
+        // long-press CSV conversion path removed (CSV no longer supported in runtime)
 
         binding.btnSaveClose.setOnClickListener {
             AlertDialog.Builder(this)
@@ -319,22 +319,6 @@ class TellingScherm : AppCompatActivity() {
                 }
                 .setNegativeButton("Annuleren", null)
                 .show()
-        }
-    }
-
-    private fun tryConvertCsvToJson() {
-        lifecycleScope.launch {
-            try {
-                val ok = aliasRepository.convertCsvToJson()
-                if (ok) {
-                    Toast.makeText(this@TellingScherm, "CSV -> JSON conversie voltooid", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(this@TellingScherm, "CSV conversie mislukte of niets te doen", Toast.LENGTH_SHORT).show()
-                }
-            } catch (ex: Exception) {
-                Log.w(TAG, "tryConvertCsvToJson failed: ${ex.message}", ex)
-                Toast.makeText(this@TellingScherm, "Fout tijdens CSV conversie", Toast.LENGTH_SHORT).show()
-            }
         }
     }
 
@@ -379,6 +363,14 @@ class TellingScherm : AppCompatActivity() {
             try {
                 // Ensure alias seed/cache exists and load it in AliasManager
                 AliasManager.initialize(this@TellingScherm, safHelper)
+                // Ensure internal index is loaded for fast lookup
+                withContext(Dispatchers.IO) {
+                    try {
+                        AliasManager.ensureIndexLoadedSuspend(this@TellingScherm, safHelper)
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "preloadAliases: ensureIndexLoadedSuspend failed: ${ex.message}", ex)
+                    }
+                }
                 // Populate availableSpeciesFlat for AddAliasDialog dropdown
                 val snapshot = ServerDataCache.getOrLoad(this@TellingScherm)
                 availableSpeciesFlat = snapshot.speciesById.map { (id, s) -> "$id||${s.soortnaam}" }.toList()
@@ -679,6 +671,7 @@ class TellingScherm : AppCompatActivity() {
             volumeKeyHandler.setOnVolumeUpListener {
                 startSpeechRecognition()
             }
+            // Do not assume a volume-down listener exists; keep compatibility with your handler implementation.
             volumeKeyHandler.register()
 
             Log.d(TAG, "Volume key handler initialized successfully")
@@ -692,16 +685,7 @@ class TellingScherm : AppCompatActivity() {
             updateSelectedSpeciesMap()
             speechRecognitionManager.startListening()
             addLog("Luisteren...", "systeem")
-
-            lifecycleScope.launch {
-                kotlinx.coroutines.delay(8000)
-                if (speechInitialized && speechRecognitionManager.isCurrentlyListening()) {
-                    speechRecognitionManager.stopListening()
-                    withContext(Dispatchers.Main) {
-                        addLog("Timeout na 8 seconden", "systeem")
-                    }
-                }
-            }
+            // no ad-hoc coroutine timeout — rely on engine hints and forceStopNow() when needed
         }
     }
 

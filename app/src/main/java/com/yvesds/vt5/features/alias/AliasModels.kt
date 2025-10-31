@@ -1,3 +1,4 @@
+@file:OptIn(kotlinx.serialization.InternalSerializationApi::class)
 package com.yvesds.vt5.features.alias
 
 import kotlinx.serialization.Serializable

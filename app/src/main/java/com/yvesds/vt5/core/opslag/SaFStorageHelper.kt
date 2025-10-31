@@ -6,19 +6,18 @@ import android.content.SharedPreferences
 import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
- * SAF-helper voor VT5:
- * - Persistente toegang tot de door de gebruiker gekozen 'Documents' Tree-URI
- * - Aanmaken/Controleren van VT5-mappenstructuur
+ * SaFStorageHelper
  *
- * Mappenstructuur:
- * Documents/VT5/
- *   - assets
- *   - serverdata
- *   - counts
- *   - exports
- *   - binaries
+ * - Keeps the original synchronous helpers for compatibility.
+ * - Adds suspend wrappers that execute DocumentFile/contentResolver work on Dispatchers.IO.
+ * - Callers in coroutines should prefer the suspend variants (foldersExistSuspend, ensureFoldersSuspend, getVt5DirIfExistsSuspend, findOrCreateDirectorySuspend)
+ *   to avoid blocking the UI thread.
+ *
+ * Note: DocumentFile.listFiles() and contentResolver I/O can be slow on some devices. Always prefer the suspend wrappers in production code.
  */
 class SaFStorageHelper(private val context: Context) {
 
@@ -37,19 +36,20 @@ class SaFStorageHelper(private val context: Context) {
     }
 
     /**
-     * Zorg dat we blijvende toegang hebben tot de gekozen Tree URI.
+     * Ensure we have persistable permission for the selected tree.
      */
     fun takePersistablePermission(uri: Uri) {
         val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         try {
             context.contentResolver.takePersistableUriPermission(uri, flags)
         } catch (_: SecurityException) {
-            // Als gebruiker geen persist toestemming gaf; niets crashen.
+            // swallow; caller should handle UX if permission wasn't granted
         }
     }
 
     /**
-     * Controleer of de VT5-root en ALLE submappen bestaan.
+     * Synchronous variant: check if VT5 root and subfolders exist.
+     * Prefer foldersExistSuspend() when called from a coroutine.
      */
     fun foldersExist(): Boolean {
         val rootTree = getRootUri() ?: return false
@@ -61,17 +61,22 @@ class SaFStorageHelper(private val context: Context) {
     }
 
     /**
-     * Maakt VT5 + submappen aan indien ze niet bestaan (idempotent).
-     * Retourneert true bij succes (d.w.z. na afloop bestaan alle mappen).
+     * Suspend variant of foldersExist() (runs on Dispatchers.IO).
+     */
+    suspend fun foldersExistSuspend(): Boolean = withContext(Dispatchers.IO) {
+        foldersExist()
+    }
+
+    /**
+     * Synchronous ensure (idempotent) of VT5 tree and subfolders.
+     * Prefer ensureFoldersSuspend() in coroutine contexts.
      */
     fun ensureFolders(): Boolean {
         val rootTree = getRootUri() ?: return false
         val rootDoc = DocumentFile.fromTreeUri(context, rootTree) ?: return false
 
-        // 1) VT5 hoofdmap
         val vt5Folder = findOrCreateDirectory(rootDoc, "VT5") ?: return false
 
-        // 2) Submappen
         val subfolders = listOf("assets", "serverdata", "counts", "exports", "binaries")
         for (name in subfolders) {
             if (findOrCreateDirectory(vt5Folder, name) == null) return false
@@ -80,20 +85,43 @@ class SaFStorageHelper(private val context: Context) {
     }
 
     /**
-     * Geeft de VT5-map terug als DocumentFile, als die bestaat.
+     * Suspend variant of ensureFolders (runs on Dispatchers.IO).
      */
-    fun getVt5DirIfExists(): DocumentFile? {
-        val rootTree = getRootUri() ?: return null
-        val rootDoc = DocumentFile.fromTreeUri(context, rootTree) ?: return null
-        return rootDoc.findFile("VT5")?.takeIf { it.isDirectory }
+    suspend fun ensureFoldersSuspend(): Boolean = withContext(Dispatchers.IO) {
+        ensureFolders()
     }
 
     /**
-     * Vind bestaande directory (case-sensitief) of maak ze aan.
+     * Synchronous get VT5 DocumentFile if it exists.
+     * Prefer getVt5DirIfExistsSuspend() when calling from coroutine.
      */
-    private fun findOrCreateDirectory(parent: DocumentFile, name: String): DocumentFile? {
+    fun getVt5DirIfExists(): DocumentFile? {
+        val rootTree = getRootUri() ?: return null
+        return DocumentFile.fromTreeUri(context, rootTree)?.findFile("VT5")?.takeIf { it.isDirectory }
+    }
+
+    /**
+     * Suspend variant (runs on Dispatchers.IO).
+     */
+    suspend fun getVt5DirIfExistsSuspend(): DocumentFile? = withContext(Dispatchers.IO) {
+        getVt5DirIfExists()
+    }
+
+    /**
+     * Find existing directory by exact name (case-sensitive) or create it.
+     *
+     * Note: listFiles() can be slow — prefer calling this via the suspend wrapper.
+     */
+    fun findOrCreateDirectory(parent: DocumentFile, name: String): DocumentFile? {
         parent.listFiles().firstOrNull { it.isDirectory && it.name == name }?.let { return it }
         return parent.createDirectory(name)
+    }
+
+    /**
+     * Suspend-safe wrapper for findOrCreateDirectory.
+     */
+    suspend fun findOrCreateDirectorySuspend(parent: DocumentFile, name: String): DocumentFile? = withContext(Dispatchers.IO) {
+        findOrCreateDirectory(parent, name)
     }
 
     companion object {

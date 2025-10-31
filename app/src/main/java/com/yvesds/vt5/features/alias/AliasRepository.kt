@@ -8,31 +8,30 @@ import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.features.speech.AliasMatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import kotlinx.serialization.cbor.Cbor
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.time.Instant
+import java.util.zip.GZIPInputStream
 
 /**
- * AliasRepository.kt
+ * AliasRepository.kt (CSV dependency removed)
  *
  * Responsibilities:
- *  - Load aliases from SAF (preferred: binaries/aliases_master.json)
- *  - Fallback to serverdata/aliases.json (legacy) or aliasmapping.csv
+ *  - Load aliases from SAF (preferred: binaries/aliases_optimized.cbor.gz then binaries/alias_master.json)
+ *  - Fallback to serverdata/aliases.json (legacy wrapper)
  *  - Maintain an in-memory map speciesId -> SpeciesEntry (AliasModels)
  *  - Maintain reverse map normalized alias -> speciesId
  *  - Provide hot-patch addAliasInMemory()
- *  - Convert CSV -> legacy JSON (if requested)
  *
- * Notes:
- *  - Legacy wrapper types are defined below as LegacyAliasWrapper/LegacyAliasEntry.
- *  - The canonical runtime models are in AliasModels.kt (AliasMaster, SpeciesEntry, AliasData, AliasIndex, AliasRecord).
+ * CSV conversion functionality has been removed from the automatic flows and the codebase:
+ * convertCsvToJson() has been deleted — migration must be performed explicitly outside runtime.
  */
 
-// Reused Json instance for this file to avoid repeated allocations
 private val json = Json {
     prettyPrint = true
     encodeDefaults = true
@@ -44,12 +43,12 @@ class AliasRepository(private val context: Context) {
     companion object {
         private const val TAG = "AliasRepository"
 
-        // Preferred canonical file in binaries
-        private const val ALIAS_MASTER_FILE = "aliases_master.json"
+        // Preferred canonical file names in SAF
+        private const val ALIAS_MASTER_FILE = "alias_master.json"
+        private const val ALIASES_CBOR_GZ = "aliases_optimized.cbor.gz"
 
-        // Legacy names (kept for compatibility if present)
+        // Legacy name (kept only to attempt to read if present)
         private const val ALIAS_JSON_FILE = "aliases.json"
-        private const val ALIAS_CSV_FILE = "aliasmapping.csv"
 
         const val ACTION_ALIAS_RELOAD_STARTED = "com.yvesds.vt5.ALIAS_RELOAD_STARTED"
         const val ACTION_ALIAS_RELOAD_COMPLETED = "com.yvesds.vt5.ALIAS_RELOAD_COMPLETED"
@@ -77,9 +76,11 @@ class AliasRepository(private val context: Context) {
 
     /**
      * Load all alias data (async). Preference order:
-     * 1) binaries/aliases_master.json (AliasMaster)
-     * 2) serverdata/aliases.json (legacy wrapper)
-     * 3) assets/aliasmapping.csv (legacy CSV)
+     * 1) binaries/aliases_optimized.cbor.gz (fast binary AliasIndex)
+     * 2) binaries/alias_master.json (canonical human-readable master)
+     * 3) serverdata/aliases.json (legacy wrapper)
+     *
+     * CSV import is NOT performed automatically anywhere in the app.
      */
     suspend fun loadAliasData(): Boolean = withContext(Dispatchers.IO) {
         if (isDataLoaded) return@withContext true
@@ -92,20 +93,48 @@ class AliasRepository(private val context: Context) {
                 return@withContext false
             }
 
-            // 1) Try binaries/aliases_master.json (preferred)
+            // 1) Try binaries/aliases_optimized.cbor.gz (preferred fast path)
             val binaries = vt5Dir.findFile("binaries")?.takeIf { it.isDirectory }
-            val masterDoc = binaries?.findFile(ALIAS_MASTER_FILE)
-            if (masterDoc != null && masterDoc.exists()) {
-                val loaded = loadFromAliasesMaster()
-                if (loaded) {
-                    buildReverseMapping()
-                    isDataLoaded = true
-                    Log.d(TAG, "Loaded aliases from binaries/$ALIAS_MASTER_FILE: ${aliasCache.size} species")
-                    return@withContext true
+            if (binaries != null) {
+                val cborDoc = binaries.findFile(ALIASES_CBOR_GZ)
+                if (cborDoc != null && cborDoc.isFile) {
+                    val bytes = runCatching {
+                        appContext.contentResolver.openInputStream(cborDoc.uri)?.use { it.readBytes() }
+                    }.getOrNull()
+                    if (bytes != null && bytes.isNotEmpty()) {
+                        val ungz = gunzip(bytes)
+                        val idx = try {
+                            Cbor.decodeFromByteArray(AliasIndex.serializer(), ungz)
+                        } catch (ex: Exception) {
+                            Log.w(TAG, "Failed to decode AliasIndex CBOR: ${ex.message}", ex)
+                            null
+                        }
+                        if (idx != null) {
+                            loadFromAliasIndex(idx)
+                            buildReverseMapping()
+                            isDataLoaded = true
+                            Log.d(TAG, "Loaded aliases from binaries/$ALIASES_CBOR_GZ: ${aliasCache.size} species")
+                            return@withContext true
+                        }
+                    }
                 }
             }
 
-            // 2) Try serverdata/aliases.json (legacy)
+            // 2) Try binaries/alias_master.json (human-readable canonical master)
+            if (binaries != null) {
+                val masterDoc = binaries.findFile(ALIAS_MASTER_FILE)
+                if (masterDoc != null && masterDoc.exists()) {
+                    val loaded = loadFromAliasesMaster()
+                    if (loaded) {
+                        buildReverseMapping()
+                        isDataLoaded = true
+                        Log.d(TAG, "Loaded aliases from binaries/$ALIAS_MASTER_FILE: ${aliasCache.size} species")
+                        return@withContext true
+                    }
+                }
+            }
+
+            // 3) Try serverdata/aliases.json (legacy)
             val serverDataDir = vt5Dir.findFile("serverdata")?.takeIf { it.isDirectory }
             val aliasJsonFile = serverDataDir?.findFile(ALIAS_JSON_FILE)
             if (aliasJsonFile != null && aliasJsonFile.exists()) {
@@ -118,16 +147,7 @@ class AliasRepository(private val context: Context) {
                 }
             }
 
-            // 3) Fallback: CSV in assets
-            val csvLoaded = loadFromCsv()
-            if (csvLoaded) {
-                buildReverseMapping()
-                isDataLoaded = true
-                Log.d(TAG, "Loaded aliases from CSV: ${aliasCache.size} species")
-                return@withContext true
-            }
-
-            Log.w(TAG, "No alias data loaded")
+            Log.w(TAG, "No alias data loaded (no CBOR, no master.json, no legacy json).")
             return@withContext false
         } catch (ex: Exception) {
             Log.e(TAG, "loadAliasData failed: ${ex.message}", ex)
@@ -162,7 +182,7 @@ class AliasRepository(private val context: Context) {
     // ---------- Loaders ----------
 
     /**
-     * Load canonical AliasMaster JSON (binaries/aliases_master.json)
+     * Load canonical AliasMaster JSON (binaries/alias_master.json)
      */
     private fun loadFromAliasesMaster(): Boolean {
         try {
@@ -174,7 +194,7 @@ class AliasRepository(private val context: Context) {
             val jsonString = appContext.contentResolver.openInputStream(masterDoc.uri)?.bufferedReader()?.use { it.readText() }
                 ?: return false
 
-            val master = json.decodeFromString(AliasMaster.serializer(), jsonString)
+            val master = json.decodeFromString<AliasMaster>(jsonString)
 
             aliasCache.clear()
             for (entry in master.species) {
@@ -184,6 +204,35 @@ class AliasRepository(private val context: Context) {
         } catch (ex: Exception) {
             Log.w(TAG, "loadFromAliasesMaster failed: ${ex.message}", ex)
             return false
+        }
+    }
+
+    /**
+     * Load alias index from an in-memory AliasIndex object (CBOR decoded).
+     * Converts AliasIndex -> SpeciesEntry map.
+     */
+    private fun loadFromAliasIndex(index: AliasIndex) {
+        try {
+            aliasCache.clear()
+            // Group by speciesid
+            val grouped = index.json.groupBy { it.speciesid }
+            for ((sid, recs) in grouped) {
+                val canonical = recs.firstOrNull()?.canonical ?: sid
+                val tilename = recs.firstOrNull()?.tilename
+                val aliasesList = recs.map { r ->
+                    AliasData(
+                        text = r.alias,
+                        norm = r.norm,
+                        cologne = r.cologne ?: "",
+                        phonemes = r.phonemes ?: "",
+                        source = r.source,
+                        timestamp = null
+                    )
+                }
+                aliasCache[sid] = SpeciesEntry(speciesId = sid, canonical = canonical, tilename = tilename, aliases = aliasesList)
+            }
+        } catch (ex: Exception) {
+            Log.w(TAG, "loadFromAliasIndex failed: ${ex.message}", ex)
         }
     }
 
@@ -203,7 +252,7 @@ class AliasRepository(private val context: Context) {
 
             // Decode legacy wrapper structure
             val legacy = try {
-                json.decodeFromString(LegacyAliasWrapper.serializer(), jsonString)
+                json.decodeFromString<LegacyAliasWrapper>(jsonString)
             } catch (ex: Exception) {
                 Log.w(TAG, "loadFromLegacyJson: cannot decode legacy wrapper: ${ex.message}")
                 return false
@@ -243,60 +292,6 @@ class AliasRepository(private val context: Context) {
     }
 
     /**
-     * Load from CSV fallback (assets/aliasmapping.csv). Builds SpeciesEntry objects.
-     */
-    private fun loadFromCsv(): Boolean {
-        try {
-            val safHelper = SaFStorageHelper(appContext)
-            val vt5Dir = safHelper.getVt5DirIfExists() ?: return false
-            val assetsDir = vt5Dir.findFile("assets")?.takeIf { it.isDirectory } ?: return false
-            val csvDoc = assetsDir.findFile(ALIAS_CSV_FILE) ?: return false
-
-            val inputStream = appContext.contentResolver.openInputStream(csvDoc.uri) ?: return false
-            inputStream.use { stream ->
-                BufferedReader(InputStreamReader(stream)).use { reader ->
-                    var line: String?
-                    var count = 0
-                    aliasCache.clear()
-                    while (reader.readLine().also { line = it } != null) {
-                        if (line.isNullOrBlank()) continue
-                        val parts = line!!.split(";").map { it.trim() }
-                        if (parts.size < 2) continue
-
-                        val soortId = parts[0]
-                        val canonical = parts.getOrNull(1) ?: soortId
-                        val tilename = parts.getOrNull(2)?.takeIf { it.isNotBlank() } ?: canonical
-                        val aliases = if (parts.size > 3) parts.drop(3).map { it.trim() } else emptyList()
-
-                        val speciesEntry = SpeciesEntry(
-                            speciesId = soortId,
-                            canonical = canonical,
-                            tilename = tilename,
-                            aliases = aliases.map { a ->
-                                AliasData(
-                                    text = a,
-                                    norm = normalizeForKey(a),
-                                    cologne = runCatching { com.yvesds.vt5.features.speech.ColognePhonetic.encode(normalizeForKey(a)) }.getOrNull() ?: "",
-                                    phonemes = runCatching { com.yvesds.vt5.features.speech.DutchPhonemizer.phonemize(normalizeForKey(a)) }.getOrNull() ?: "",
-                                    source = "seed_import",
-                                    timestamp = null
-                                )
-                            }
-                        )
-                        aliasCache[soortId] = speciesEntry
-                        count++
-                    }
-                    Log.d(TAG, "Loaded $count alias CSV entries")
-                    return count > 0
-                }
-            }
-        } catch (ex: Exception) {
-            Log.e(TAG, "loadFromCsv failed: ${ex.message}", ex)
-            return false
-        }
-    }
-
-    /**
      * Build reverse mapping alias -> speciesId using canonical, tilename and all aliases
      */
     private fun buildReverseMapping() {
@@ -311,62 +306,11 @@ class AliasRepository(private val context: Context) {
 
             // aliases list (AliasData)
             entry.aliases.forEach { a ->
-                // a is AliasData
                 val key = normalizeForKey(a.text)
                 if (key.isNotBlank()) aliasToSpeciesIdMap[key] = soortId
             }
         }
         Log.d(TAG, "Built reverse mapping with ${aliasToSpeciesIdMap.size} entries")
-    }
-
-    /**
-     * Convert CSV -> aliases_master.json (writes AliasMaster to binaries/aliases_master.json)
-     */
-    suspend fun convertCsvToJson(): Boolean = withContext(Dispatchers.IO) {
-        try {
-            // Ensure CSV is present and parse
-            val safHelper = SaFStorageHelper(appContext)
-            val vt5Dir = safHelper.getVt5DirIfExists() ?: return@withContext false
-            val assetsDir = vt5Dir.findFile("assets")?.takeIf { it.isDirectory } ?: return@withContext false
-            val csvDoc = assetsDir.findFile(ALIAS_CSV_FILE) ?: return@withContext false
-
-            val csvText = appContext.contentResolver.openInputStream(csvDoc.uri)?.bufferedReader()?.use { it.readText() } ?: return@withContext false
-            val index = PrecomputeAliasIndex.buildFromCsv(csvText, q = 3)
-
-            // Convert AliasIndex -> AliasMaster
-            val speciesMap = index.json.groupBy { it.speciesid }
-            val speciesList = speciesMap.map { (sid, recs) ->
-                val canonical = recs.firstOrNull()?.canonical ?: sid
-                val tilename = recs.firstOrNull()?.tilename
-                val aliasesList = recs.map { r ->
-                    AliasData(
-                        text = r.alias,
-                        norm = r.norm,
-                        cologne = r.cologne ?: "",
-                        phonemes = r.phonemes ?: "",
-                        source = r.source
-                    )
-                }
-                SpeciesEntry(speciesId = sid, canonical = canonical, tilename = tilename, aliases = aliasesList)
-            }
-
-            val master = AliasMaster(version = "2.1", timestamp = Instant.now().toString(), species = speciesList)
-
-            // Write to binaries/aliases_master.json
-            val binaries = vt5Dir.findFile("binaries")?.takeIf { it.isDirectory } ?: vt5Dir.createDirectory("binaries") ?: return@withContext false
-            val outFile = binaries.findFile(ALIAS_MASTER_FILE)?.also { it.delete() } ?: binaries.createFile("application/json", ALIAS_MASTER_FILE) ?: return@withContext false
-            val jsonText = json.encodeToString(AliasMaster.serializer(), master)
-            appContext.contentResolver.openOutputStream(outFile.uri)?.use { os ->
-                os.write(jsonText.toByteArray(Charsets.UTF_8))
-                os.flush()
-            } ?: return@withContext false
-
-            Log.d(TAG, "Wrote aliases_master.json with ${speciesList.size} species")
-            return@withContext true
-        } catch (ex: Exception) {
-            Log.e(TAG, "convertCsvToJson failed: ${ex.message}", ex)
-            return@withContext false
-        }
     }
 
     /**
@@ -461,4 +405,17 @@ class AliasRepository(private val context: Context) {
         val displayName: String,
         val aliases: List<String>
     )
+
+    // -----------------------------
+    // Small utilities
+    // -----------------------------
+    private fun gunzip(input: ByteArray): ByteArray {
+        return try {
+            GZIPInputStream(input.inputStream()).use { gis ->
+                gis.readBytes()
+            }
+        } catch (ex: Exception) {
+            ByteArray(0)
+        }
+    }
 }

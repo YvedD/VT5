@@ -18,18 +18,16 @@ import java.util.regex.Pattern
 import kotlin.math.min
 
 /**
- * SpeechRecognitionManager: improved responsiveness and reduced main-thread work.
+ * SpeechRecognitionManager
  *
- * Important additions in this version:
- * - single-threaded parsing dispatcher (parsingDispatcher) to serialize heavy parsing work
- * - session id (lastSessionId) per startListening() invocation to ignore stale parse results
- * - currentParseJob tracking and cancellation to avoid overlapping heavy parses
- * - parsingScope uses parsingDispatcher so heavy work doesn't contend with UI threads
+ * Noise-robust listening and non-blocking parsing.
  *
- * Other improvements:
- * - quickPartialParse for earlier suggestions from partials
- * - background parsing for onResults (posts results to main only when still current session)
- * - configurable silenceStopMillis, shorter default (600ms) for reduced engine-induced waiting
+ * Key points:
+ * - RMS-based silence watcher removed (no false stops in wind/noise).
+ * - RecognizerIntent silence hints still provided (silenceStopMillis).
+ * - stopListening() uses cancel() aggressively and cancels parse jobs.
+ * - Parsing is serialized on a dedicated single-thread dispatcher and is cancellable.
+ * - All heavy work is off main thread.
  */
 class SpeechRecognitionManager(private val activity: Activity) {
 
@@ -78,18 +76,15 @@ class SpeechRecognitionManager(private val activity: Activity) {
     private val asrPartials = ArrayList<String>(32)
     private val safHelper: SaFStorageHelper by lazy { SaFStorageHelper(activity.applicationContext) }
 
-    // Slightly shorter default silence threshold to reduce added wait while still tolerating short pauses
+    // Default silence threshold (used to hint the ASR engine)
     @Volatile
-    var silenceStopMillis: Long = 600L
+    var silenceStopMillis: Long = 2000L
         private set
 
+    // RMS threshold kept for compatibility but not used because RMS watcher removed
     @Volatile
     var rmsSilenceThreshold: Float = 2.0f
         private set
-
-    private val internalScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    private var silenceJob: Job? = null
-    private var lastVoiceTimestamp: Long = 0L
 
     // Single-threaded parsing dispatcher (serializes heavy parsing work) + scope
     private val parsingExecutor = Executors.newSingleThreadExecutor { r ->
@@ -98,7 +93,7 @@ class SpeechRecognitionManager(private val activity: Activity) {
     private val parsingDispatcher = parsingExecutor.asCoroutineDispatcher()
     private val parsingScope = CoroutineScope(parsingDispatcher + SupervisorJob())
 
-    // sequence id and current parse job for cancelling/ignoring stale parses
+    // session id and current parse job for cancelling/ignoring stale parses
     private val lastSessionId = AtomicInteger(0)
     @Volatile
     private var currentParseJob: Job? = null
@@ -148,7 +143,6 @@ class SpeechRecognitionManager(private val activity: Activity) {
         }
 
         try {
-            // mark a new session and cancel any previous parse job
             val sessionId = lastSessionId.incrementAndGet()
             currentParseJob?.cancel()
             currentParseJob = null
@@ -156,20 +150,16 @@ class SpeechRecognitionManager(private val activity: Activity) {
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, "nl-NL")
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, "nl")
-                putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, true)
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, MAX_RESULTS)
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
 
-                // Use configured silenceStopMillis - engines may respect these hints
+                // Engine hints for silence - engines may or may not respect them
                 putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, silenceStopMillis)
                 putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, (silenceStopMillis * 0.8).toLong())
                 putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, (silenceStopMillis / 2).coerceAtLeast(250L))
             }
 
             synchronized(asrPartials) { asrPartials.clear() }
-            cancelSilenceJob()
-            lastVoiceTimestamp = System.currentTimeMillis()
 
             isListening = true
             speechRecognizer?.startListening(intent)
@@ -179,16 +169,38 @@ class SpeechRecognitionManager(private val activity: Activity) {
         }
     }
 
+    /**
+     * Stop listening quickly and cancel parsing.
+     */
     fun stopListening() {
         if (isListening) {
             try {
-                speechRecognizer?.stopListening()
+                try { speechRecognizer?.cancel() } catch (_: Exception) {}
+                try { speechRecognizer?.stopListening() } catch (_: Exception) {}
             } catch (e: Exception) {
                 Log.e(TAG, "Error stopping speech recognition: ${e.message}", e)
             } finally {
                 isListening = false
-                cancelSilenceJob()
+                currentParseJob?.cancel()
+                currentParseJob = null
             }
+        }
+    }
+
+    /**
+     * Immediate aggressive stop - use from UI for manual abort.
+     */
+    fun forceStopNow() {
+        try {
+            Log.d(TAG, "forceStopNow: cancelling recognizer and parse jobs")
+            try { speechRecognizer?.cancel() } catch (_: Exception) {}
+            try { speechRecognizer?.stopListening() } catch (_: Exception) {}
+            currentParseJob?.cancel()
+            currentParseJob = null
+        } catch (ex: Exception) {
+            Log.w(TAG, "forceStopNow failed: ${ex.message}", ex)
+        } finally {
+            isListening = false
         }
     }
 
@@ -235,20 +247,10 @@ class SpeechRecognitionManager(private val activity: Activity) {
     fun destroy() {
         try {
             stopListening()
-            silenceJob?.cancel()
-            internalScope.cancel()
-
-            // cancel outstanding parse job and parsing scope
             currentParseJob?.cancel()
             parsingScope.cancel()
 
-            // shutdown dispatcher/executor cleanly
-            try {
-                parsingDispatcher.close()
-            } catch (ex: Exception) {
-                // fallback: shutdown executor
-                try { parsingExecutor.shutdownNow() } catch (_: Exception) {}
-            }
+            try { parsingDispatcher.close() } catch (ex: Exception) { try { parsingExecutor.shutdownNow() } catch (_: Exception) {} }
 
             speechRecognizer?.destroy()
             speechRecognizer = null
@@ -267,22 +269,10 @@ class SpeechRecognitionManager(private val activity: Activity) {
 
             override fun onBeginningOfSpeech() {
                 Log.d(TAG, "Beginning of speech")
-                lastVoiceTimestamp = System.currentTimeMillis()
-                cancelSilenceJob()
             }
 
             override fun onRmsChanged(rmsdB: Float) {
-                try {
-                    val now = System.currentTimeMillis()
-                    if (rmsdB >= rmsSilenceThreshold) {
-                        lastVoiceTimestamp = now
-                        cancelSilenceJob()
-                    } else {
-                        scheduleSilenceStop()
-                    }
-                } catch (ex: Exception) {
-                    Log.w(TAG, "onRmsChanged watcher error: ${ex.message}", ex)
-                }
+                // NO-OP (RMS watcher removed)
             }
 
             override fun onBufferReceived(buffer: ByteArray?) {}
@@ -307,7 +297,6 @@ class SpeechRecognitionManager(private val activity: Activity) {
                 Log.e(TAG, "Error during speech recognition: $errorMessage ($error)")
                 isListening = false
                 synchronized(asrPartials) { asrPartials.clear() }
-                cancelSilenceJob()
             }
 
             override fun onResults(results: Bundle?) {
@@ -351,7 +340,6 @@ class SpeechRecognitionManager(private val activity: Activity) {
                         Log.w(TAG, "onHypothesesListener failed: ${ex.message}", ex)
                     }
 
-                    // Offload heavy parsing to single-thread parsingScope and guard by session id
                     val mySession = lastSessionId.get()
 
                     // cancel prior parse job for this session
@@ -361,7 +349,6 @@ class SpeechRecognitionManager(private val activity: Activity) {
                         val tStart = System.currentTimeMillis()
                         try {
                             if (onHypothesesListener == null) {
-                                // Try quick regex match first
                                 val matchResult = SPECIES_COUNT_PATTERN.matcher(bestMatch)
                                 if (matchResult.find()) {
                                     val speciesNameRaw = matchResult.group(1)
@@ -371,14 +358,12 @@ class SpeechRecognitionManager(private val activity: Activity) {
                                         val count = countText.toIntOrNull() ?: 1
                                         val speciesId = fastFindSpeciesId(speciesName)
                                         if (speciesId != null) {
-                                            // check session still current
                                             if (mySession == lastSessionId.get()) {
                                                 withContext(Dispatchers.Main) {
                                                     onSpeciesCountListener?.invoke(speciesId, speciesName, count)
                                                 }
                                             } else return@launch
                                         } else {
-                                            // fallback to full parse
                                             val recognizedItems = parseSpeciesWithCounts(bestMatch)
                                             if (recognizedItems.isNotEmpty()) {
                                                 if (mySession == lastSessionId.get()) {
@@ -398,7 +383,6 @@ class SpeechRecognitionManager(private val activity: Activity) {
                                         }
                                     }
                                 } else {
-                                    // heavy parse (off-main)
                                     val recognizedItems = parseSpeciesWithCounts(bestMatch)
                                     if (recognizedItems.isNotEmpty()) {
                                         if (mySession == lastSessionId.get()) {
@@ -417,10 +401,10 @@ class SpeechRecognitionManager(private val activity: Activity) {
                                     }
                                 }
                             } else {
-                                // caller will handle hypotheses; do not duplicate heavy work
+                                // caller handles hypotheses
                             }
                         } catch (ex: CancellationException) {
-                            // parsing job cancelled - ignore
+                            // cancelled - ignore
                         } catch (ex: Exception) {
                             Log.w(TAG, "Background parsing failed: ${ex.message}", ex)
                         } finally {
@@ -431,7 +415,6 @@ class SpeechRecognitionManager(private val activity: Activity) {
                 }
 
                 isListening = false
-                cancelSilenceJob()
             }
 
             override fun onPartialResults(partialResults: Bundle?) {
@@ -450,17 +433,13 @@ class SpeechRecognitionManager(private val activity: Activity) {
                             }
                         }
                     }
-                    // Quick UI feedback
                     onRawResultListener?.invoke(partials[0])
 
-                    // Lightweight parsing on partials to provide earlier parsed suggestions
                     val quick = partials[0]
-                    // use parsingScope (single-thread) to avoid parallel heavy tasks
                     parsingScope.launch {
                         try {
                             val maybe = quickPartialParse(quick)
                             if (maybe != null) {
-                                // Only post if still the current session
                                 val current = lastSessionId.get()
                                 if (current == lastSessionId.get()) {
                                     withContext(Dispatchers.Main) {
@@ -469,9 +448,7 @@ class SpeechRecognitionManager(private val activity: Activity) {
                                 }
                             }
                         } catch (_: CancellationException) {
-                            // ignore
                         } catch (ex: Exception) {
-                            // ignore partial parse errors
                         }
                     }
                 }
@@ -522,28 +499,21 @@ class SpeechRecognitionManager(private val activity: Activity) {
     }
 
     private fun findSpeciesIdEfficient(speciesName: String): String? {
-        // 1. Direct
+        if (speciesName.isBlank()) return null
         availableSpecies[speciesName]?.let { return it }
-
-        // 2. Case-insensitive
         for ((key, value) in availableSpecies) {
             if (key.equals(speciesName, ignoreCase = true)) return value
         }
-
-        // 3. Normalized
         val normalized = normalizeSpeciesName(speciesName)
         availableSpecies[normalized]?.let { return it }
 
-        // 4. Alias match
         if (aliasesLoaded) {
             val aliasId = aliasRepository.findSpeciesIdByAlias(speciesName)
             if (aliasId != null && availableSpecies.containsValue(aliasId)) {
-                Log.d(TAG, "Found match via alias: '$speciesName' -> $aliasId")
                 return aliasId
             }
         }
 
-        // 5. Full phonetic + fuzzy fallback (may be heavy)
         val index = phoneticIndex
         if (index != null) {
             val activeSpeciesNames = availableSpecies.keys.toSet()
@@ -553,7 +523,6 @@ class SpeechRecognitionManager(private val activity: Activity) {
             }
         }
 
-        // 6. Fallback levenshtein
         var bestMatch: Pair<String, String>? = null
         var bestScore = 0.0
         for ((name, id) in availableSpecies) {
@@ -638,7 +607,7 @@ class SpeechRecognitionManager(private val activity: Activity) {
         val index = phoneticIndex
         if (index != null) {
             val activeSpeciesNames = availableSpecies.keys.toSet()
-            val candidates = index.findCandidates(normalized, activeSpeciesNames, 5)
+            val candidates = index.findCandidates(normalizeSpeciesName(text), activeSpeciesNames, 5)
             if (candidates.isNotEmpty()) {
                 val bestCandidate = candidates.first()
                 return bestCandidate.sourceId to bestCandidate.sourceName
@@ -667,6 +636,11 @@ class SpeechRecognitionManager(private val activity: Activity) {
         return (0.7 * phoneticSimilarity + 0.3 * levSimilarity).coerceIn(0.0, 1.0)
     }
 
+    // ------------------------
+    // Helper functions (normalization, tokenization, levenshtein, etc.)
+    // These are the same implementations as in your original file.
+    // ------------------------
+
     private fun levenshteinDistance(s1: String, s2: String): Int {
         if (s1 == s2) return 0
         if (s1.isEmpty()) return s2.length
@@ -684,25 +658,6 @@ class SpeechRecognitionManager(private val activity: Activity) {
         return dp[s1.length][s2.length]
     }
 
-    private fun isDigitOne(token: String): Boolean = token == "1"
-
-    private fun findNextNumber(tokens: List<String>, startIndex: Int): Int {
-        for (i in startIndex until tokens.size) {
-            if (isNumeric(tokens[i])) return i
-        }
-        return -1
-    }
-
-    private fun isNumeric(token: String): Boolean {
-        if (token.all { it.isDigit() }) return true
-        return DUTCH_NUMBER_WORDS[token] != null
-    }
-
-    private fun parseCount(token: String): Int {
-        if (token.all { it.isDigit() }) return token.toIntOrNull() ?: 1
-        return DUTCH_NUMBER_WORDS[token] ?: 1
-    }
-
     private fun normalize(text: String): String {
         normalizeStringBuilder.setLength(0)
         val lowercase = text.lowercase(Locale.ROOT)
@@ -710,6 +665,7 @@ class SpeechRecognitionManager(private val activity: Activity) {
             when {
                 c.isLetterOrDigit() -> normalizeStringBuilder.append(c)
                 c.isWhitespace() -> normalizeStringBuilder.append(' ')
+                else -> {}
             }
         }
         var i = 0
@@ -750,6 +706,25 @@ class SpeechRecognitionManager(private val activity: Activity) {
         }
         return result
     }
+
+    private fun findNextNumber(tokens: List<String>, startIndex: Int): Int {
+        for (i in startIndex until tokens.size) {
+            if (isNumeric(tokens[i])) return i
+        }
+        return -1
+    }
+
+    private fun isNumeric(token: String): Boolean {
+        if (token.all { it.isDigit() }) return true
+        return DUTCH_NUMBER_WORDS[token] != null
+    }
+
+    private fun parseCount(token: String): Int {
+        if (token.all { it.isDigit() }) return token.toIntOrNull() ?: 1
+        return DUTCH_NUMBER_WORDS[token] ?: 1
+    }
+
+    private fun isDigitOne(token: String): Boolean = token == "1"
 
     private fun normalizeSpeciesName(name: String): String {
         normalizeStringBuilder.setLength(0)
@@ -793,32 +768,5 @@ class SpeechRecognitionManager(private val activity: Activity) {
         if (word.endsWith("en")) return if (word.endsWith("zen")) word.dropLast(3) + "s" else word.dropLast(2)
         if (word.endsWith("s")) return word.dropLast(1)
         return word
-    }
-
-    private fun scheduleSilenceStop() {
-        cancelSilenceJob()
-        val now = System.currentTimeMillis()
-        val sinceLastVoice = now - lastVoiceTimestamp
-        val remaining = (silenceStopMillis - sinceLastVoice).coerceAtLeast(0L)
-        silenceJob = internalScope.launch {
-            try {
-                delay(remaining)
-                val now2 = System.currentTimeMillis()
-                if (now2 - lastVoiceTimestamp >= silenceStopMillis) {
-                    Log.d(TAG, "Silence detected for ${silenceStopMillis}ms -> stopping listening")
-                    stopListening()
-                }
-            } catch (ex: CancellationException) {
-            } catch (ex: Exception) {
-                Log.w(TAG, "Silence watcher error: ${ex.message}", ex)
-            }
-        }
-    }
-
-    private fun cancelSilenceJob() {
-        try {
-            silenceJob?.cancel()
-            silenceJob = null
-        } catch (_: Exception) { }
     }
 }
