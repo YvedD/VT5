@@ -29,7 +29,7 @@ import java.util.zip.GZIPInputStream
  *  - Provide hot-patch addAliasInMemory()
  *
  * CSV conversion functionality has been removed from the automatic flows and the codebase:
- * convertCsvToJson() has been deleted — migration must be performed explicitly outside runtime.
+ * any CSV → JSON migration must be performed explicitly outside runtime (offline or via a migration tool).
  */
 
 private val json = Json {

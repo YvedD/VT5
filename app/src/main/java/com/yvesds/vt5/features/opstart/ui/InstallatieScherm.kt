@@ -39,6 +39,8 @@ import androidx.documentfile.provider.DocumentFile as DFile
  * - compute & store source checksum metadata (alias_master.meta.json)
  * - disable précompute button when index already present
  * - provide Forceer reindex button (unlocks when pressed) without toast overview
+ *
+ * CSV support has been removed from runtime — all flows now use alias_master.json and aliases_optimized.cbor.gz.
  */
 
 class InstallatieScherm : AppCompatActivity() {
@@ -355,7 +357,7 @@ class InstallatieScherm : AppCompatActivity() {
     )
 
     // ... existing mergeAliasWithSite() removed/unused in this variant (legacy CSV path deprecated) ...
-    // keep legacy functions if needed, but by default we no longer create CSVs
+    // by design we no longer create CSVs in runtime
 
     private fun saveCheckUserJson(prettyText: String) {
         val vt5Dir = saf.getVt5DirIfExists() ?: return
@@ -483,7 +485,7 @@ class InstallatieScherm : AppCompatActivity() {
             .create()
     }
 
-    // Reuse the normalization logic used in PrecomputeAliasIndex with "/" -> " of " replacement
+    // Reuse the normalization logic used elsewhere (replace "/" -> " of " and remove diacritics)
     private fun normalizeLowerNoDiacritics(input: String): String {
         val replacedSlash = input.replace("/", " of ")
         val lower = replacedSlash.lowercase(Locale.getDefault())
@@ -491,15 +493,6 @@ class InstallatieScherm : AppCompatActivity() {
         val noDiacritics = decomposed.replace("\\p{Mn}+".toRegex(), "")
         val cleaned = noDiacritics.replace("[^\\p{L}\\p{Nd}]+".toRegex(), " ").trim()
         return cleaned.replace("\\s+".toRegex(), " ")
-    }
-
-    // aliases: lowercase, replace "/" with " of ", collapse spaces, remove semicolons
-    private fun formatAliasForCsv(raw: String?): String {
-        if (raw.isNullOrBlank()) return ""
-        var s = raw.replace("/", " of ")
-        s = s.replace(";", " ")
-        s = s.replace(Regex("\\s+"), " ").trim()
-        return s.lowercase(Locale.getDefault())
     }
 
     // Debug helper to inspect Documents/VT5 via SAF

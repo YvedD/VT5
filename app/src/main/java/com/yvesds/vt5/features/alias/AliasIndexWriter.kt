@@ -24,10 +24,11 @@ import java.util.zip.GZIPOutputStream
 import java.util.zip.GZIPInputStream
 
 /**
- * AliasIndexWriter (SAF-only, updated)
+ * AliasIndexWriter (SAF-only, CSV-free)
  *
  * - Produces JSON and CBOR outputs for aliases/species/phonetic map and manifest.
- * - Does NOT require CSV. If a precomputed CBOR or alias_master.json exists it will be used.
+ * - NO CSV references are emitted into the manifest or outputs.
+ * - Prefers precomputed CBOR (aliases_optimized.cbor.gz) or alias_master.json in Documents/VT5.
  * - If no index exists it requests AliasManager.initialize(...) to generate the seed and retries.
  *
  * Author: VT5 Team (YvedD)
@@ -46,7 +47,8 @@ object AliasIndexWriter {
     private const val ALIASES_CBOR_GZ = "aliases_optimized.cbor.gz"
     private const val SPECIES_CBOR_GZ = "species_master.cbor.gz"
 
-    private const val ALIASES_SCHEMA = "aliases_flat.schema.json"
+    // Schema filenames kept in serverdata for compatibility with export format
+    private const val ALIASES_SCHEMA = "aliases_schema.json"
     private const val SPECIES_SCHEMA = "species_master.schema.json"
     private const val PHONETIC_SCHEMA = "phonetic_map.schema.json"
     private const val MANIFEST = "manifest.schema.json"
@@ -278,7 +280,7 @@ object AliasIndexWriter {
             )
         )
         val indexes = mapOf(
-            "aliases_flat" to ManifestIndexEntry(
+            "aliases_optimized" to ManifestIndexEntry(
                 path = "Documents/VT5/$BINARIES/$ALIASES_CBOR_GZ",
                 sha256 = sha256OfBytes(aliasCborBytes),
                 size = aliasCborBytes.size.toString(),

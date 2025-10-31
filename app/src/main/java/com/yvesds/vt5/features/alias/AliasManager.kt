@@ -10,7 +10,6 @@ import com.yvesds.vt5.features.speech.DutchPhonemizer
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.cbor.Cbor
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -25,21 +24,23 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.contentOrNull
 
 /**
  * AliasManager.kt
  *
- * Same functionality as your original file, with additions:
- * - internal app-private CBOR cache (filesDir/aliases_optimized.cbor.gz)
- * - ensureIndexLoadedSuspend(context, saf): idempotent, thread-safe loader that prefers internal cache,
- *   copies SAF binaries if present, or builds from master/serverdata and writes internal cache.
- * - internal cache updated whenever CBOR/master is written to SAF (rebuildCborCache / writeMasterAndCborToSaf)
+ * Responsibilities and behavior (CSV-free):
+ * - Manage alias master / CBOR generation and persistence to SAF (Documents/VT5)
+ * - Maintain an internal, app-private CBOR cache (context.filesDir/aliases_optimized.cbor.gz)
+ * - Provide ensureIndexLoadedSuspend(...) which is idempotent and prefers:
+ *     1) internal CBOR cache
+ *     2) SAF binaries/aliases_optimized.cbor.gz (copy -> internal)
+ *     3) SAF assets/alias_master.json or regenerate from serverdata/species.json
+ * - Provide batched user-alias persistence (write queue -> assets master + binaries CBOR)
  *
- * Note: I preserved your original logic and only carefully inserted the caching/loader logic
- * and made the fallback safe (no invalid constructor calls).
+ * Notes:
+ * - CSV references have been removed entirely from runtime. Any CSV migration must be done offline
+ *   into alias_master.json and aliases_optimized.cbor.gz placed in Documents/VT5/binaries/.
  */
 
 object AliasManager {
@@ -52,7 +53,7 @@ object AliasManager {
     private const val BINARIES = "binaries"
     private const val ASSETS = "assets"
 
-    /* INTERNAL CACHE */
+    /* INTERNAL CACHE (app filesDir) */
     private const val INTERNAL_CBOR = "aliases_optimized.cbor.gz"
 
     /* JSON/CBOR SERIALIZERS */
@@ -90,7 +91,7 @@ object AliasManager {
         val timestamp: String
     )
 
-    /* INITIALIZATION */
+    /* INITIALIZATION: ensure SAF structure and optionally generate initial seed */
     suspend fun initialize(context: Context, saf: SaFStorageHelper): Boolean = withContext(Dispatchers.IO) {
         try {
             val vt5 = saf.getVt5DirIfExists()
@@ -323,10 +324,10 @@ object AliasManager {
                 Log.e(TAG, "Failed to build AliasIndex from JSON: ${ex.message}", ex)
             }
 
-            // last fallback: mark loaded but keep loadedIndex null (caller must handle)
+            // last fallback: no index available
             loadedIndex = null
-            indexLoaded = true
-            Log.w(TAG, "AliasIndex fallback: no index available (loaded=false)")
+            indexLoaded = false
+            Log.w(TAG, "AliasIndex fallback: no index available")
         }
     }
 
@@ -648,13 +649,6 @@ object AliasManager {
 
     /**
      * Merge user-added aliases from the existing master (if any) into the new master.
-     *
-     * - Reads existing assets/alias_master.json if present.
-     * - Collects aliases with source starting with "user" (incl. "user_field_training").
-     * - Ensures norm/cologne/phonemes are present (computes if missing).
-     * - Inserts aliases into the corresponding species in newMaster (creates species entry if needed).
-     * - Avoids duplicates by norm within a species.
-     * - Logs conflicts (norm mapped to other species) but keeps user alias on their species.
      */
     private suspend fun mergeUserAliasesIntoMaster(
         context: android.content.Context,

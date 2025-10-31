@@ -26,6 +26,12 @@ import kotlin.math.max
  * - Does NOT import AliasManager to avoid circular compile dependencies.
  * - First attempts to load internal cache file from context.filesDir (aliases_optimized.cbor.gz).
  * - If not present, falls back once to SAF binary CBOR and builds the maps.
+ *
+ * Changes in this patch:
+ * - findExact now attempts both normalized (no-diacritics norm) and simple-lowercase lookups
+ *   so callers that pass either form get matches.
+ * - Minor robustness improvements around CBOR reading and gunzip handling.
+ * - No CSV references; uses aliases_optimized.cbor.gz consistently.
  */
 
 internal object AliasMatcher {
@@ -67,10 +73,12 @@ internal object AliasMatcher {
                         internalFile.inputStream().use { fis ->
                             GZIPInputStream(fis).use { gis ->
                                 val bytes = gis.readBytes()
-                                val idx: RepoAliasIndex = Cbor.decodeFromByteArray(RepoAliasIndex.serializer(), bytes)
-                                buildMapsFromIndex(idx)
-                                Log.i(TAG, "ensureLoaded: loaded internal CBOR cache (records=${idx.json.size})")
-                                return@withLock
+                                if (bytes.isNotEmpty()) {
+                                    val idx: RepoAliasIndex = Cbor.decodeFromByteArray(RepoAliasIndex.serializer(), bytes)
+                                    buildMapsFromIndex(idx)
+                                    Log.i(TAG, "ensureLoaded: loaded internal CBOR cache (records=${idx.json.size})")
+                                    return@withLock
+                                }
                             }
                         }
                     } catch (ex: Exception) {
@@ -97,7 +105,9 @@ internal object AliasMatcher {
                     return@withLock
                 }
 
-                val bytes = context.contentResolver.openInputStream(cborDoc.uri)?.use { it.readBytes() }
+                val bytes = kotlin.runCatching {
+                    context.contentResolver.openInputStream(cborDoc.uri)?.use { it.readBytes() }
+                }.getOrNull()
                 if (bytes == null || bytes.isEmpty()) {
                     if (cborMissingWarned.compareAndSet(false, true)) {
                         Log.w(TAG, "Failed to read aliases cbor bytes")
@@ -106,6 +116,11 @@ internal object AliasMatcher {
                 }
 
                 val ungz = gunzip(bytes)
+                if (ungz.isEmpty()) {
+                    Log.w(TAG, "ensureLoaded: ungzipped cbor is empty")
+                    return@withLock
+                }
+
                 val idxFromCbor: RepoAliasIndex = Cbor.decodeFromByteArray(RepoAliasIndex.serializer(), ungz)
                 buildMapsFromIndex(idxFromCbor)
                 Log.i(TAG, "ensureLoaded: loaded index from SAF CBOR (records=${idxFromCbor.json.size}, keys=${aliasMap?.size ?: 0})")
@@ -137,10 +152,12 @@ internal object AliasMatcher {
                         internalFile.inputStream().use { fis ->
                             GZIPInputStream(fis).use { gis ->
                                 val bytes = gis.readBytes()
-                                val idx: RepoAliasIndex = Cbor.decodeFromByteArray(RepoAliasIndex.serializer(), bytes)
-                                buildMapsFromIndex(idx)
-                                Log.i(TAG, "reloadIndex: reloaded from internal cache (records=${idx.json.size})")
-                                return@withLock
+                                if (bytes.isNotEmpty()) {
+                                    val idx: RepoAliasIndex = Cbor.decodeFromByteArray(RepoAliasIndex.serializer(), bytes)
+                                    buildMapsFromIndex(idx)
+                                    Log.i(TAG, "reloadIndex: reloaded from internal cache (records=${idx.json.size})")
+                                    return@withLock
+                                }
                             }
                         }
                     } catch (ex: Exception) {
@@ -159,12 +176,18 @@ internal object AliasMatcher {
                     Log.w(TAG, "aliases cbor not found during reload")
                     return@withLock
                 }
-                val bytes = context.contentResolver.openInputStream(cborDoc.uri)?.use { it.readBytes() }
+                val bytes = kotlin.runCatching {
+                    context.contentResolver.openInputStream(cborDoc.uri)?.use { it.readBytes() }
+                }.getOrNull()
                 if (bytes == null || bytes.isEmpty()) {
                     Log.w(TAG, "Failed to read aliases cbor bytes during reload")
                     return@withLock
                 }
                 val ungz = gunzip(bytes)
+                if (ungz.isEmpty()) {
+                    Log.w(TAG, "reloadIndex: ungzipped cbor is empty")
+                    return@withLock
+                }
                 val idxFromCbor: RepoAliasIndex = Cbor.decodeFromByteArray(RepoAliasIndex.serializer(), ungz)
                 buildMapsFromIndex(idxFromCbor)
                 Log.i(TAG, "reloadIndex: reloaded index from SAF CBOR (records=${idxFromCbor.json.size}, keys=${aliasMap?.size ?: 0})")
@@ -176,11 +199,16 @@ internal object AliasMatcher {
 
     /**
      * Find exact matches by normalized phrase (quick lookup).
+     *
+     * Tries normalized/no-diacritics form first (norm), then the lowercase raw form.
      */
     suspend fun findExact(aliasPhrase: String, context: Context, saf: SaFStorageHelper): List<AliasRecord> = withContext(Dispatchers.Default) {
         ensureLoaded(context, saf)
         val map = aliasMap ?: return@withContext emptyList()
-        map[aliasPhrase.trim().lowercase()] ?: emptyList()
+        val normKey = normalizeLowerNoDiacritics(aliasPhrase.trim())
+        map[normKey]?.let { return@withContext it }
+        val lowerKey = aliasPhrase.trim().lowercase()
+        map[lowerKey] ?: emptyList()
     }
 
     /**
@@ -281,7 +309,8 @@ internal object AliasMatcher {
                     if (k.isBlank()) continue
                     val list = currentMap.getOrPut(k) { mutableListOf() }
                     list.add(record)
-                    currentPhon[k] = col
+                    val colForKey = runCatching { ColognePhonetic.encode(k) }.getOrDefault("")
+                    currentPhon[k] = colForKey
                     val first = k[0]
                     currentBuckets.getOrPut(first) { mutableListOf() }.add(k)
                     currentBloom.add(k.hashCode().toLong())
@@ -339,12 +368,17 @@ internal object AliasMatcher {
     }
 
     private fun gunzip(input: ByteArray): ByteArray {
-        GZIPInputStream(input.inputStream()).use { gis ->
-            val baos = ByteArrayOutputStream()
-            val buf = ByteArray(8 * 1024)
-            var n: Int
-            while (gis.read(buf).also { n = it } >= 0) baos.write(buf, 0, n)
-            return baos.toByteArray()
+        return try {
+            GZIPInputStream(input.inputStream()).use { gis ->
+                val baos = ByteArrayOutputStream()
+                val buf = ByteArray(8 * 1024)
+                var n: Int
+                while (gis.read(buf).also { n = it } >= 0) baos.write(buf, 0, n)
+                baos.toByteArray()
+            }
+        } catch (ex: Exception) {
+            Log.w(TAG, "gunzip failed: ${ex.message}", ex)
+            ByteArray(0)
         }
     }
 
