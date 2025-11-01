@@ -410,6 +410,50 @@ object AliasManager {
         scheduleCborRebuildDebounced(context, saf, immediate = true)
     }
 
+    suspend fun forceRebuildCborNow(context: Context, saf: SaFStorageHelper) = withContext(Dispatchers.IO) {
+        cborMutex.withLock {
+            // Cancel any scheduled rebuild and run rebuild synchronously here
+            try {
+                cborRebuildJob?.cancel()
+            } catch (_: Exception) {}
+            try {
+                val vt5 = saf.getVt5DirIfExists() ?: run {
+                    Log.w(TAG, "forceRebuildCborNow: VT5 not available")
+                    return@withContext
+                }
+                val assets = vt5.findFile(ASSETS)?.takeIf { it.isDirectory } ?: run {
+                    Log.w(TAG, "forceRebuildCborNow: assets dir missing")
+                    return@withContext
+                }
+                val masterDoc = assets.findFile(MASTER_FILE)?.takeIf { it.isFile }
+                if (masterDoc == null) {
+                    Log.w(TAG, "forceRebuildCborNow: master.json missing")
+                    return@withContext
+                }
+                val masterJson = runCatching { context.contentResolver.openInputStream(masterDoc.uri)?.use { it.readBytes().toString(Charsets.UTF_8) } }.getOrNull()
+                if (masterJson.isNullOrBlank()) {
+                    Log.w(TAG, "forceRebuildCborNow: master.json empty")
+                    return@withContext
+                }
+                val master = try { jsonPretty.decodeFromString(AliasMaster.serializer(), masterJson) } catch (ex: Exception) {
+                    Log.w(TAG, "forceRebuildCborNow: decode failed: ${ex.message}")
+                    return@withContext
+                }
+                val binaries = vt5.findFile(BINARIES)?.takeIf { it.isDirectory } ?: vt5.createDirectory(BINARIES) ?: run {
+                    Log.w(TAG, "forceRebuildCborNow: cannot create binaries dir")
+                    return@withContext
+                }
+                // rebuildCborCache is suspend and writes CBOR + internal cache; call it directly and wait
+                rebuildCborCache(master, binaries, context)
+                Log.i(TAG, "forceRebuildCborNow: CBOR rebuild finished (synchronous)")
+            } catch (ex: Exception) {
+                Log.w(TAG, "forceRebuildCborNow failed: ${ex.message}", ex)
+            } finally {
+                cborRebuildJob = null
+            }
+        }
+    }
+
     /**
      * Debounced CBOR rebuild scheduling.
      * - If immediate=true then perform rebuild as soon as possible on writer scope.
