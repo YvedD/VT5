@@ -76,7 +76,7 @@ class TellingScherm : AppCompatActivity() {
         // SharedPreferences keys for ASR silence ms
         private const val PREFS_NAME = "vt5_prefs"
         private const val PREF_ASR_SILENCE_MS = "pref_asr_silence_ms"
-        private const val DEFAULT_SILENCE_MS = 2000
+        private const val DEFAULT_SILENCE_MS = 1500
 
         // Limit for log rows to avoid very large lists
         private const val MAX_LOG_ROWS = 600
