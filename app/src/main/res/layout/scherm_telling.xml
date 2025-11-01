@@ -53,7 +53,7 @@
             android:paddingLeft="3dp"
             android:paddingTop="3dp"
             android:paddingRight="3dp"
-            android:text="Opslaan" />
+            android:text="Totalen" />
 
         <Button
             android:id="@+id/btnAddSoorten"

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root_huidige_stand"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <TextView
+        android:id="@+id/tv_title_huidige_stand"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Huidige stand van zaken"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:paddingBottom="8dp"/>
+
+    <ScrollView
+        android:id="@+id/scroll_huidige_stand"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <TableLayout
+            android:id="@+id/table_soorten"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:stretchColumns="0,1,2,3" />
+    </ScrollView>
+
+    <!-- Totals row -->
+    <TextView
+        android:id="@+id/tv_totals"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Σ Totaal: 0 | ZW: 0 ex | NO: 0 ex"
+        android:textStyle="bold"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp" />
+
+    <Button
+        android:id="@+id/btn_ok_huidige_stand"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="OK"
+        android:layout_marginTop="8dp"/>
+</LinearLayout>

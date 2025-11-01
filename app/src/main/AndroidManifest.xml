@@ -44,5 +44,11 @@
             android:exported="false"
             android:windowSoftInputMode="stateHidden|adjustResize" />
 
+        <activity
+            android:name="com.yvesds.vt5.features.telling.HuidigeStandScherm"
+            android:exported="false"
+            android:windowSoftInputMode="stateHidden|adjustResize" />
+
+
     </application>
 </manifest>

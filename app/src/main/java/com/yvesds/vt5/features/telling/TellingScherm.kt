@@ -58,11 +58,13 @@ import kotlin.jvm.Volatile
 /**
  * TellingScherm.kt
  *
- * Adjustments:
- * - partials show counts if present (format "Naam -> +N")
- * - ignore empty partials
- * - when adding alias from partial/raw, the extracted count is applied to the tile
- * - keeps cached MatchContext + parser reuse etc.
+ * Adjustments applied:
+ * - When an alias is added interactively, we now force a synchronous CBOR rebuild and wait
+ *   (AliasManager.forceRebuildCborNow) so aliases_optimized.cbor.gz is up-to-date before
+ *   confirming to the user. The UI remains responsive because work runs on Dispatchers.IO.
+ * - Replaced previous fire-and-forget background flushes with an awaited, user-feedback flow.
+ *
+ * Use this file to replace your current TellingScherm.kt (version v27 base).
  */
 class TellingScherm : AppCompatActivity() {
 
@@ -94,7 +96,7 @@ class TellingScherm : AppCompatActivity() {
     private lateinit var aliasParser: AliasSpeechParser
 
     // Repos/helpers
-    private val aliasRepository by lazy { AliasRepository.getInstance(this) }
+    //private val aliasRepository by lazy { AliasRepository.getInstance(this) }
     private lateinit var aliasEditor: AliasEditor
     private val safHelper by lazy { SaFStorageHelper(this) }
 
@@ -215,9 +217,24 @@ class TellingScherm : AppCompatActivity() {
                                                 if (added) {
                                                     addLog("Alias toegevoegd: '$aliasText' → $canonical", "alias")
                                                     Toast.makeText(this@TellingScherm, "Alias opgeslagen (buffer).", Toast.LENGTH_SHORT).show()
-                                                    // best-effort flush
-                                                    CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
-                                                        try { AliasManager.forceFlush(this@TellingScherm, safHelper) } catch (_: Exception) {}
+
+                                                    // Instead of fire-and-forget, synchronously request CBOR rebuild and wait (off UI thread)
+                                                    lifecycleScope.launch {
+                                                        Toast.makeText(this@TellingScherm, "Index wordt bijgewerkt...", Toast.LENGTH_SHORT).show()
+                                                        val ok = withContext(Dispatchers.IO) {
+                                                            try {
+                                                                AliasManager.forceRebuildCborNow(this@TellingScherm, safHelper)
+                                                                true
+                                                            } catch (ex: Exception) {
+                                                                Log.w(TAG, "forceRebuildCborNow failed: ${ex.message}", ex)
+                                                                false
+                                                            }
+                                                        }
+                                                        if (ok) {
+                                                            Toast.makeText(this@TellingScherm, "Alias opgeslagen en index bijgewerkt", Toast.LENGTH_SHORT).show()
+                                                        } else {
+                                                            Toast.makeText(this@TellingScherm, "Alias opgeslagen (index update later)", Toast.LENGTH_LONG).show()
+                                                        }
                                                     }
 
                                                     // Apply the partial's count to the species/tile immediately.
@@ -268,6 +285,26 @@ class TellingScherm : AppCompatActivity() {
                                                     if (added) {
                                                         addLog("Alias toegevoegd: '$aliasText' → $canonical", "alias")
                                                         Toast.makeText(this@TellingScherm, "Alias opgeslagen (buffer).", Toast.LENGTH_SHORT).show()
+
+                                                        // Force synchronous CBOR rebuild with feedback
+                                                        lifecycleScope.launch {
+                                                            Toast.makeText(this@TellingScherm, "Index wordt bijgewerkt...", Toast.LENGTH_SHORT).show()
+                                                            val ok = withContext(Dispatchers.IO) {
+                                                                try {
+                                                                    AliasManager.forceRebuildCborNow(this@TellingScherm, safHelper)
+                                                                    true
+                                                                } catch (ex: Exception) {
+                                                                    Log.w(TAG, "forceRebuildCborNow failed: ${ex.message}", ex)
+                                                                    false
+                                                                }
+                                                            }
+                                                            if (ok) {
+                                                                Toast.makeText(this@TellingScherm, "Alias opgeslagen en index bijgewerkt", Toast.LENGTH_SHORT).show()
+                                                            } else {
+                                                                Toast.makeText(this@TellingScherm, "Alias opgeslagen (index update later)", Toast.LENGTH_LONG).show()
+                                                            }
+                                                        }
+
                                                         if (cnt > 0) addSpeciesToTilesIfNeeded(speciesId, canonical, cnt)
                                                     } else {
                                                         Toast.makeText(this@TellingScherm, "Alias niet toegevoegd (duplicaat of ongeldig)", Toast.LENGTH_SHORT).show()
@@ -390,19 +427,23 @@ class TellingScherm : AppCompatActivity() {
         }
 
         binding.btnSaveClose.setOnClickListener {
-            AlertDialog.Builder(this)
-                .setTitle("Data opslaan?")
-                .setMessage("Wil je de toegevoegde aliassen opslaan en terugkeren naar Metadata?")
-                .setPositiveButton("Opslaan") { _, _ ->
-                    lifecycleScope.launch {
-                        AliasManager.forceFlush(this@TellingScherm, safHelper)
-                        Toast.makeText(this@TellingScherm, "Opslaan afgerond", Toast.LENGTH_SHORT).show()
-                        startActivity(Intent(this@TellingScherm, com.yvesds.vt5.features.metadata.ui.MetadataScherm::class.java).apply { flags = Intent.FLAG_ACTIVITY_CLEAR_TOP })
-                        finish()
-                    }
-                }
-                .setNegativeButton("Annuleren", null)
-                .show()
+            // Repurposed: show current status screen with current tile data (no popup)
+            val current = tilesAdapter.currentList
+            val ids = ArrayList<String>(current.size)
+            val names = ArrayList<String>(current.size)
+            val counts = ArrayList<String>(current.size)
+            for (row in current) {
+                ids.add(row.soortId)
+                names.add(row.naam)
+                counts.add(row.count.toString())
+            }
+
+            val intent = Intent(this@TellingScherm, HuidigeStandScherm::class.java).apply {
+                putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_IDS, ids)
+                putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_NAMEN, names)
+                putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_AANTALLEN, counts)
+            }
+            startActivity(intent)
         }
     }
 
