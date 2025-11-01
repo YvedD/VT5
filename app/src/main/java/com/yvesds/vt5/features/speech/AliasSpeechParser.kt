@@ -18,9 +18,9 @@ import java.util.Locale
  * AliasSpeechParser (UPDATED)
  *
  * - parseSpokenWithContext / parseSpokenWithHypotheses (N-best) as before.
- * - Logging (writeMatchLog / writeLog) made more robust and non-blocking.
- * - SAF append fallback rewritten to stream-only tail lines (no full-file in-memory copy).
- * - Respects coroutine cancellation (ensureActive) so long-running logging can be cancelled.
+ * - Fast-path exact lookup added: scans top N ASR hypotheses for normalized exact matches.
+ * - Logging (writeMatchLog / writeLog) made robust and non-blocking.
+ * - Respects coroutine cancellation (ensureActive).
  *
  * Note: relies on external model/data classes (MatchResult, ParseResult, ParseLogEntry, Candidate, etc.)
  * which must be defined elsewhere in the project as before.
@@ -32,10 +32,13 @@ class AliasSpeechParser(
 ) {
     companion object {
         private const val TAG = "AliasSpeechParser"
-        // Pretty print enabled for readability
         private val json = Json { prettyPrint = true }
         private val FILTER_WORDS = setOf("luisteren", "luisteren...", "luister")
         private const val SAF_TAIL_LINES = 1000
+
+        // Fast-path configuration (user choice: threshold=0.99, scan top 3)
+        private const val FAST_ASR_CONF_THRESHOLD = 0.99  // site-accept threshold
+        private const val FAST_N_HYPOTHESES = 3          // scan top N hypotheses for fast-path
     }
 
     // Serializable data classes for logging (fixes kotlinx.serialization crash)
@@ -132,6 +135,73 @@ class AliasSpeechParser(
         val t0 = System.currentTimeMillis()
         if (hypotheses.isEmpty()) return@withContext MatchResult.NoMatch("", "empty-hypotheses")
 
+        // FAST-PATH: try inexpensive exact lookups on top N hypotheses to provide near-instant accepts.
+        // Behavior:
+        //  - If exact alias/canonical/tilename maps to a single species in tiles -> immediate AutoAccept
+        //  - Else if maps to a single species in siteAllowed and ASR confidence >= FAST_ASR_CONF_THRESHOLD -> immediate AutoAccept
+        //  - If ambiguous, prefer species present in tiles; otherwise fall back to heavy matcher
+        for ((hyp, asrConfFloat) in hypotheses.take(FAST_N_HYPOTHESES)) {
+            ensureActive()
+            val raw = hyp.trim()
+            if (raw.isEmpty()) continue
+
+            // extract trailing integer if present (e.g., "aalscholver 3")
+            val m = Regex("""^(.*?)(?:\s+(\d+)(?:[.,]\d+)?)?$""").find(raw)
+            val nameOnly = m?.groups?.get(1)?.value?.trim().orEmpty()
+            val extractedCount = m?.groups?.get(2)?.value?.toIntOrNull() ?: 0
+
+            val norm = normalizeLowerNoDiacritics(nameOnly)
+            if (norm.isBlank()) continue
+
+            try {
+                // findExact is suspend; call it (cheap hash lookup in AliasMatcher)
+                val records = AliasMatcher.findExact(norm, context, saf)
+                if (records.isEmpty()) continue
+
+                // reduce to unique species ids
+                val speciesSet = records.map { it.speciesid }.toSet()
+                var chosenSid: String? = null
+
+                if (speciesSet.size == 1) {
+                    chosenSid = speciesSet.first()
+                } else {
+                    // prefer any species that is currently in tiles
+                    val inTiles = speciesSet.firstOrNull { it in matchContext.tilesSpeciesIds }
+                    if (inTiles != null) chosenSid = inTiles
+                }
+
+                if (chosenSid == null) {
+                    // ambiguous, no tile-preference -> let heavy matcher handle it
+                    continue
+                }
+
+                val amount = if (extractedCount > 0) extractedCount else 1
+                val isInTiles = chosenSid in matchContext.tilesSpeciesIds
+                val isSiteAllowed = chosenSid in matchContext.siteAllowedIds
+                val asrConf = asrConfFloat.toDouble().coerceIn(0.0, 1.0)
+
+                if (isInTiles || (isSiteAllowed && asrConf >= FAST_ASR_CONF_THRESHOLD)) {
+                    val display = matchContext.speciesById[chosenSid]?.first ?: nameOnly
+                    val candidate = Candidate(
+                        speciesId = chosenSid,
+                        displayName = display,
+                        score = 1.0,
+                        isInTiles = isInTiles,
+                        source = if (isInTiles) "fast_tiles" else "fast_site"
+                    )
+                    val mr = MatchResult.AutoAccept(candidate, raw, "fastpath", amount)
+                    // Log the fastpath accept with full ASR hypotheses for telemetry
+                    writeMatchLog(raw, mr, partials, asrHypotheses = hypotheses)
+                    Log.d(TAG, "FASTPATH accept: species=$chosenSid source=${mr.source} amount=$amount hyp='$raw' asrConf=$asrConf")
+                    return@withContext mr
+                }
+            } catch (ex: Exception) {
+                Log.w(TAG, "FASTPATH lookup error for '$raw': ${ex.message}", ex)
+                // on error, just continue to heavy path
+            }
+        }
+
+        // No fast-path hit — proceed with original heavy matching loop (N-best combined scoring)
         var bestCombined = Double.NEGATIVE_INFINITY
         var bestResult: MatchResult = MatchResult.NoMatch(hypotheses.first().first, "none")
         var idx = 0
@@ -154,15 +224,11 @@ class AliasSpeechParser(
                     return@withContext mr
                 }
 
-                // Extract matcherScore: prefer candidate.score when available
                 val matcherScore = when (mr) {
-                    is MatchResult.AutoAccept -> mr.candidate.score
                     is MatchResult.AutoAcceptAddPopup -> mr.candidate.score
                     is MatchResult.SuggestionList -> mr.candidates.firstOrNull()?.score ?: 0.0
-                    is MatchResult.MultiMatch -> {
-                        if (mr.matches.isNotEmpty()) mr.matches.map { it.candidate.score }.average() else 0.0
-                    }
                     is MatchResult.NoMatch -> 0.0
+                    else -> 0.0
                 }
 
                 val asrConf = asrConfFloat.toDouble().coerceIn(0.0, 1.0)
@@ -186,133 +252,6 @@ class AliasSpeechParser(
         writeMatchLog(hypotheses.firstOrNull()?.first ?: "", bestResult, partials, asrHypotheses = hypotheses)
 
         return@withContext bestResult
-    }
-
-    @Deprecated("Use parseSpokenWithContext() with MatchContext", ReplaceWith("parseSpokenWithContext(rawAsr, matchContext, partials)"))
-    suspend fun parseSpoken(rawAsr: String, partials: List<String> = emptyList()): ParseResult = withContext(Dispatchers.IO) {
-        ensureActive()
-        val t0 = System.currentTimeMillis()
-        val rawTrim = rawAsr.trim()
-        val rawLowerNoPunct = normalizeLowerNoDiacritics(rawTrim)
-        if (rawLowerNoPunct.isBlank() || FILTER_WORDS.contains(rawLowerNoPunct)) {
-            val resFiltered = ParseResult(success = false, rawInput = rawAsr, items = emptyList(), message = "Filtered system prompt")
-            Log.d(TAG, "parseSpoken ignored system prompt: '$rawAsr'")
-            return@withContext resFiltered
-        }
-
-        val normalizedInput = rawLowerNoPunct
-        val tokens = normalizedInput.split("\\s+".toRegex()).filter { it.isNotBlank() }
-        if (tokens.isEmpty()) {
-            val res = ParseResult(success = false, rawInput = rawAsr, items = emptyList(), message = "Empty input after normalization")
-            writeLog(res, partials)
-            return@withContext res
-        }
-
-        // Ensure alias index loaded
-        AliasMatcher.ensureLoaded(context, saf)
-
-        val items = mutableListOf<ParsedItem>()
-        var i = 0
-        while (i < tokens.size) {
-            ensureActive()
-            val maxWindow = minOf(6, tokens.size - i)
-            var chosenWindowEnd = -1
-            var chosenRecords: List<com.yvesds.vt5.features.alias.AliasRecord> = emptyList()
-            var chosenPhrase = ""
-            for (w in maxWindow downTo 1) {
-                val phrase = tokens.subList(i, i + w).joinToString(" ")
-                val exact = AliasMatcher.findExact(phrase, context, saf)
-                if (exact.isNotEmpty()) {
-                    chosenRecords = exact
-                    chosenWindowEnd = i + w - 1
-                    chosenPhrase = phrase
-                    break
-                }
-            }
-
-            if (chosenWindowEnd >= 0) {
-                val nextIndex = chosenWindowEnd + 1
-                var amount = 1
-                if (nextIndex < tokens.size) {
-                    val maybeNum = parseIntToken(tokens[nextIndex])
-                    if (maybeNum != null) {
-                        amount = maybeNum
-                        i = nextIndex + 1
-                    } else {
-                        i = nextIndex
-                    }
-                } else {
-                    i = nextIndex
-                }
-
-                val record = chosenRecords.maxByOrNull { it.weight }!!
-                val candidate = CandidateScore(record.aliasid, record.speciesid, record.alias, 1.0, "exact")
-                val parsed = ParsedItem(
-                    rawPhrase = chosenPhrase,
-                    normalized = normalizeLowerNoDiacritics(chosenPhrase),
-                    amount = amount,
-                    chosenAliasId = record.aliasid,
-                    chosenSpeciesId = record.speciesid,
-                    chosenAliasText = record.alias,
-                    score = 1.0,
-                    candidates = listOf(candidate)
-                )
-                items += parsed
-            } else {
-                var fuzzyFound: Pair<com.yvesds.vt5.features.alias.AliasRecord, Double>? = null
-                var fuzzyWindowPhrase: String? = null
-                for (w in maxWindow downTo 1) {
-                    ensureActive()
-                    val phrase = tokens.subList(i, i + w).joinToString(" ")
-                    val candidates = AliasMatcher.findFuzzyCandidates(phrase, context, saf, topN = 5, threshold = 0.6)
-                    if (candidates.isNotEmpty()) {
-                        fuzzyFound = candidates.first()
-                        fuzzyWindowPhrase = phrase
-                        chosenWindowEnd = i + w - 1
-                        break
-                    }
-                }
-                if (fuzzyFound != null && fuzzyWindowPhrase != null) {
-                    val (record, score) = fuzzyFound
-                    val nextIndex = chosenWindowEnd + 1
-                    var amount = 1
-                    if (nextIndex < tokens.size) {
-                        val maybeNum = parseIntToken(tokens[nextIndex])
-                        if (maybeNum != null) {
-                            amount = maybeNum
-                            i = nextIndex + 1
-                        } else {
-                            i = nextIndex
-                        }
-                    } else {
-                        i = nextIndex
-                    }
-                    val candidatesList = AliasMatcher.findFuzzyCandidates(fuzzyWindowPhrase, context, saf, topN = 5, threshold = 0.0)
-                        .map { (r, s) -> CandidateScore(r.aliasid, r.speciesid, r.alias, s, "fuzzy") }
-
-                    val parsed = ParsedItem(
-                        rawPhrase = fuzzyWindowPhrase,
-                        normalized = normalizeLowerNoDiacritics(fuzzyWindowPhrase),
-                        amount = amount,
-                        chosenAliasId = record.aliasid,
-                        chosenSpeciesId = record.speciesid,
-                        chosenAliasText = record.alias,
-                        score = score,
-                        candidates = candidatesList
-                    )
-                    items += parsed
-                } else {
-                    i += 1
-                }
-            }
-        }
-
-        val success = items.isNotEmpty()
-        val result = ParseResult(success = success, rawInput = rawAsr, items = items, message = if (success) null else "No matches")
-        writeLog(result, partials)
-        val t1 = System.currentTimeMillis()
-        Log.i(TAG, "parseSpoken finished: input='${rawAsr}' items=${items.size} timeMs=${t1 - t0}")
-        return@withContext result
     }
 
     private suspend fun writeMatchLog(
