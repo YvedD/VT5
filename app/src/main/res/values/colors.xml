@@ -24,4 +24,5 @@
 
     <!-- Tekst op surface -->
     <color name="vt5_on_surface">#E6E6E6</color>
+    <color name="vt5_green">#80D97A</color>
 </resources>
