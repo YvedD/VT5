@@ -17,19 +17,40 @@
         android:textSize="11sp"
         android:textStyle="bold" />
 
-    <!-- Log-venster (breed) -->
+    <!-- Bovenste kaart: PARTIALS / niet‑finals -->
     <com.google.android.material.card.MaterialCardView
-        android:id="@+id/textview1"
+        android:id="@+id/cardSpeechPartials"
         android:layout_width="match_parent"
-        android:layout_height="280dp"
-        android:layout_marginBottom="8dp"
+        android:layout_height="150dp"
+        android:layout_marginTop="1dp"
+        android:layout_marginBottom="1dp"
         app:cardCornerRadius="8dp"
         app:cardUseCompatPadding="true"
         app:strokeColor="@color/vt5_light_blue"
         app:strokeWidth="2dp">
 
         <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/recyclerViewSpeechLog"
+            android:id="@+id/recyclerViewSpeechPartials"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#111111"
+            android:padding="6dp" />
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- Onderste kaart: FINALS -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/cardSpeechFinals"
+        android:layout_width="match_parent"
+        android:layout_height="150dp"
+        android:layout_marginTop="1dp"
+        android:layout_marginBottom="1dp"
+        app:cardCornerRadius="8dp"
+        app:cardUseCompatPadding="true"
+        app:strokeColor="@color/vt5_green"
+        app:strokeWidth="2dp">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/recyclerViewSpeechFinals"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:background="#111111"

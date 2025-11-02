@@ -62,8 +62,9 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
+        android:layout_marginBottom="40dp"
         android:gravity="end"
+        android:orientation="horizontal"
         android:paddingTop="8dp">
 
         <Button
@@ -76,7 +77,7 @@
             android:id="@+id/btnOk"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="OK"
-            android:layout_marginStart="12dp" />
+            android:layout_marginStart="12dp"
+            android:text="OK" />
     </LinearLayout>
 </LinearLayout>

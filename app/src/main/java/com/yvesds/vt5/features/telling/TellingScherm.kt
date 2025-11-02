@@ -1,5 +1,4 @@
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
-
 package com.yvesds.vt5.features.telling
 
 import android.app.Activity
@@ -58,13 +57,12 @@ import kotlin.jvm.Volatile
 /**
  * TellingScherm.kt
  *
- * Adjustments applied:
- * - When an alias is added interactively, we now force a synchronous CBOR rebuild and wait
- *   (AliasManager.forceRebuildCborNow) so aliases_optimized.cbor.gz is up-to-date before
- *   confirming to the user. The UI remains responsive because work runs on Dispatchers.IO.
- * - Replaced previous fire-and-forget background flushes with an awaited, user-feedback flow.
+ * Adjustments applied: split speech log into two independent lists:
+ * - bovenste: partials / non-final (recyclerViewSpeechPartials)
+ * - onderste: finals (recyclerViewSpeechFinals)
  *
- * Use this file to replace your current TellingScherm.kt (version v27 base).
+ * Finals only receive positive matches (AutoAccept, AutoAcceptAddPopup when confirmed, MultiMatch
+ * entries that led to species updates). Partials receive NoMatch results, raw input, and system "Luisteren..." messages.
  */
 class TellingScherm : AppCompatActivity() {
 
@@ -85,7 +83,8 @@ class TellingScherm : AppCompatActivity() {
     // UI & adapters
     private lateinit var binding: SchermTellingBinding
     private lateinit var tilesAdapter: SpeciesTileAdapter
-    private lateinit var logAdapter: SpeechLogAdapter
+    private lateinit var partialsAdapter: SpeechLogAdapter
+    private lateinit var finalsAdapter: SpeechLogAdapter
 
     // Speech components
     private lateinit var speechRecognitionManager: SpeechRecognitionManager
@@ -167,7 +166,8 @@ class TellingScherm : AppCompatActivity() {
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         aliasEditor = AliasEditor(this, safHelper)
 
-        setupLogRecyclerView()
+        setupPartialsRecyclerView()
+        setupFinalsRecyclerView()
         setupSpeciesTilesRecyclerView()
         setupButtons()
 
@@ -176,26 +176,25 @@ class TellingScherm : AppCompatActivity() {
     }
 
     /* ---------- UI setup ---------- */
-    private fun setupLogRecyclerView() {
+    private fun setupPartialsRecyclerView() {
         val layoutManager = LinearLayoutManager(this)
         layoutManager.stackFromEnd = true
-        binding.recyclerViewSpeechLog.layoutManager = layoutManager
-        binding.recyclerViewSpeechLog.setHasFixedSize(true)
-        logAdapter = SpeechLogAdapter()
-        binding.recyclerViewSpeechLog.adapter = logAdapter
+        binding.recyclerViewSpeechPartials.layoutManager = layoutManager
+        binding.recyclerViewSpeechPartials.setHasFixedSize(true)
+        partialsAdapter = SpeechLogAdapter()
+        partialsAdapter.showPartialsInRow = true
+        binding.recyclerViewSpeechPartials.adapter = partialsAdapter
 
         val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onSingleTapUp(e: MotionEvent): Boolean {
-                val child = binding.recyclerViewSpeechLog.findChildViewUnder(e.x, e.y)
+                val child = binding.recyclerViewSpeechPartials.findChildViewUnder(e.x, e.y)
                 if (child != null) {
-                    val pos = binding.recyclerViewSpeechLog.getChildAdapterPosition(child)
+                    val pos = binding.recyclerViewSpeechPartials.getChildAdapterPosition(child)
                     if (pos != RecyclerView.NO_POSITION) {
-                        val row = logAdapter.currentList.getOrNull(pos) ?: return true
+                        val row = partialsAdapter.currentList.getOrNull(pos) ?: return true
                         when (row.bron) {
                             "partial" -> {
-                                // parse name & count from the stored partial (which can be either raw hypothesis or formatted)
                                 val (nameOnly, cnt) = parseNameAndCountFromDisplay(row.tekst)
-                                // ensure species list available, then open AddAliasDialog to create alias from partial's nameOnly
                                 ensureAvailableSpeciesFlat { flat ->
                                     val dlg = AddAliasDialog.newInstance(listOf(nameOnly), flat)
                                     dlg.listener = object : AddAliasDialog.AddAliasListener {
@@ -218,7 +217,6 @@ class TellingScherm : AppCompatActivity() {
                                                     addLog("Alias toegevoegd: '$aliasText' → $canonical", "alias")
                                                     Toast.makeText(this@TellingScherm, "Alias opgeslagen (buffer).", Toast.LENGTH_SHORT).show()
 
-                                                    // Instead of fire-and-forget, synchronously request CBOR rebuild and wait (off UI thread)
                                                     lifecycleScope.launch {
                                                         Toast.makeText(this@TellingScherm, "Index wordt bijgewerkt...", Toast.LENGTH_SHORT).show()
                                                         val ok = withContext(Dispatchers.IO) {
@@ -237,9 +235,7 @@ class TellingScherm : AppCompatActivity() {
                                                         }
                                                     }
 
-                                                    // Apply the partial's count to the species/tile immediately.
                                                     if (cnt > 0) {
-                                                        // addSpeciesToTilesIfNeeded handles both add and update
                                                         addSpeciesToTilesIfNeeded(speciesId, canonical, cnt)
                                                     }
                                                 } else {
@@ -251,19 +247,7 @@ class TellingScherm : AppCompatActivity() {
                                     dlg.show(supportFragmentManager, "addAlias")
                                 }
                             }
-                            "final" -> {
-                                // Final entry tapped: quick annotate dialog (placeholder)
-                                AlertDialog.Builder(this@TellingScherm)
-                                    .setTitle("Final waarneming")
-                                    .setMessage("Acties voor: ${row.tekst}")
-                                    .setPositiveButton("Annoteren") { _, _ ->
-                                        Toast.makeText(this@TellingScherm, "Annotatie (nog niet geïmplementeerd)", Toast.LENGTH_SHORT).show()
-                                    }
-                                    .setNegativeButton("Sluiten", null)
-                                    .show()
-                            }
                             else -> {
-                                // Other types: e.g. raw can create alias and honor count
                                 if (row.bron == "raw") {
                                     val (nameOnly, cnt) = parseNameAndCountFromDisplay(row.tekst)
                                     ensureAvailableSpeciesFlat { flat ->
@@ -286,7 +270,6 @@ class TellingScherm : AppCompatActivity() {
                                                         addLog("Alias toegevoegd: '$aliasText' → $canonical", "alias")
                                                         Toast.makeText(this@TellingScherm, "Alias opgeslagen (buffer).", Toast.LENGTH_SHORT).show()
 
-                                                        // Force synchronous CBOR rebuild with feedback
                                                         lifecycleScope.launch {
                                                             Toast.makeText(this@TellingScherm, "Index wordt bijgewerkt...", Toast.LENGTH_SHORT).show()
                                                             val ok = withContext(Dispatchers.IO) {
@@ -323,7 +306,47 @@ class TellingScherm : AppCompatActivity() {
             }
         })
 
-        binding.recyclerViewSpeechLog.addOnItemTouchListener(object : RecyclerView.OnItemTouchListener {
+        binding.recyclerViewSpeechPartials.addOnItemTouchListener(object : RecyclerView.OnItemTouchListener {
+            override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
+                return gestureDetector.onTouchEvent(e)
+            }
+            override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) {}
+            override fun onRequestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {}
+        })
+    }
+
+    private fun setupFinalsRecyclerView() {
+        val layoutManager = LinearLayoutManager(this)
+        layoutManager.stackFromEnd = true
+        binding.recyclerViewSpeechFinals.layoutManager = layoutManager
+        binding.recyclerViewSpeechFinals.setHasFixedSize(true)
+        finalsAdapter = SpeechLogAdapter()
+        finalsAdapter.showPartialsInRow = false
+        binding.recyclerViewSpeechFinals.adapter = finalsAdapter
+
+        // Gesture handling for finals: open AnnotatieScherm on tap
+        val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onSingleTapUp(e: MotionEvent): Boolean {
+                val child = binding.recyclerViewSpeechFinals.findChildViewUnder(e.x, e.y)
+                if (child != null) {
+                    val pos = binding.recyclerViewSpeechFinals.getChildAdapterPosition(child)
+                    if (pos != RecyclerView.NO_POSITION) {
+                        val row = finalsAdapter.currentList.getOrNull(pos) ?: return true
+                        if (row.bron == "final") {
+                            // Start annotation screen (rudimentary)
+                            val intent = Intent(this@TellingScherm, AnnotatieScherm::class.java).apply {
+                                putExtra(AnnotatieScherm.EXTRA_TEXT, row.tekst)
+                                putExtra(AnnotatieScherm.EXTRA_TS, row.ts)
+                            }
+                            startActivity(intent)
+                        }
+                    }
+                }
+                return true
+            }
+        })
+
+        binding.recyclerViewSpeechFinals.addOnItemTouchListener(object : RecyclerView.OnItemTouchListener {
             override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
                 return gestureDetector.onTouchEvent(e)
             }
@@ -573,7 +596,6 @@ class TellingScherm : AppCompatActivity() {
                     val parseStartAt = System.currentTimeMillis()
                     Log.d(TAG, "Hypotheses received at $receivedAt, starting parse at $parseStartAt (hypotheses=${hypotheses.size}, partials=${partials.size})")
                     try {
-                        // Use cached MatchContext when available to save time
                         val matchContext = cachedMatchContext ?: run {
                             val t0 = System.currentTimeMillis()
                             val mc = buildMatchContext()
@@ -591,7 +613,6 @@ class TellingScherm : AppCompatActivity() {
                             try {
                                 when (result) {
                                     is MatchResult.AutoAccept -> {
-                                        // Final recognized match -> add final log (formatted) and update counts without extra 'Bijgewerkt' log
                                         val formatted = "${result.candidate.displayName} -> +${result.amount}"
                                         addFinalLog(formatted)
                                         updateSoortCountInternal(result.candidate.speciesId, result.amount)
@@ -605,7 +626,6 @@ class TellingScherm : AppCompatActivity() {
                                             .setTitle("Soort toevoegen?")
                                             .setMessage(msg)
                                             .setPositiveButton("Ja") { _, _ ->
-                                                // when user confirms, treat as final
                                                 addSpeciesToTiles(result.candidate.speciesId, result.candidate.displayName, cnt)
                                                 addFinalLog("${result.candidate.displayName} -> +$cnt")
                                             }
@@ -638,10 +658,8 @@ class TellingScherm : AppCompatActivity() {
                                         showSuggestionBottomSheet(result.candidates, cnt)
                                     }
                                     is MatchResult.NoMatch -> {
-                                        // Treat as a partial hypothesis: show only last partial in log (ignore blanks)
                                         val now = System.currentTimeMillis()
                                         if (now - lastPartialUiUpdateMs >= PARTIAL_UI_DEBOUNCE_MS) {
-                                            // Format and upsert partial display (includes count when present)
                                             upsertPartialLog(result.hypothesis)
                                             lastPartialUiUpdateMs = now
                                         } else {
@@ -679,10 +697,15 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
-    /* ---------- Helper log functions ---------- */
+    /* ---------- Helper log functions (routed to partials/finals adapters) ---------- */
 
     // Primary addLog implementation: append a row (used by callers)
     private fun addLog(msgIn: String, bron: String) {
+        // Filter system messages: only include "Luisteren..." in partials. Other system messages are ignored here.
+        if (bron == "systeem" && !msgIn.contains("Luisteren", ignoreCase = true)) {
+            return
+        }
+
         val now = System.currentTimeMillis() / 1000L
         val cleaned = run {
             var m = msgIn.replace(Regex("(?i)^\\s*asr:\\s*"), "")
@@ -696,18 +719,37 @@ class TellingScherm : AppCompatActivity() {
 
         lifecycleScope.launch {
             val newList = withContext(Dispatchers.Default) {
-                val current = logAdapter.currentList
-                val list = ArrayList(current)
-                list.add(newRow)
-                if (list.size > MAX_LOG_ROWS) {
-                    val drop = list.size - MAX_LOG_ROWS
-                    repeat(drop) { list.removeAt(0) }
+                if (bron == "final") {
+                    val current = finalsAdapter.currentList
+                    val list = ArrayList(current)
+                    list.add(newRow)
+                    if (list.size > MAX_LOG_ROWS) {
+                        val drop = list.size - MAX_LOG_ROWS
+                        repeat(drop) { list.removeAt(0) }
+                    }
+                    list
+                } else {
+                    val current = partialsAdapter.currentList
+                    val list = ArrayList(current)
+                    list.add(newRow)
+                    if (list.size > MAX_LOG_ROWS) {
+                        val drop = list.size - MAX_LOG_ROWS
+                        repeat(drop) { list.removeAt(0) }
+                    }
+                    list
                 }
-                list
             }
 
-            logAdapter.submitList(newList) {
-                binding.recyclerViewSpeechLog.scrollToPosition(newList.size - 1)
+            withContext(Dispatchers.Main) {
+                if (bron == "final") {
+                    finalsAdapter.submitList(newList) {
+                        binding.recyclerViewSpeechFinals.scrollToPosition(newList.size - 1)
+                    }
+                } else {
+                    partialsAdapter.submitList(newList) {
+                        binding.recyclerViewSpeechPartials.scrollToPosition(newList.size - 1)
+                    }
+                }
             }
         }
     }
@@ -765,7 +807,7 @@ class TellingScherm : AppCompatActivity() {
 
         lifecycleScope.launch {
             val newList = withContext(Dispatchers.Default) {
-                val current = logAdapter.currentList
+                val current = partialsAdapter.currentList
                 // Remove existing partial entries
                 val filtered = current.filter { it.bron != "partial" }.toMutableList()
 
@@ -777,7 +819,6 @@ class TellingScherm : AppCompatActivity() {
                 if (existingPartialIndex != -1) {
                     val prev = current[existingPartialIndex]
                     if (prev.tekst == display) {
-                        // identical — update timestamp by adding the newRow (filtered already removed old)
                         filtered.add(newRow)
                     } else {
                         filtered.add(newRow)
@@ -792,37 +833,54 @@ class TellingScherm : AppCompatActivity() {
                 }
                 filtered
             }
-            logAdapter.submitList(newList) {
-                binding.recyclerViewSpeechLog.scrollToPosition(newList.size - 1)
+            withContext(Dispatchers.Main) {
+                partialsAdapter.submitList(newList) {
+                    binding.recyclerViewSpeechPartials.scrollToPosition(newList.size - 1)
+                }
             }
         }
     }
 
-    // Append a final log entry (bron = "final") formatted for quick recognition
+    // Append a final log entry (bron = "final")
     // Also remove any existing partials so final doesn't sit next to a stale partial.
     private fun addFinalLog(text: String) {
         val now = System.currentTimeMillis() / 1000L
         val newRow = SpeechLogRow(ts = now, tekst = text, bron = "final")
 
         lifecycleScope.launch {
-            val newList = withContext(Dispatchers.Default) {
-                val current = logAdapter.currentList
-                // Remove partials (we show only final after recognition)
-                val filtered = current.filter { it.bron != "partial" }.toMutableList()
-                filtered.add(newRow)
+            val updatedFinals = withContext(Dispatchers.Default) {
+                val currentFinals = finalsAdapter.currentList
+                val finalList = ArrayList(currentFinals)
+                finalList.add(newRow)
+                if (finalList.size > MAX_LOG_ROWS) {
+                    val drop = finalList.size - MAX_LOG_ROWS
+                    repeat(drop) { finalList.removeAt(0) }
+                }
+                finalList
+            }
+
+            val updatedPartials = withContext(Dispatchers.Default) {
+                // Remove partials from partialsAdapter
+                val cur = partialsAdapter.currentList
+                val filtered = cur.filter { it.bron != "partial" }.toMutableList()
                 if (filtered.size > MAX_LOG_ROWS) {
                     val drop = filtered.size - MAX_LOG_ROWS
                     repeat(drop) { filtered.removeAt(0) }
                 }
                 filtered
             }
-            logAdapter.submitList(newList) {
-                binding.recyclerViewSpeechLog.scrollToPosition(newList.size - 1)
+
+            withContext(Dispatchers.Main) {
+                // Update both lists independently
+                finalsAdapter.submitList(updatedFinals) {
+                    binding.recyclerViewSpeechFinals.scrollToPosition(updatedFinals.size - 1)
+                }
+                partialsAdapter.submitList(updatedPartials)
             }
         }
     }
 
-    /* ---------- Suggestion / Add / Tiles helpers ---------- */
+    /* ---------- Suggestion / Add / Tiles helpers (unchanged flows) ---------- */
     private fun showSuggestionBottomSheet(candidates: List<Candidate>, count: Int) {
         val items = candidates.map { "${it.displayName} (score: ${"%.2f".format(it.score)})" }.toTypedArray()
 
@@ -831,7 +889,6 @@ class TellingScherm : AppCompatActivity() {
             .setItems(items) { _, which ->
                 val chosen = candidates[which]
                 if (chosen.isInTiles) {
-                    // speech flow: final formatted log + internal update (no separate 'Bijgewerkt' log)
                     addFinalLog("${chosen.displayName} -> +$count")
                     updateSoortCountInternal(chosen.speciesId, count)
                 } else {
@@ -855,7 +912,6 @@ class TellingScherm : AppCompatActivity() {
     private fun addSpeciesToTilesIfNeeded(speciesId: String, canonical: String, extractedCount: Int) {
         val current = tilesAdapter.currentList
         if (current.any { it.soortId == speciesId }) {
-            // manual flow — use updateSoortCount to also create a manual log
             updateSoortCount(speciesId, extractedCount)
             return
         }
@@ -870,7 +926,6 @@ class TellingScherm : AppCompatActivity() {
 
                 val current = tilesAdapter.currentList
                 if (current.any { it.soortId == soortId }) {
-                    // manual flow uses updateSoortCount (which logs)
                     updateSoortCount(soortId, initialCount)
                     return@launch
                 }
@@ -881,7 +936,6 @@ class TellingScherm : AppCompatActivity() {
 
                 withContext(Dispatchers.Main) {
                     tilesAdapter.submitList(updated)
-                    // refresh cached MatchContext and ASR hints
                     updateSelectedSpeciesMap()
                     RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
                     addLog("Soort toegevoegd: $canonical ($initialCount)", "systeem")
@@ -915,10 +969,8 @@ class TellingScherm : AppCompatActivity() {
 
             withContext(Dispatchers.Main) {
                 tilesAdapter.submitList(updatedList)
-                // Manual / UI flows want a readable manual log
                 addLog("${item.naam} -> +$count", "manueel")
                 RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
-                // Keep cached context up to date
                 updateSelectedSpeciesMap()
             }
         }
@@ -945,9 +997,7 @@ class TellingScherm : AppCompatActivity() {
 
             withContext(Dispatchers.Main) {
                 tilesAdapter.submitList(updatedList)
-                // Do not add a 'Bijgewerkt' log — caller (parser) will create addFinalLog when appropriate.
                 RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
-                // Keep cached context up to date
                 updateSelectedSpeciesMap()
             }
         }
@@ -998,76 +1048,9 @@ class TellingScherm : AppCompatActivity() {
         }
 
         if (speechInitialized) {
-            speechRecognitionManager.setAvailableSpecies(selectedSpeciesMap)
-        }
-
-        // Rebuild cached MatchContext in background (safe: buildMatchContext uses Dispatchers.IO internally)
-        lifecycleScope.launch(Dispatchers.Default) {
-            try {
-                val t0 = System.currentTimeMillis()
-                val mc = buildMatchContext()
-                cachedMatchContext = mc
-                Log.d(TAG, "Rebuilt cached MatchContext (ms=${System.currentTimeMillis() - t0})")
-            } catch (ex: Exception) {
-                Log.w(TAG, "Failed to rebuild cached MatchContext: ${ex.message}", ex)
-            }
+            Log.d(TAG, "Selected species map updated")
         }
     }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-
-        when (requestCode) {
-            PERMISSION_REQUEST_RECORD_AUDIO -> {
-                if ((grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED)) {
-                    initializeSpeechRecognition()
-                    initializeVolumeKeyHandler()
-                } else {
-                    Toast.makeText(this,
-                        "Spraakherkenning werkt niet zonder microfoonrechten",
-                        Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-    }
-
-    override fun onPause() {
-        super.onPause()
-        if (speechInitialized) {
-            speechRecognitionManager.stopListening()
-        }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        if (speechInitialized) {
-            speechRecognitionManager.destroy()
-        }
-
-        if (::volumeKeyHandler.isInitialized) {
-            volumeKeyHandler.unregister()
-        }
-
-        // Ensure pending alias writes are flushed
-        CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
-            try {
-                AliasManager.forceFlush(this@TellingScherm, safHelper)
-            } catch (ex: Exception) {
-                Log.w(TAG, "forceFlush in onDestroy failed: ${ex.message}", ex)
-            }
-        }
-    }
-
-    // Extract a numeric count from a string, fallback to 1
-    private fun extractCountFromText(text: String): Int {
-        val m = Regex("\\b(\\d+)\\b").find(text)
-        return m?.groups?.get(1)?.value?.toIntOrNull() ?: 1
-    }
-
     // Launch soort selectie
     private fun openSoortSelectieForAdd() {
         val telpostId = TellingSessionManager.preselectState.value.telpostId
@@ -1075,4 +1058,10 @@ class TellingScherm : AppCompatActivity() {
             .putExtra(SoortSelectieScherm.EXTRA_TELPOST_ID, telpostId)
         addSoortenLauncher.launch(intent)
     }
+    // Extract a numeric count from a string, fallback to 1
+    private fun extractCountFromText(text: String): Int {
+        val m = Regex("\\b(\\d+)\\b").find(text)
+        return m?.groups?.get(1)?.value?.toIntOrNull() ?: 1
+    }
+
 }

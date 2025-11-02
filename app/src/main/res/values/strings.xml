@@ -40,5 +40,9 @@
     <string name="btn_alias_precompute">Pré-compute aliassen</string>
     <string name="dlg_busy_titel">Bezig…</string>
 
+    <string name="annotatie_titel">Annotatie (placeholder)</string>
+    <string name="annotatie_ok">OK</string>
+    <string name="annotatie_annuleren">Annuleren</string>
+
     <string name="btn_klaar">Klaar</string>
 </resources>

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:padding="16dp"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <TextView
+        android:id="@+id/tvAnnotatieTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Annotatie (placeholder)"
+        android:textStyle="bold"
+        android:paddingBottom="8dp" />
+
+    <EditText
+        android:id="@+id/edtAnnotatie"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Voer annotatie in (niet persistent)"
+        android:minLines="3"
+        android:gravity="top"
+        android:inputType="textMultiLine" />
+
+    <LinearLayout
+        android:layout_marginTop="16dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="end">
+
+        <Button
+            android:id="@+id/btnAnnotatieCancel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Annuleren" />
+
+        <Button
+            android:id="@+id/btnAnnotatieOk"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="OK" />
+    </LinearLayout>
+</LinearLayout>

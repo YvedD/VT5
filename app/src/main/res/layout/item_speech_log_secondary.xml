@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Secondary copy of item_speech_log.xml for the second RecyclerView to avoid layout id conflicts.
+     Content is intentionally the same for visual parity, but kept in a separate file for future divergence. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/item_speech_log_root"
+    android:id="@+id/item_speech_log_secondary_root"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:background="?android:attr/selectableItemBackground"
@@ -32,5 +34,5 @@
         android:maxLines="2"
         android:textAppearance="?android:attr/textAppearanceMedium"
         android:textColor="@color/vt5_light_blue"
-        android:textSize="13sp" />
+        android:textSize="11sp" />
 </LinearLayout>

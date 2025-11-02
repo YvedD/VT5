@@ -49,6 +49,10 @@
             android:exported="false"
             android:windowSoftInputMode="stateHidden|adjustResize" />
 
-
+        <!-- AnnotatieScherm (nieuw) -->
+        <activity
+            android:name=".features.telling.AnnotatieScherm"
+            android:exported="false"
+            android:windowSoftInputMode="stateHidden|adjustResize" />
     </application>
 </manifest>

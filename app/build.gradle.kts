@@ -72,6 +72,8 @@ dependencies {
 
     // WorkManager (toegevoegd)
     implementation("androidx.work:work-runtime-ktx:2.8.1")
+
+    implementation("androidx.media:media:1.7.1")
 }
 // Tests uit
 tasks.matching {

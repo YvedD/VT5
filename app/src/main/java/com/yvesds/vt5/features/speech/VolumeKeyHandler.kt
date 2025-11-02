@@ -9,40 +9,52 @@ import android.os.Build
 import android.util.Log
 import android.view.KeyEvent
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.*
 
 /**
- * Handler voor volume-key events die het triggeren van spraakherkenning mogelijk maakt.
- * Vangt volume key events af van de Bluetooth HID op de verrekijker.
+ * Fallback VolumeKeyHandler zonder androidx.media dependency.
+ *
+ * - Vangt ACTION_MEDIA_BUTTON broadcasts (fallback voor sommige Bluetooth HID).
+ * - Biedt isVolumeUpEvent(keyCode) voor legacy Activity.onKeyDown hooks.
+ * - Kleine debounce om dubbele triggers te vermijden.
+ *
+ * Gebruik:
+ *  - setOnVolumeUpListener { ... }
+ *  - register() in onResume()
+ *  - unregister() in onPause()
  */
 class VolumeKeyHandler(private val activity: Activity) {
 
     companion object {
         private const val TAG = "VolumeKeyHandler"
+        private const val DEBOUNCE_MS = 300L
     }
 
     private var isRegistered = false
     private var onVolumeUpListener: (() -> Unit)? = null
 
-    // Broadcast receiver voor media button events
+    // debounce tracker
+    @Volatile
+    private var lastTriggerAt = 0L
+
+    // Broadcast receiver voor ACTION_MEDIA_BUTTON (fallback)
     private val mediaButtonReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            if (Intent.ACTION_MEDIA_BUTTON == intent.action) {
-                // Gebruik de type-safe variant van getParcelableExtra voor verschillende API levels
-                val keyEvent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
-                } else {
-                    @Suppress("DEPRECATION")
-                    intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT) as? KeyEvent
-                }
+            if (Intent.ACTION_MEDIA_BUTTON != intent.action) return
 
-                keyEvent?.let { event ->
-                    if (event.keyCode == KeyEvent.KEYCODE_VOLUME_UP && event.action == KeyEvent.ACTION_DOWN) {
-                        Log.d(TAG, "Volume up key detected via broadcast")
-                        onVolumeUpListener?.invoke()
-                        // Consume the event
-                        if (isOrderedBroadcast) {
-                            abortBroadcast()
-                        }
+            val keyEvent: KeyEvent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT) as? KeyEvent
+            }
+
+            keyEvent?.let { event ->
+                // alleen DOWN events en geen repeats
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                    if (handleKeyCodes(event)) {
+                        Log.d(TAG, "Handled media button via broadcast: ${event.keyCode}")
+                        if (isOrderedBroadcast) abortBroadcast()
                     }
                 }
             }
@@ -50,53 +62,95 @@ class VolumeKeyHandler(private val activity: Activity) {
     }
 
     /**
-     * Registreert de volume key handler om events te ontvangen
+     * Registreer: register broadcast fallback.
+     * Aanbevolen: aanroepen in Activity.onResume()
      */
     fun register() {
-        if (!isRegistered) {
-            try {
-                // Register for media button events
-                val filter = IntentFilter(Intent.ACTION_MEDIA_BUTTON)
-                filter.priority = Integer.MAX_VALUE
-
-                // Fix voor Android 13+ vereiste flag
+        if (isRegistered) return
+        try {
+            val filter = IntentFilter(Intent.ACTION_MEDIA_BUTTON)
+            filter.priority = Int.MAX_VALUE
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 activity.registerReceiver(mediaButtonReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-
-                isRegistered = true
-                Log.d(TAG, "VolumeKeyHandler registered")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error registering volume key handler: ${e.message}", e)
+            } else {
+                ContextCompat.registerReceiver(
+                    activity,
+                    mediaButtonReceiver,
+                    filter,
+                    ContextCompat.RECEIVER_NOT_EXPORTED
+                )
             }
+            isRegistered = true
+            Log.d(TAG, "VolumeKeyHandler registered (broadcast fallback)")
+        } catch (ex: Exception) {
+            Log.e(TAG, "Error registering media button receiver: ${ex.message}", ex)
         }
     }
 
     /**
-     * Verwijdert de volume key handler
+     * Unregister broadcast receiver.
+     * Aanbevolen: aanroepen in Activity.onPause()
      */
     fun unregister() {
-        if (isRegistered) {
-            try {
-                activity.unregisterReceiver(mediaButtonReceiver)
-                isRegistered = false
-                Log.d(TAG, "VolumeKeyHandler unregistered")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error unregistering volume key handler: ${e.message}", e)
-            }
+        if (!isRegistered) return
+        try {
+            activity.unregisterReceiver(mediaButtonReceiver)
+        } catch (ex: Exception) {
+            Log.w(TAG, "unregister receiver failed: ${ex.message}", ex)
+        } finally {
+            isRegistered = false
+            Log.d(TAG, "VolumeKeyHandler unregistered")
         }
     }
 
     /**
-     * Stelt de callback in die wordt uitgevoerd wanneer een volume up event wordt gedetecteerd
+     * Stel callback in die uitgevoerd wordt bij volume-up / equivalente media knop.
      */
     fun setOnVolumeUpListener(listener: () -> Unit) {
         onVolumeUpListener = listener
     }
 
     /**
-     * Hulpmethode om te controleren of een key event een volume up betreft
-     * Dit kan gebruikt worden in de activity's onKeyDown methode
+     * Legacy helper die gebruikt kan worden in Activity.onKeyDown om volume/media keycodes te detecteren.
+     * Retourneert true als het een relevante knop is.
      */
     fun isVolumeUpEvent(keyCode: Int): Boolean {
-        return keyCode == KeyEvent.KEYCODE_VOLUME_UP
+        return when (keyCode) {
+            KeyEvent.KEYCODE_VOLUME_UP,
+            KeyEvent.KEYCODE_MEDIA_PLAY,
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            KeyEvent.KEYCODE_HEADSETHOOK -> true
+            else -> false
+        }
+    }
+
+    /**
+     * Interne handler: wanneer een relevante key gedrukt is, triggert listener met debounce.
+     * Retourneert true als event afgevangen en behandeld werd.
+     */
+    private fun handleKeyCodes(event: KeyEvent): Boolean {
+        val handled = when (event.keyCode) {
+            KeyEvent.KEYCODE_VOLUME_UP,
+            KeyEvent.KEYCODE_MEDIA_PLAY,
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            KeyEvent.KEYCODE_HEADSETHOOK -> true
+            else -> false
+        }
+
+        if (!handled) return false
+
+        val now = System.currentTimeMillis()
+        if (now - lastTriggerAt < DEBOUNCE_MS) {
+            Log.d(TAG, "Ignored duplicate trigger (debounce)")
+            return true
+        }
+        lastTriggerAt = now
+
+        try {
+            onVolumeUpListener?.invoke()
+        } catch (ex: Exception) {
+            Log.w(TAG, "onVolumeUpListener threw: ${ex.message}", ex)
+        }
+        return true
     }
 }
