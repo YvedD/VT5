@@ -27,7 +27,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
 /**
- * AliasManager.kt
+ * AliasManager.kt (original file restored + targeted fix)
  *
  * Responsibilities and behavior (CSV-free):
  * - Manage alias master / CBOR generation and persistence to SAF (Documents/VT5)
@@ -38,14 +38,28 @@ import kotlinx.serialization.json.contentOrNull
  *     3) SAF assets/alias_master.json or regenerate from serverdata/species.json
  * - Provide batched user-alias persistence (write queue -> assets master + binaries CBOR)
  *
- * Enhancement applied:
- * - Per-alias immediate persistence to alias_master.json (safe, idempotent update) on addAlias.
- * - Debounced CBOR rebuild scheduled after alias adds to avoid expensive repeated work.
- * - Preserve original batched write queue logic for compatibility.
+ * Targeted bugfix:
+ * - Previously, after adding a user alias the UI (TellingScherm) could still show the
+ *   "toevoegen?" popup for an alias that was just added (e.g. "boertjes 6"). Root cause:
+ *   AliasMatcher (runtime) or internal CBOR cache were not consistently refreshed from the
+ *   newly written master.json before the next recognition cycle.
+ *
+ * Fix approach (minimal & safe):
+ * - Keep the existing fast hotpatch (AliasMatcher.addAliasHotpatch) so matching immediately
+ *   benefits.
+ * - After the single-alias append to alias_master.json (writeSingleAliasToMasterImmediate)
+ *   we now:
+ *     1) read back the alias_master.json from SAF assets,
+ *     2) build an AliasIndex from it and write that to the internal CBOR cache (context.filesDir),
+ *     3) synchronously reload the runtime AliasMatcher so it picks up the freshly written internal cache.
+ *   This makes newly added aliases visible to the runtime matcher immediately without
+ *   waiting for the debounced CBOR rebuild that writes to Documents/VT5/binaries/.
  *
  * Notes:
- * - CSV references have been removed entirely from runtime. Any CSV migration must be done offline
- *   into alias_master.json and aliases_optimized.cbor.gz placed in Documents/VT5/binaries/.
+ * - This is a pragmatic fix: it avoids an expensive write to SAF binaries on every alias add
+ *   but ensures the internal cache + runtime matcher are consistent immediately.
+ * - The existing debounced rebuild (scheduleCborRebuildDebounced) still runs and keeps the
+ *   SAF binaries up-to-date over time.
  */
 
 object AliasManager {
@@ -371,7 +385,7 @@ object AliasManager {
                 }
             }
 
-            // 1) Hot-patch in-memory (AliasMatcher)
+            // 1) Hot-patch in-memory (AliasMatcher) - keeps runtime fast
             com.yvesds.vt5.features.speech.AliasMatcher.addAliasHotpatch(
                 speciesId = speciesId,
                 aliasRaw = normalizedText,
@@ -386,7 +400,53 @@ object AliasManager {
                 Log.w(TAG, "addAlias: immediate persist to master.json failed (alias still hotpatched in-memory)")
             }
 
-            // 3) Schedule debounced CBOR rebuild (coalesced for many adds)
+            // 3) Ensure internal cache and runtime matcher are refreshed so subsequent recognitions immediately see the alias.
+            //    Steps:
+            //     - read alias_master.json from SAF assets
+            //     - build AliasIndex and write to internal cache (context.filesDir)
+            //     - reload AliasMatcher so it picks up internal cache
+            try {
+                val vt5Local: DocumentFile? = saf.getVt5DirIfExists()
+                if (vt5Local != null) {
+                    val assetsDirLocal: DocumentFile? = vt5Local.findFile(ASSETS)?.takeIf { it.isDirectory }
+                    val masterDocLocal: DocumentFile? = assetsDirLocal?.findFile(MASTER_FILE)?.takeIf { it.isFile }
+                    if (masterDocLocal != null) {
+                        val masterJsonLocal: String? = runCatching {
+                            context.contentResolver.openInputStream(masterDocLocal.uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                        }.getOrNull()
+                        if (!masterJsonLocal.isNullOrBlank()) {
+                            val masterObj: AliasMaster? = try {
+                                jsonPretty.decodeFromString(AliasMaster.serializer(), masterJsonLocal)
+                            } catch (ex: Exception) {
+                                Log.w(TAG, "addAlias: decode master failed: ${ex.message}")
+                                null
+                            }
+                            if (masterObj != null) {
+                                // Build AliasIndex and update internal cache (fast, local)
+                                try {
+                                    val idxLocal: AliasIndex = masterObj.toAliasIndex()
+                                    writeIndexToInternalCache(context, idxLocal)
+                                    Log.i(TAG, "addAlias: internal CBOR cache updated from master.json")
+                                } catch (ex: Exception) {
+                                    Log.w(TAG, "addAlias: failed to write internal CBOR cache: ${ex.message}", ex)
+                                }
+
+                                // Reload runtime matcher so it immediately uses the new internal cache
+                                try {
+                                    com.yvesds.vt5.features.speech.AliasMatcher.reloadIndex(context, saf)
+                                    Log.i(TAG, "addAlias: AliasMatcher.reloadIndex invoked")
+                                } catch (ex: Exception) {
+                                    Log.w(TAG, "addAlias: AliasMatcher.reloadIndex failed: ${ex.message}", ex)
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (ex: Exception) {
+                Log.w(TAG, "addAlias: post-persist refresh failed: ${ex.message}", ex)
+            }
+
+            // 4) Schedule debounced CBOR rebuild (coalesced for many adds) to update SAF/binaries in the background
             scheduleCborRebuildDebounced(context, saf)
 
             Log.i(TAG, "addAlias: hotpatched and persisted alias='$normalizedText' for species=$speciesId (master.json immediate)")

@@ -2,8 +2,10 @@
 package com.yvesds.vt5.features.telling
 
 import android.app.Activity
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Bundle
 import android.text.InputFilter
 import android.text.InputType
@@ -39,9 +41,7 @@ import com.yvesds.vt5.features.speech.AliasSpeechParser
 import com.yvesds.vt5.features.speech.MatchContext
 import com.yvesds.vt5.features.speech.MatchResult
 import com.yvesds.vt5.features.speech.Candidate
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.Manifest
@@ -49,20 +49,18 @@ import android.content.pm.PackageManager
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.core.content.edit
 import java.util.Locale
-import java.time.Instant
 import kotlin.jvm.Volatile
 
 /**
  * TellingScherm.kt
  *
- * Adjustments applied: split speech log into two independent lists:
- * - bovenste: partials / non-final (recyclerViewSpeechPartials)
- * - onderste: finals (recyclerViewSpeechFinals)
+ * UX fix: avoid "Toevoegen?" popup when a recognized species (or alias thereof) actually
+ * already exists in the tiles. Also keep cached MatchContext in sync with AliasManager
+ * reloads via an internal (NOT_EXPORTED) broadcast.
  *
- * Finals only receive positive matches (AutoAccept, AutoAcceptAddPopup when confirmed, MultiMatch
- * entries that led to species updates). Partials receive NoMatch results, raw input, and system "Luisteren..." messages.
+ * Note: min SDK for this app is Android 13+ (API 33), so registerReceiver uses the API-33
+ * overload with Context.RECEIVER_NOT_EXPORTED (no conditional needed).
  */
 class TellingScherm : AppCompatActivity() {
 
@@ -95,7 +93,6 @@ class TellingScherm : AppCompatActivity() {
     private lateinit var aliasParser: AliasSpeechParser
 
     // Repos/helpers
-    //private val aliasRepository by lazy { AliasRepository.getInstance(this) }
     private lateinit var aliasEditor: AliasEditor
     private val safHelper by lazy { SaFStorageHelper(this) }
 
@@ -115,6 +112,40 @@ class TellingScherm : AppCompatActivity() {
     // Cached MatchContext to avoid rebuilding on every parse
     @Volatile
     private var cachedMatchContext: MatchContext? = null
+
+    // BroadcastReceiver: listen for alias-reload events from AliasManager
+    private val aliasReloadReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val success = intent?.getBooleanExtra(AliasRepository.EXTRA_RELOAD_SUCCESS, true) ?: true
+            if (!success) {
+                Log.w(TAG, "Received alias reload broadcast but success flag=false")
+                return
+            }
+
+            lifecycleScope.launch(Dispatchers.Default) {
+                try {
+                    val t0 = System.currentTimeMillis()
+                    val mc = buildMatchContext()
+                    cachedMatchContext = mc
+                    Log.d(TAG, "cached MatchContext rebuilt after alias reload (ms=${System.currentTimeMillis() - t0})")
+                } catch (ex: Exception) {
+                    Log.w(TAG, "Failed rebuilding cachedMatchContext after alias reload: ${ex.message}", ex)
+                }
+
+                // Ensure SpeechRecognitionManager (if present) reloads alias hints on main
+                withContext(Dispatchers.Main) {
+                    try {
+                        if (this@TellingScherm::speechRecognitionManager.isInitialized) {
+                            speechRecognitionManager.loadAliases()
+                            Log.d(TAG, "speechRecognitionManager.loadAliases invoked after alias reload")
+                        }
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "Failed to reload ASR aliases after alias reload: ${ex.message}", ex)
+                    }
+                }
+            }
+        }
+    }
 
     // Activity result launcher for soortselectie
     private val addSoortenLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
@@ -171,8 +202,30 @@ class TellingScherm : AppCompatActivity() {
         setupSpeciesTilesRecyclerView()
         setupButtons()
 
+        // Register receiver to keep cached context and ASR in sync when AliasManager reloads index
+        try {
+            val filter = IntentFilter(AliasRepository.ACTION_ALIAS_RELOAD_COMPLETED)
+            // minSdk is Android 13+, so use the API-33 overload and explicitly mark NOT_EXPORTED
+            registerReceiver(aliasReloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            Log.d(TAG, "Registered aliasReloadReceiver (NOT_EXPORTED)")
+        } catch (ex: Exception) {
+            Log.w(TAG, "Failed to register aliasReloadReceiver: ${ex.message}", ex)
+        }
+
         // Preload tiles (if preselected) then initialize ASR
         loadPreselection()
+    }
+
+    override fun onDestroy() {
+        try {
+            unregisterReceiver(aliasReloadReceiver)
+        } catch (_: Exception) {}
+        try {
+            if (::volumeKeyHandler.isInitialized) {
+                volumeKeyHandler.unregister()
+            }
+        } catch (_: Exception) {}
+        super.onDestroy()
     }
 
     /* ---------- UI setup ---------- */
@@ -230,6 +283,8 @@ class TellingScherm : AppCompatActivity() {
                                                         }
                                                         if (ok) {
                                                             Toast.makeText(this@TellingScherm, "Alias opgeslagen en index bijgewerkt", Toast.LENGTH_SHORT).show()
+                                                            // Zorg dat runtime alias index en ASR herladen worden zodat de nieuwe alias meteen actief is
+                                                            refreshAliasesRuntimeAsync()
                                                         } else {
                                                             Toast.makeText(this@TellingScherm, "Alias opgeslagen (index update later)", Toast.LENGTH_LONG).show()
                                                         }
@@ -283,6 +338,8 @@ class TellingScherm : AppCompatActivity() {
                                                             }
                                                             if (ok) {
                                                                 Toast.makeText(this@TellingScherm, "Alias opgeslagen en index bijgewerkt", Toast.LENGTH_SHORT).show()
+                                                                // Herlaad runtime index en ASR zodat alias direct gebruikt wordt
+                                                                refreshAliasesRuntimeAsync()
                                                             } else {
                                                                 Toast.makeText(this@TellingScherm, "Alias opgeslagen (index update later)", Toast.LENGTH_LONG).show()
                                                             }
@@ -621,32 +678,45 @@ class TellingScherm : AppCompatActivity() {
                                     is MatchResult.AutoAcceptAddPopup -> {
                                         val cnt = result.amount
                                         val prettyName = result.candidate.displayName
-                                        val msg = "Soort \"$prettyName\" herkend met aantal $cnt.\n\nToevoegen?"
-                                        AlertDialog.Builder(this@TellingScherm)
-                                            .setTitle("Soort toevoegen?")
-                                            .setMessage(msg)
-                                            .setPositiveButton("Ja") { _, _ ->
-                                                addSpeciesToTiles(result.candidate.speciesId, result.candidate.displayName, cnt)
-                                                addFinalLog("${result.candidate.displayName} -> +$cnt")
-                                            }
-                                            .setNegativeButton("Nee", null)
-                                            .show()
+                                        val speciesId = result.candidate.speciesId
+
+                                        // NEW: if species already present in tiles, bypass popup and directly count it
+                                        val presentInTiles = tilesAdapter.currentList.any { it.soortId == speciesId }
+                                        if (presentInTiles) {
+                                            addFinalLog("$prettyName -> +$cnt")
+                                            updateSoortCountInternal(speciesId, cnt)
+                                            RecentSpeciesStore.recordUse(this@TellingScherm, speciesId, maxEntries = 25)
+                                        } else {
+                                            val msg = "Soort \"$prettyName\" herkend met aantal $cnt.\n\nToevoegen?"
+                                            AlertDialog.Builder(this@TellingScherm)
+                                                .setTitle("Soort toevoegen?")
+                                                .setMessage(msg)
+                                                .setPositiveButton("Ja") { _, _ ->
+                                                    addSpeciesToTiles(result.candidate.speciesId, result.candidate.displayName, cnt)
+                                                    addFinalLog("${result.candidate.displayName} -> +$cnt")
+                                                }
+                                                .setNegativeButton("Nee", null)
+                                                .show()
+                                        }
                                     }
                                     is MatchResult.MultiMatch -> {
                                         result.matches.forEach { match ->
-                                            if (match.candidate.isInTiles) {
-                                                addFinalLog("${match.candidate.displayName} -> +${match.amount}")
-                                                updateSoortCountInternal(match.candidate.speciesId, match.amount)
-                                                RecentSpeciesStore.recordUse(this@TellingScherm, match.candidate.speciesId, maxEntries = 25)
+                                            val sid = match.candidate.speciesId
+                                            val cnt = match.amount
+                                            val present = tilesAdapter.currentList.any { it.soortId == sid }
+                                            if (present) {
+                                                addFinalLog("${match.candidate.displayName} -> +${cnt}")
+                                                updateSoortCountInternal(sid, cnt)
+                                                RecentSpeciesStore.recordUse(this@TellingScherm, sid, maxEntries = 25)
                                             } else {
                                                 val prettyName = match.candidate.displayName
-                                                val msg = "Soort \"$prettyName\" (${match.amount}x) herkend.\n\nToevoegen?"
+                                                val msg = "Soort \"$prettyName\" (${cnt}x) herkend.\n\nToevoegen?"
                                                 AlertDialog.Builder(this@TellingScherm)
                                                     .setTitle("Soort toevoegen?")
                                                     .setMessage(msg)
                                                     .setPositiveButton("Ja") { _, _ ->
-                                                        addSpeciesToTiles(match.candidate.speciesId, prettyName, match.amount)
-                                                        addFinalLog("$prettyName -> +${match.amount}")
+                                                        addSpeciesToTiles(match.candidate.speciesId, prettyName, cnt)
+                                                        addFinalLog("$prettyName -> +${cnt}")
                                                     }
                                                     .setNegativeButton("Nee", null)
                                                     .show()
@@ -817,12 +887,7 @@ class TellingScherm : AppCompatActivity() {
                 val newRow = SpeechLogRow(ts = now, tekst = display, bron = "partial")
 
                 if (existingPartialIndex != -1) {
-                    val prev = current[existingPartialIndex]
-                    if (prev.tekst == display) {
-                        filtered.add(newRow)
-                    } else {
-                        filtered.add(newRow)
-                    }
+                    filtered.add(newRow)
                 } else {
                     filtered.add(newRow)
                 }
@@ -1051,6 +1116,47 @@ class TellingScherm : AppCompatActivity() {
             Log.d(TAG, "Selected species map updated")
         }
     }
+
+    // Helper: asynchroon runtime alias index en ASR opnieuw laden na user-alias toevoeging
+    private fun refreshAliasesRuntimeAsync() {
+        lifecycleScope.launch {
+            try {
+                // 1) AliasMatcher reload (IO)
+                withContext(Dispatchers.IO) {
+                    try {
+                        com.yvesds.vt5.features.speech.AliasMatcher.reloadIndex(this@TellingScherm, safHelper)
+                        Log.d(TAG, "AliasMatcher.reloadIndex executed (post addAlias)")
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "AliasMatcher.reloadIndex failed (post addAlias): ${ex.message}", ex)
+                    }
+                }
+
+                // 2) ASR engine reload aliases (IO)
+                withContext(Dispatchers.IO) {
+                    try {
+                        speechRecognitionManager.loadAliases()
+                        Log.d(TAG, "speechRecognitionManager.loadAliases executed (post addAlias)")
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "speechRecognitionManager.loadAliases failed (post addAlias): ${ex.message}", ex)
+                    }
+                }
+
+                // 3) Rebuild cached MatchContext (Default)
+                withContext(Dispatchers.Default) {
+                    try {
+                        val mc = buildMatchContext()
+                        cachedMatchContext = mc
+                        Log.d(TAG, "cachedMatchContext refreshed after user alias add")
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "buildMatchContext failed (post addAlias): ${ex.message}", ex)
+                    }
+                }
+            } catch (ex: Exception) {
+                Log.w(TAG, "refreshAliasesRuntimeAsync overall failed: ${ex.message}", ex)
+            }
+        }
+    }
+
     // Launch soort selectie
     private fun openSoortSelectieForAdd() {
         val telpostId = TellingSessionManager.preselectState.value.telpostId
@@ -1058,10 +1164,10 @@ class TellingScherm : AppCompatActivity() {
             .putExtra(SoortSelectieScherm.EXTRA_TELPOST_ID, telpostId)
         addSoortenLauncher.launch(intent)
     }
+
     // Extract a numeric count from a string, fallback to 1
     private fun extractCountFromText(text: String): Int {
         val m = Regex("\\b(\\d+)\\b").find(text)
         return m?.groups?.get(1)?.value?.toIntOrNull() ?: 1
     }
-
 }
