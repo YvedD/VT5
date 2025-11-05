@@ -41,6 +41,9 @@ import com.yvesds.vt5.features.speech.AliasSpeechParser
 import com.yvesds.vt5.features.speech.MatchContext
 import com.yvesds.vt5.features.speech.MatchResult
 import com.yvesds.vt5.features.speech.Candidate
+import com.yvesds.vt5.features.network.DataUploader
+import com.yvesds.vt5.net.ServerTellingDataItem
+import com.yvesds.vt5.net.TrektellenApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -49,6 +52,10 @@ import android.content.pm.PackageManager
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.yvesds.vt5.VT5App
+import com.yvesds.vt5.core.secure.CredentialsStore
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import java.util.Locale
 import kotlin.jvm.Volatile
 
@@ -71,6 +78,9 @@ class TellingScherm : AppCompatActivity() {
         // Preferences keys
         private const val PREFS_NAME = "vt5_prefs"
         private const val PREF_ASR_SILENCE_MS = "pref_asr_silence_ms"
+
+        // Key for onlineId (metadata upload returns this). Keep empty when not set.
+        private const val PREF_ONLINE_ID = "pref_online_id"
 
         // Default silence ms: set low for testing; make configurable in prefs
         private const val DEFAULT_SILENCE_MS = 1000
@@ -674,6 +684,54 @@ class TellingScherm : AppCompatActivity() {
                                         addFinalLog(formatted)
                                         updateSoortCountInternal(result.candidate.speciesId, result.amount)
                                         RecentSpeciesStore.recordUse(this@TellingScherm, result.candidate.speciesId, maxEntries = 25)
+
+                                        // Attempt immediate upload if onlineId present
+                                        val onlineId = prefs.getString(PREF_ONLINE_ID, "").orEmpty()
+                                        if (onlineId.isNotBlank()) {
+                                            lifecycleScope.launch(Dispatchers.IO) {
+                                                val creds = CredentialsStore(this@TellingScherm)
+                                                val user = creds.getUsername().orEmpty()
+                                                val pass = creds.getPassword().orEmpty()
+                                                val nowEpoch = (System.currentTimeMillis() / 1000L).toString()
+                                                val item = ServerTellingDataItem(
+                                                    idLocal = "",
+                                                    tellingid = VT5App.nextTellingId(),
+                                                    soortid = result.candidate.speciesId,
+                                                    aantal = result.amount.toString(),
+                                                    richting = "",
+                                                    aantalterug = "0",
+                                                    richtingterug = "",
+                                                    sightingdirection = "",
+                                                    lokaal = "0",
+                                                    aantal_plus = "0",
+                                                    aantalterug_plus = "0",
+                                                    lokaal_plus = "0",
+                                                    markeren = "0",
+                                                    markerenlokaal = "0",
+                                                    geslacht = "",
+                                                    leeftijd = "",
+                                                    kleed = "",
+                                                    opmerkingen = "",
+                                                    trektype = "",
+                                                    teltype = "",
+                                                    location = "",
+                                                    height = "",
+                                                    tijdstip = nowEpoch,
+                                                    groupid = "",
+                                                    uploadtijdstip = ""
+                                                )
+                                                val (ok, resp) = DataUploader.uploadSingleObservation(this@TellingScherm, "https://trektellen.nl", onlineId, user, pass, item)
+                                                withContext(Dispatchers.Main) {
+                                                    if (ok) {
+                                                        Toast.makeText(this@TellingScherm, "Upload OK", Toast.LENGTH_SHORT).show()
+                                                    } else {
+                                                        Toast.makeText(this@TellingScherm, "Upload NOK — in wachtrij geplaatst", Toast.LENGTH_LONG).show()
+                                                        // Save last response for inspection
+                                                        prefs.edit().putString("last_upload_response", resp).apply()
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                     is MatchResult.AutoAcceptAddPopup -> {
                                         val cnt = result.amount
@@ -686,6 +744,53 @@ class TellingScherm : AppCompatActivity() {
                                             addFinalLog("$prettyName -> +$cnt")
                                             updateSoortCountInternal(speciesId, cnt)
                                             RecentSpeciesStore.recordUse(this@TellingScherm, speciesId, maxEntries = 25)
+
+                                            // Attempt upload same as AutoAccept
+                                            val onlineId = prefs.getString(PREF_ONLINE_ID, "").orEmpty()
+                                            if (onlineId.isNotBlank()) {
+                                                lifecycleScope.launch(Dispatchers.IO) {
+                                                    val creds = CredentialsStore(this@TellingScherm)
+                                                    val user = creds.getUsername().orEmpty()
+                                                    val pass = creds.getPassword().orEmpty()
+                                                    val nowEpoch = (System.currentTimeMillis() / 1000L).toString()
+                                                    val item = ServerTellingDataItem(
+                                                        idLocal = "",
+                                                        tellingid = VT5App.nextTellingId(),
+                                                        soortid = speciesId,
+                                                        aantal = cnt.toString(),
+                                                        richting = "",
+                                                        aantalterug = "0",
+                                                        richtingterug = "",
+                                                        sightingdirection = "",
+                                                        lokaal = "0",
+                                                        aantal_plus = "0",
+                                                        aantalterug_plus = "0",
+                                                        lokaal_plus = "0",
+                                                        markeren = "0",
+                                                        markerenlokaal = "0",
+                                                        geslacht = "",
+                                                        leeftijd = "",
+                                                        kleed = "",
+                                                        opmerkingen = "",
+                                                        trektype = "",
+                                                        teltype = "",
+                                                        location = "",
+                                                        height = "",
+                                                        tijdstip = nowEpoch,
+                                                        groupid = "",
+                                                        uploadtijdstip = ""
+                                                    )
+                                                    val (ok, resp) = DataUploader.uploadSingleObservation(this@TellingScherm, "https://trektellen.nl", onlineId, user, pass, item)
+                                                    withContext(Dispatchers.Main) {
+                                                        if (ok) {
+                                                            Toast.makeText(this@TellingScherm, "Upload OK", Toast.LENGTH_SHORT).show()
+                                                        } else {
+                                                            Toast.makeText(this@TellingScherm, "Upload NOK — in wachtrij geplaatst", Toast.LENGTH_LONG).show()
+                                                            prefs.edit().putString("last_upload_response", resp).apply()
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         } else {
                                             val msg = "Soort \"$prettyName\" herkend met aantal $cnt.\n\nToevoegen?"
                                             AlertDialog.Builder(this@TellingScherm)
@@ -694,6 +799,7 @@ class TellingScherm : AppCompatActivity() {
                                                 .setPositiveButton("Ja") { _, _ ->
                                                     addSpeciesToTiles(result.candidate.speciesId, result.candidate.displayName, cnt)
                                                     addFinalLog("${result.candidate.displayName} -> +$cnt")
+                                                    // upload will be attempted in addSpeciesToTiles flow (or we can trigger here as well)
                                                 }
                                                 .setNegativeButton("Nee", null)
                                                 .show()
@@ -708,6 +814,53 @@ class TellingScherm : AppCompatActivity() {
                                                 addFinalLog("${match.candidate.displayName} -> +${cnt}")
                                                 updateSoortCountInternal(sid, cnt)
                                                 RecentSpeciesStore.recordUse(this@TellingScherm, sid, maxEntries = 25)
+
+                                                // Upload each recognized match if onlineId present
+                                                val onlineId = prefs.getString(PREF_ONLINE_ID, "").orEmpty()
+                                                if (onlineId.isNotBlank()) {
+                                                    lifecycleScope.launch(Dispatchers.IO) {
+                                                        val creds = CredentialsStore(this@TellingScherm)
+                                                        val user = creds.getUsername().orEmpty()
+                                                        val pass = creds.getPassword().orEmpty()
+                                                        val nowEpoch = (System.currentTimeMillis() / 1000L).toString()
+                                                        val item = ServerTellingDataItem(
+                                                            idLocal = "",
+                                                            tellingid = VT5App.nextTellingId(),
+                                                            soortid = sid,
+                                                            aantal = cnt.toString(),
+                                                            richting = "",
+                                                            aantalterug = "0",
+                                                            richtingterug = "",
+                                                            sightingdirection = "",
+                                                            lokaal = "0",
+                                                            aantal_plus = "0",
+                                                            aantalterug_plus = "0",
+                                                            lokaal_plus = "0",
+                                                            markeren = "0",
+                                                            markerenlokaal = "0",
+                                                            geslacht = "",
+                                                            leeftijd = "",
+                                                            kleed = "",
+                                                            opmerkingen = "",
+                                                            trektype = "",
+                                                            teltype = "",
+                                                            location = "",
+                                                            height = "",
+                                                            tijdstip = nowEpoch,
+                                                            groupid = "",
+                                                            uploadtijdstip = ""
+                                                        )
+                                                        val (ok, resp) = DataUploader.uploadSingleObservation(this@TellingScherm, "https://trektellen.nl", onlineId, user, pass, item)
+                                                        withContext(Dispatchers.Main) {
+                                                            if (ok) {
+                                                                Toast.makeText(this@TellingScherm, "Upload OK", Toast.LENGTH_SHORT).show()
+                                                            } else {
+                                                                Toast.makeText(this@TellingScherm, "Upload NOK — in wachtrij geplaatst", Toast.LENGTH_LONG).show()
+                                                                prefs.edit().putString("last_upload_response", resp).apply()
+                                                            }
+                                                        }
+                                                    }
+                                                }
                                             } else {
                                                 val prettyName = match.candidate.displayName
                                                 val msg = "Soort \"$prettyName\" (${cnt}x) herkend.\n\nToevoegen?"

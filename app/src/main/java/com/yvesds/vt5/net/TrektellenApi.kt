@@ -3,7 +3,6 @@ package com.yvesds.vt5.net
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.Credentials
 import okhttp3.MediaType.Companion.toMediaType
@@ -45,7 +44,6 @@ object TrektellenApi {
         password: String,
         envelope: List<ServerTellingEnvelope>
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-        // ❗ Nieuw: vervangt HttpUrl.parse(...) door toHttpUrl()
         val url = try {
             baseUrl
                 .toHttpUrl()
@@ -64,6 +62,51 @@ object TrektellenApi {
             ListSerializer(ServerTellingEnvelope.serializer()),
             envelope
         )
+
+        val mediaType = "application/json; charset=utf-8".toMediaType()
+        val requestBody: RequestBody = bodyJson.toRequestBody(mediaType)
+
+        val authHeader = Credentials.basic(username, password)
+
+        val req = Request.Builder()
+            .url(url)
+            .header("Authorization", authHeader)
+            .post(requestBody)
+            .build()
+
+        client.newCall(req).execute().use { resp ->
+            val respText = resp.body?.string().orEmpty()
+            (resp.isSuccessful) to respText
+        }
+    }
+
+    /**
+     * POST /api/data_save/{onlineId}
+     *
+     * Post a JSON array with a single ServerTellingDataItem to the data_save endpoint.
+     *
+     * @return Pair(ok, responseBodyText)
+     */
+    suspend fun postDataSaveSingle(
+        baseUrl: String,
+        onlineId: String,
+        username: String,
+        password: String,
+        item: ServerTellingDataItem
+    ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        val url = try {
+            baseUrl
+                .toHttpUrl()
+                .newBuilder()
+                .addPathSegment("api")
+                .addPathSegment("data_save")
+                .addPathSegment(onlineId)
+                .build()
+        } catch (e: IllegalArgumentException) {
+            return@withContext false to "Bad baseUrl/onlineId: $baseUrl / $onlineId (${e.message})"
+        }
+
+        val bodyJson = json.encodeToString(ListSerializer(ServerTellingDataItem.serializer()), listOf(item))
 
         val mediaType = "application/json; charset=utf-8".toMediaType()
         val requestBody: RequestBody = bodyJson.toRequestBody(mediaType)
