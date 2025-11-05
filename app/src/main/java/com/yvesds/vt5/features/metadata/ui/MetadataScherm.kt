@@ -37,6 +37,7 @@ import com.yvesds.vt5.features.telling.TellingScherm
 import com.yvesds.vt5.features.telling.TellingSessionManager
 import com.yvesds.vt5.net.StartTellingApi
 import com.yvesds.vt5.net.TrektellenApi
+import com.yvesds.vt5.net.ServerTellingEnvelope
 import com.yvesds.vt5.utils.weather.WeatherManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -45,7 +46,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import java.text.SimpleDateFormat
@@ -63,6 +64,11 @@ import kotlin.math.roundToInt
  * (StartTellingApi.buildEnvelopeFromUi + TrektellenApi.postCountsSave). Bij succes
  * wordt het teruggegeven onlineId opgeslagen in prefs onder key PREF_ONLINE_ID en
  * pas dan wordt het SoortSelectieScherm gestart.
+ *
+ * Aanpassing: bij het aanmaken van de telling zorgen we dat "eindtijd" in de
+ * verstuurde envelope een lege string ("") is (dus live-mode gedrag voor eindtijd).
+ * Tevens wordt de gemaakte envelope (zonder data) persist in prefs opgeslagen
+ * zodat TellingScherm bij 'Afronden' die metadata kan hergebruiken.
  */
 class MetadataScherm : AppCompatActivity() {
     companion object {
@@ -71,6 +77,10 @@ class MetadataScherm : AppCompatActivity() {
 
         // Key for onlineId stored in prefs (used elsewhere, e.g. TellingScherm)
         private const val PREF_ONLINE_ID = "pref_online_id"
+        // Key for internal telling id used later by DataUploader / TellingScherm
+        private const val PREF_TELLING_ID = "pref_telling_id"
+        // Key for saved envelope JSON (metadata only, no data)
+        private const val PREF_SAVED_ENVELOPE_JSON = "pref_saved_envelope_json"
     }
 
     private lateinit var binding: SchermMetadataBinding
@@ -376,7 +386,7 @@ class MetadataScherm : AppCompatActivity() {
                 val mm = minutePicker.value.toString().padStart(2, '0')
                 binding.etTijd.setText("$hh:$mm")
             }
-            .setNegativeButton("Annuleren", null)
+            .setNegativeButton("Annuleer", null)
             .show()
     }
 
@@ -552,8 +562,8 @@ class MetadataScherm : AppCompatActivity() {
                     // Gebruik de huidige gekozen datum/tijd (prefilled/edited)
                     val begintijdEpoch = computeBeginEpochSec()
 
-                    // Eindtijd: voor liveMode pass 0L (StartTellingApi will make it empty), anders set same as begintijd
-                    val eindtijdEpoch = if (liveMode) 0L else begintijdEpoch
+                    // FORCE: Eindtijd altijd leeg string in envelope (we pass liveMode = true)
+                    val eindtijdEpoch = 0L
 
                     // Prepare values for StartTellingApi
                     // Use the chosen wind direction CODE if available, otherwise fallback to displayed label.
@@ -576,7 +586,7 @@ class MetadataScherm : AppCompatActivity() {
                     val opmerkingen = "" // optional
                     val luchtdrukHpaRaw = binding.etLuchtdruk.text?.toString()?.trim().orEmpty()
 
-                    // Build envelope (list of 1)
+                    // Build envelope (list of 1) -- pass liveMode = true so eindtijd == ""
                     val envelope = StartTellingApi.buildEnvelopeFromUi(
                         tellingId = tellingIdLong,
                         telpostId = telpostId,
@@ -593,7 +603,7 @@ class MetadataScherm : AppCompatActivity() {
                         weerOpmerking = weerOpmerking,
                         opmerkingen = opmerkingen,
                         luchtdrukHpaRaw = luchtdrukHpaRaw,
-                        liveMode = liveMode
+                        liveMode = true
                     )
 
                     // Post counts_save
@@ -638,9 +648,24 @@ class MetadataScherm : AppCompatActivity() {
                         return@withProgress
                     }
 
-                    // Persist onlineId in prefs so TellingScherm / DataUploader can use it
+                    // Persist onlineId and tellingId in prefs so TellingScherm / DataUploader can use them
                     val prefs = getSharedPreferences("vt5_prefs", MODE_PRIVATE)
-                    prefs.edit().putString(PREF_ONLINE_ID, onlineId).apply()
+                    prefs.edit().putString(PREF_ONLINE_ID, onlineId).putString(PREF_TELLING_ID, tellingIdLong.toString()).apply()
+
+                    // Initialize per-telling record counter starting at 1
+                    try {
+                        prefs.edit().putLong("pref_next_record_id_$tellingIdLong", 1L).apply()
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "Failed initializing next record id: ${ex.message}")
+                    }
+
+                    // Persist the envelope JSON (metadata only, without data) for later reuse at Afronden
+                    try {
+                        val envelopeJson = VT5App.json.encodeToString(ListSerializer(ServerTellingEnvelope.serializer()), envelope)
+                        prefs.edit().putString(PREF_SAVED_ENVELOPE_JSON, envelopeJson).apply()
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "Failed saving envelope JSON to prefs: ${ex.message}")
+                    }
 
                     // Also set session state and preselected species (as before)
                     val speciesForTelpost = snapshot.siteSpeciesBySite[telpostId]?.mapNotNull { it.soortid } ?: emptyList()
@@ -652,7 +677,7 @@ class MetadataScherm : AppCompatActivity() {
                         Toast.makeText(this@MetadataScherm, "Telling gestart (onlineId: $onlineId)", Toast.LENGTH_SHORT).show()
                         val intent = Intent(this@MetadataScherm, SoortSelectieScherm::class.java)
                         intent.putExtra(SoortSelectieScherm.EXTRA_TELPOST_ID, telpostId)
-                        intent.putExtra("EXTRA_LIVE_MODE", liveMode)
+                        intent.putExtra("EXTRA_LIVE_MODE", true)
                         intent.putExtra("EXTRA_USERNAME", username)
                         intent.putExtra("EXTRA_PASSWORD", password)
                         soortSelectieLauncher.launch(intent)

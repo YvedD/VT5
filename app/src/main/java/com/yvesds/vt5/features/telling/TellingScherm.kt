@@ -1,4 +1,5 @@
 @file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+
 package com.yvesds.vt5.features.telling
 
 import android.app.Activity
@@ -12,6 +13,7 @@ import android.text.InputType
 import android.view.GestureDetector
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.View
 import android.widget.EditText
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -25,6 +27,7 @@ import com.google.android.flexbox.FlexDirection
 import com.google.android.flexbox.FlexWrap
 import com.google.android.flexbox.FlexboxLayoutManager
 import com.google.android.flexbox.JustifyContent
+import com.yvesds.vt5.VT5App
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.core.ui.ProgressDialogHelper
 import com.yvesds.vt5.databinding.SchermTellingBinding
@@ -43,31 +46,39 @@ import com.yvesds.vt5.features.speech.MatchResult
 import com.yvesds.vt5.features.speech.Candidate
 import com.yvesds.vt5.features.network.DataUploader
 import com.yvesds.vt5.net.ServerTellingDataItem
+import com.yvesds.vt5.net.ServerTellingEnvelope
 import com.yvesds.vt5.net.TrektellenApi
+import com.yvesds.vt5.core.secure.CredentialsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import android.Manifest
 import android.content.pm.PackageManager
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.yvesds.vt5.VT5App
-import com.yvesds.vt5.core.secure.CredentialsStore
-import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import java.util.Locale
+import androidx.documentfile.provider.DocumentFile
+import java.text.SimpleDateFormat
+import java.util.Date
 import kotlin.jvm.Volatile
 
 /**
  * TellingScherm.kt
  *
- * UX fix: avoid "Toevoegen?" popup when a recognized species (or alias thereof) actually
- * already exists in the tiles. Also keep cached MatchContext in sync with AliasManager
- * reloads via an internal (NOT_EXPORTED) broadcast.
+ * Preserves existing functionality (ASR parsing, tiles, logs, aliases) and adds:
+ * - Collection of finals as ServerTellingDataItem in pendingRecords
+ * - Per-final timestamped JSON backup saved to Documents/VT5/exports via SAF
+ * - "Afronden" button now builds counts_save envelope using metadata saved by MetadataScherm,
+ *   fills envelope.data with pendingRecords and POSTs via TrektellenApi.postCountsSave.
+ * - Full server response written to SAF (Documents/VT5/exports) and short toast shown.
+ * - On successful Afronden, pendingRecords and their backup files are cleared/deleted.
  *
- * Note: min SDK for this app is Android 13+ (API 33), so registerReceiver uses the API-33
- * overload with Context.RECEIVER_NOT_EXPORTED (no conditional needed).
+ * NOTE: This file overwrites the previous TellingScherm but preserves existing flows and UX.
  */
 class TellingScherm : AppCompatActivity() {
 
@@ -79,8 +90,10 @@ class TellingScherm : AppCompatActivity() {
         private const val PREFS_NAME = "vt5_prefs"
         private const val PREF_ASR_SILENCE_MS = "pref_asr_silence_ms"
 
-        // Key for onlineId (metadata upload returns this). Keep empty when not set.
+        // Keys used across app
         private const val PREF_ONLINE_ID = "pref_online_id"
+        private const val PREF_TELLING_ID = "pref_telling_id"
+        private const val PREF_SAVED_ENVELOPE_JSON = "pref_saved_envelope_json"
 
         // Default silence ms: set low for testing; make configurable in prefs
         private const val DEFAULT_SILENCE_MS = 1000
@@ -122,6 +135,13 @@ class TellingScherm : AppCompatActivity() {
     // Cached MatchContext to avoid rebuilding on every parse
     @Volatile
     private var cachedMatchContext: MatchContext? = null
+
+    // Pending records collected from finals (sent on "Afronden")
+    private val pendingRecords = mutableListOf<ServerTellingDataItem>()
+
+    // Track backup files created per-record (DocumentFile or internal path strings)
+    private val pendingBackupDocs = mutableListOf<DocumentFile>()
+    private val pendingBackupInternalPaths = mutableListOf<String>()
 
     // BroadcastReceiver: listen for alias-reload events from AliasManager
     private val aliasReloadReceiver = object : BroadcastReceiver() {
@@ -512,8 +532,22 @@ class TellingScherm : AppCompatActivity() {
     private fun setupButtons() {
         binding.btnAddSoorten.setOnClickListener { openSoortSelectieForAdd() }
 
+        // Afronden: build envelope using saved metadata and pendingRecords, POST counts_save
         binding.btnAfronden.setOnClickListener {
-            Toast.makeText(this, "Afronden (batch-upload) volgt later.", Toast.LENGTH_LONG).show()
+            lifecycleScope.launch {
+                try {
+                    // Show simple progress
+                    val dialog = ProgressDialogHelper.show(this@TellingScherm, "Bezig met afronden upload...")
+                    try {
+                        handleAfronden()
+                    } finally {
+                        dialog.dismiss()
+                    }
+                } catch (ex: Exception) {
+                    Log.w(TAG, "Afronden failed: ${ex.message}", ex)
+                    Toast.makeText(this@TellingScherm, "Afronden mislukt: ${ex.message}", Toast.LENGTH_LONG).show()
+                }
+            }
         }
 
         binding.btnSaveClose.setOnClickListener {
@@ -685,53 +719,8 @@ class TellingScherm : AppCompatActivity() {
                                         updateSoortCountInternal(result.candidate.speciesId, result.amount)
                                         RecentSpeciesStore.recordUse(this@TellingScherm, result.candidate.speciesId, maxEntries = 25)
 
-                                        // Attempt immediate upload if onlineId present
-                                        val onlineId = prefs.getString(PREF_ONLINE_ID, "").orEmpty()
-                                        if (onlineId.isNotBlank()) {
-                                            lifecycleScope.launch(Dispatchers.IO) {
-                                                val creds = CredentialsStore(this@TellingScherm)
-                                                val user = creds.getUsername().orEmpty()
-                                                val pass = creds.getPassword().orEmpty()
-                                                val nowEpoch = (System.currentTimeMillis() / 1000L).toString()
-                                                val item = ServerTellingDataItem(
-                                                    idLocal = "",
-                                                    tellingid = VT5App.nextTellingId(),
-                                                    soortid = result.candidate.speciesId,
-                                                    aantal = result.amount.toString(),
-                                                    richting = "",
-                                                    aantalterug = "0",
-                                                    richtingterug = "",
-                                                    sightingdirection = "",
-                                                    lokaal = "0",
-                                                    aantal_plus = "0",
-                                                    aantalterug_plus = "0",
-                                                    lokaal_plus = "0",
-                                                    markeren = "0",
-                                                    markerenlokaal = "0",
-                                                    geslacht = "",
-                                                    leeftijd = "",
-                                                    kleed = "",
-                                                    opmerkingen = "",
-                                                    trektype = "",
-                                                    teltype = "",
-                                                    location = "",
-                                                    height = "",
-                                                    tijdstip = nowEpoch,
-                                                    groupid = "",
-                                                    uploadtijdstip = ""
-                                                )
-                                                val (ok, resp) = DataUploader.uploadSingleObservation(this@TellingScherm, "https://trektellen.nl", onlineId, user, pass, item)
-                                                withContext(Dispatchers.Main) {
-                                                    if (ok) {
-                                                        Toast.makeText(this@TellingScherm, "Upload OK", Toast.LENGTH_SHORT).show()
-                                                    } else {
-                                                        Toast.makeText(this@TellingScherm, "Upload NOK — in wachtrij geplaatst", Toast.LENGTH_LONG).show()
-                                                        // Save last response for inspection
-                                                        prefs.edit().putString("last_upload_response", resp).apply()
-                                                    }
-                                                }
-                                            }
-                                        }
+                                        // Collect record (do NOT auto-upload: we save pendingRecords for Afronden)
+                                        collectFinalAsRecord(result.candidate.speciesId, result.amount)
                                     }
                                     is MatchResult.AutoAcceptAddPopup -> {
                                         val cnt = result.amount
@@ -745,52 +734,8 @@ class TellingScherm : AppCompatActivity() {
                                             updateSoortCountInternal(speciesId, cnt)
                                             RecentSpeciesStore.recordUse(this@TellingScherm, speciesId, maxEntries = 25)
 
-                                            // Attempt upload same as AutoAccept
-                                            val onlineId = prefs.getString(PREF_ONLINE_ID, "").orEmpty()
-                                            if (onlineId.isNotBlank()) {
-                                                lifecycleScope.launch(Dispatchers.IO) {
-                                                    val creds = CredentialsStore(this@TellingScherm)
-                                                    val user = creds.getUsername().orEmpty()
-                                                    val pass = creds.getPassword().orEmpty()
-                                                    val nowEpoch = (System.currentTimeMillis() / 1000L).toString()
-                                                    val item = ServerTellingDataItem(
-                                                        idLocal = "",
-                                                        tellingid = VT5App.nextTellingId(),
-                                                        soortid = speciesId,
-                                                        aantal = cnt.toString(),
-                                                        richting = "",
-                                                        aantalterug = "0",
-                                                        richtingterug = "",
-                                                        sightingdirection = "",
-                                                        lokaal = "0",
-                                                        aantal_plus = "0",
-                                                        aantalterug_plus = "0",
-                                                        lokaal_plus = "0",
-                                                        markeren = "0",
-                                                        markerenlokaal = "0",
-                                                        geslacht = "",
-                                                        leeftijd = "",
-                                                        kleed = "",
-                                                        opmerkingen = "",
-                                                        trektype = "",
-                                                        teltype = "",
-                                                        location = "",
-                                                        height = "",
-                                                        tijdstip = nowEpoch,
-                                                        groupid = "",
-                                                        uploadtijdstip = ""
-                                                    )
-                                                    val (ok, resp) = DataUploader.uploadSingleObservation(this@TellingScherm, "https://trektellen.nl", onlineId, user, pass, item)
-                                                    withContext(Dispatchers.Main) {
-                                                        if (ok) {
-                                                            Toast.makeText(this@TellingScherm, "Upload OK", Toast.LENGTH_SHORT).show()
-                                                        } else {
-                                                            Toast.makeText(this@TellingScherm, "Upload NOK — in wachtrij geplaatst", Toast.LENGTH_LONG).show()
-                                                            prefs.edit().putString("last_upload_response", resp).apply()
-                                                        }
-                                                    }
-                                                }
-                                            }
+                                            // Collect record
+                                            collectFinalAsRecord(speciesId, cnt)
                                         } else {
                                             val msg = "Soort \"$prettyName\" herkend met aantal $cnt.\n\nToevoegen?"
                                             AlertDialog.Builder(this@TellingScherm)
@@ -799,7 +744,8 @@ class TellingScherm : AppCompatActivity() {
                                                 .setPositiveButton("Ja") { _, _ ->
                                                     addSpeciesToTiles(result.candidate.speciesId, result.candidate.displayName, cnt)
                                                     addFinalLog("${result.candidate.displayName} -> +$cnt")
-                                                    // upload will be attempted in addSpeciesToTiles flow (or we can trigger here as well)
+                                                    // record collected in addSpeciesToTiles? ensure collected as well:
+                                                    collectFinalAsRecord(result.candidate.speciesId, cnt)
                                                 }
                                                 .setNegativeButton("Nee", null)
                                                 .show()
@@ -815,52 +761,8 @@ class TellingScherm : AppCompatActivity() {
                                                 updateSoortCountInternal(sid, cnt)
                                                 RecentSpeciesStore.recordUse(this@TellingScherm, sid, maxEntries = 25)
 
-                                                // Upload each recognized match if onlineId present
-                                                val onlineId = prefs.getString(PREF_ONLINE_ID, "").orEmpty()
-                                                if (onlineId.isNotBlank()) {
-                                                    lifecycleScope.launch(Dispatchers.IO) {
-                                                        val creds = CredentialsStore(this@TellingScherm)
-                                                        val user = creds.getUsername().orEmpty()
-                                                        val pass = creds.getPassword().orEmpty()
-                                                        val nowEpoch = (System.currentTimeMillis() / 1000L).toString()
-                                                        val item = ServerTellingDataItem(
-                                                            idLocal = "",
-                                                            tellingid = VT5App.nextTellingId(),
-                                                            soortid = sid,
-                                                            aantal = cnt.toString(),
-                                                            richting = "",
-                                                            aantalterug = "0",
-                                                            richtingterug = "",
-                                                            sightingdirection = "",
-                                                            lokaal = "0",
-                                                            aantal_plus = "0",
-                                                            aantalterug_plus = "0",
-                                                            lokaal_plus = "0",
-                                                            markeren = "0",
-                                                            markerenlokaal = "0",
-                                                            geslacht = "",
-                                                            leeftijd = "",
-                                                            kleed = "",
-                                                            opmerkingen = "",
-                                                            trektype = "",
-                                                            teltype = "",
-                                                            location = "",
-                                                            height = "",
-                                                            tijdstip = nowEpoch,
-                                                            groupid = "",
-                                                            uploadtijdstip = ""
-                                                        )
-                                                        val (ok, resp) = DataUploader.uploadSingleObservation(this@TellingScherm, "https://trektellen.nl", onlineId, user, pass, item)
-                                                        withContext(Dispatchers.Main) {
-                                                            if (ok) {
-                                                                Toast.makeText(this@TellingScherm, "Upload OK", Toast.LENGTH_SHORT).show()
-                                                            } else {
-                                                                Toast.makeText(this@TellingScherm, "Upload NOK — in wachtrij geplaatst", Toast.LENGTH_LONG).show()
-                                                                prefs.edit().putString("last_upload_response", resp).apply()
-                                                            }
-                                                        }
-                                                    }
-                                                }
+                                                // Collect each recognized match
+                                                collectFinalAsRecord(sid, cnt)
                                             } else {
                                                 val prettyName = match.candidate.displayName
                                                 val msg = "Soort \"$prettyName\" (${cnt}x) herkend.\n\nToevoegen?"
@@ -870,6 +772,7 @@ class TellingScherm : AppCompatActivity() {
                                                     .setPositiveButton("Ja") { _, _ ->
                                                         addSpeciesToTiles(match.candidate.speciesId, prettyName, cnt)
                                                         addFinalLog("$prettyName -> +${cnt}")
+                                                        collectFinalAsRecord(match.candidate.speciesId, cnt)
                                                     }
                                                     .setNegativeButton("Nee", null)
                                                     .show()
@@ -1109,6 +1012,7 @@ class TellingScherm : AppCompatActivity() {
                 if (chosen.isInTiles) {
                     addFinalLog("${chosen.displayName} -> +$count")
                     updateSoortCountInternal(chosen.speciesId, count)
+                    collectFinalAsRecord(chosen.speciesId, count)
                 } else {
                     val msg = "Soort \"${chosen.displayName}\" toevoegen en $count noteren?"
                     AlertDialog.Builder(this)
@@ -1117,6 +1021,7 @@ class TellingScherm : AppCompatActivity() {
                         .setPositiveButton("Ja") { _, _ ->
                             addSpeciesToTiles(chosen.speciesId, chosen.displayName, count)
                             addFinalLog("${chosen.displayName} -> +$count")
+                            collectFinalAsRecord(chosen.speciesId, count)
                         }
                         .setNegativeButton("Nee", null)
                         .show()
@@ -1221,6 +1126,323 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
+    // Collect a final into pendingRecords and write per-final backup to SAF exports
+    private fun collectFinalAsRecord(soortId: String, amount: Int) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                val tellingId = prefs.getString(PREF_TELLING_ID, null)
+                if (tellingId.isNullOrBlank()) {
+                    Log.w(TAG, "No PREF_TELLING_ID available - cannot collect final as record")
+                    return@launch
+                }
+                val idLocal = DataUploader.getAndIncrementRecordId(this@TellingScherm, tellingId)
+                val nowEpoch = (System.currentTimeMillis() / 1000L).toString()
+                val item = ServerTellingDataItem(
+                    idLocal = idLocal,
+                    tellingid = tellingId,
+                    soortid = soortId,
+                    aantal = amount.toString(),
+                    richting = "",
+                    aantalterug = "0",
+                    richtingterug = "",
+                    sightingdirection = "",
+                    lokaal = "0",
+                    aantal_plus = "0",
+                    aantalterug_plus = "0",
+                    lokaal_plus = "0",
+                    markeren = "0",
+                    markerenlokaal = "0",
+                    geslacht = "",
+                    leeftijd = "",
+                    kleed = "",
+                    opmerkingen = "",
+                    trektype = "",
+                    teltype = "",
+                    location = "",
+                    height = "",
+                    tijdstip = nowEpoch,
+                    groupid = idLocal,
+                    uploadtijdstip = "",
+                    totaalaantal = amount.toString()
+                )
+
+                // add to in-memory list (main thread safe later)
+                withContext(Dispatchers.Main) {
+                    pendingRecords.add(item)
+                }
+
+                // write per-final backup JSON to SAF Documents/VT5/exports/session_<tellingId>_<idLocal>.json
+                try {
+                    val writtenDoc = writeRecordBackupSaf(this@TellingScherm, tellingId, item)
+                    if (writtenDoc != null) {
+                        pendingBackupDocs.add(writtenDoc)
+                    }
+                } catch (ex: Exception) {
+                    Log.w(TAG, "Failed to write record backup to SAF: ${ex.message}", ex)
+                    // fallback to internal files
+                    try {
+                        val internal = writeRecordBackupInternal(this@TellingScherm, tellingId, item)
+                        if (internal != null) pendingBackupInternalPaths.add(internal)
+                    } catch (e2: Exception) {
+                        Log.w(TAG, "Failed internal write for record backup: ${e2.message}", e2)
+                    }
+                }
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@TellingScherm, "Waarneming opgeslagen (buffer)", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "collectFinalAsRecord failed: ${e.message}", e)
+            }
+        }
+    }
+
+    // Write a single record backup via SAF into Documents/VT5/exports
+    private fun writeRecordBackupSaf(context: Context, tellingId: String, item: ServerTellingDataItem): DocumentFile? {
+        try {
+            val saf = SaFStorageHelper(context)
+            var vt5Dir: DocumentFile? = saf.getVt5DirIfExists()
+            if (vt5Dir == null) {
+                try { saf.ensureFolders() } catch (_: Exception) {}
+                vt5Dir = saf.getVt5DirIfExists()
+            }
+            if (vt5Dir != null) {
+                val exportsDir = saf.findOrCreateDirectory(vt5Dir, "exports") ?: vt5Dir
+                val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                val safeName = "session_${tellingId}_${item.idLocal}_$nowStr.json"
+                val created = exportsDir.createFile("application/json", safeName) ?: return null
+                context.contentResolver.openOutputStream(created.uri)?.bufferedWriter(Charsets.UTF_8).use { w ->
+                    val payloadJson = VT5App.json.encodeToString(ListSerializer(ServerTellingDataItem.serializer()), listOf(item))
+                    w?.write(payloadJson)
+                    w?.flush()
+                }
+                return created
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "writeRecordBackupSaf failed: ${e.message}", e)
+        }
+        return null
+    }
+
+    // Fallback internal write
+    private fun writeRecordBackupInternal(context: Context, tellingId: String, item: ServerTellingDataItem): String? {
+        return try {
+            val root = java.io.File(context.filesDir, "VT5")
+            if (!root.exists()) root.mkdirs()
+            val exports = java.io.File(root, "exports")
+            if (!exports.exists()) exports.mkdirs()
+            val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val filename = "session_${tellingId}_${item.idLocal}_$nowStr.json"
+            val f = java.io.File(exports, filename)
+            val payloadJson = VT5App.json.encodeToString(ListSerializer(ServerTellingDataItem.serializer()), listOf(item))
+            f.writeText(payloadJson, Charsets.UTF_8)
+            f.absolutePath
+        } catch (e: Exception) {
+            Log.w(TAG, "writeRecordBackupInternal failed: ${e.message}", e)
+            null
+        }
+    }
+
+    // Afronden: build counts_save envelope with saved metadata + pendingRecords, POST and handle response
+    private suspend fun handleAfronden() {
+        withContext(Dispatchers.IO) {
+            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val savedEnvelopeJson = prefs.getString(PREF_SAVED_ENVELOPE_JSON, null)
+            if (savedEnvelopeJson.isNullOrBlank()) {
+                withContext(Dispatchers.Main) {
+                    AlertDialog.Builder(this@TellingScherm)
+                        .setTitle("Geen metadata")
+                        .setMessage("Er is geen opgeslagen metadata (counts_save header). Keer terug naar metadata en start een telling.")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+                return@withContext
+            }
+
+            // Deserialize envelope
+            val envelopeList = try {
+                VT5App.json.decodeFromString(ListSerializer(ServerTellingEnvelope.serializer()), savedEnvelopeJson)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed decoding saved envelope JSON: ${e.message}", e)
+                null
+            }
+            if (envelopeList.isNullOrEmpty()) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@TellingScherm, "Opgeslagen envelope ongeldig.", Toast.LENGTH_LONG).show()
+                }
+                return@withContext
+            }
+
+            // Take first envelope and update eindtijd & uploadtijdstip to NOW (Afronden time)
+            val nowEpoch = (System.currentTimeMillis() / 1000L)
+            val nowEpochStr = nowEpoch.toString()
+            val nowFormatted = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+
+            val envBase = envelopeList[0]
+            val env = envBase.copy(
+                eindtijd = nowEpochStr,
+                uploadtijdstip = nowFormatted
+            )
+
+            // Convert pendingRecords to list snapshot
+            val snapshotRecords = synchronized(pendingRecords) { ArrayList(pendingRecords) }
+
+            // set nrec and nsoort
+            val nrec = snapshotRecords.size
+            val nsoort = snapshotRecords.map { it.soortid }.toSet().size
+
+            // build envelope with data
+            val finalEnv = env.copy(
+                nrec = nrec.toString(),
+                nsoort = nsoort.toString(),
+                data = snapshotRecords
+            )
+
+            val envelopeToSend = listOf(finalEnv)
+
+            // Save pretty-printed envelope JSON to exports as "<timestamp>_count_<onlineid>.json"
+            val onlineIdPref = prefs.getString(PREF_ONLINE_ID, "") ?: ""
+            val prettyJson = try {
+                Json { prettyPrint = true }.encodeToString(ListSerializer(ServerTellingEnvelope.serializer()), envelopeToSend)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to pretty encode envelope: ${e.message}", e)
+                null
+            }
+            var savedPrettyPath: String? = null
+            if (prettyJson != null) {
+                try {
+                    savedPrettyPath = writePrettyEnvelopeToSaf(this@TellingScherm, onlineIdPref.ifBlank { "unknown" }, prettyJson)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed writing pretty envelope to SAF: ${e.message}", e)
+                    // try internal fallback
+                    try {
+                        val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                        val fname = "${nowStr}_count_${onlineIdPref.ifBlank { "unknown" }}.json"
+                        val root = java.io.File(this@TellingScherm.filesDir, "VT5/exports")
+                        if (!root.exists()) root.mkdirs()
+                        val f = java.io.File(root, fname)
+                        f.writeText(prettyJson, Charsets.UTF_8)
+                        savedPrettyPath = "internal:${f.absolutePath}"
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "Internal fallback write for pretty envelope failed: ${ex.message}", ex)
+                    }
+                }
+            }
+
+            // Credentials
+            val creds = CredentialsStore(this@TellingScherm)
+            val user = creds.getUsername().orEmpty()
+            val pass = creds.getPassword().orEmpty()
+            if (user.isBlank() || pass.isBlank()) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@TellingScherm, "Geen credentials beschikbaar voor upload.", Toast.LENGTH_LONG).show()
+                }
+                return@withContext
+            }
+
+            val baseUrl = "https://trektellen.nl"
+            val language = "dutch"
+            val versie = "1845"
+
+            // Post counts_save
+            val (ok, resp) = try {
+                TrektellenApi.postCountsSave(baseUrl, language, versie, user, pass, envelopeToSend)
+            } catch (ex: Exception) {
+                Log.w(TAG, "postCountsSave exception: ${ex.message}", ex)
+                false to (ex.message ?: "exception")
+            }
+
+            // Also write envelope + response to SAF for audit (separate file)
+            val writtenPath = writeEnvelopeResponseToSaf(this@TellingScherm, finalEnv.tellingid, prettyJson ?: "{}", resp)
+
+            if (!ok) {
+                // Show failure dialog and keep pendingRecords
+                withContext(Dispatchers.Main) {
+                    AlertDialog.Builder(this@TellingScherm)
+                        .setTitle("Upload mislukt")
+                        .setMessage("Kon telling niet uploaden:\n$resp\n\nEnvelope opgeslagen: ${savedPrettyPath ?: "niet beschikbaar"}\nAuditbestand: ${writtenPath ?: "niet beschikbaar"}")
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+                return@withContext
+            }
+
+            // Success: clear pendingRecords and delete backups
+            try {
+                // delete SAF backup docs
+                pendingBackupDocs.forEach { doc ->
+                    try { doc.delete() } catch (e: Exception) { Log.w(TAG, "Failed deleting backup doc: ${e.message}", e) }
+                }
+                pendingBackupDocs.clear()
+
+                // delete internal paths
+                pendingBackupInternalPaths.forEach { path ->
+                    try { java.io.File(path).delete() } catch (e: Exception) { Log.w(TAG, "Failed deleting internal backup file: ${e.message}", e) }
+                }
+                pendingBackupInternalPaths.clear()
+
+                // clear in-memory pending records
+                synchronized(pendingRecords) { pendingRecords.clear() }
+
+                // Optionally remove saved envelope JSON now that full counts_save has been done.
+                // We keep onlineId/tellingId but remove saved metadata to avoid accidental reuse.
+                prefs.edit().remove(PREF_SAVED_ENVELOPE_JSON).apply()
+            } catch (e: Exception) {
+                Log.w(TAG, "Cleanup after successful Afronden failed: ${e.message}", e)
+            }
+
+            withContext(Dispatchers.Main) {
+                Toast.makeText(this@TellingScherm, "Afronden upload geslaagd. Envelope opgeslagen: ${savedPrettyPath ?: "n.v.t."}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    // Write pretty envelope JSON to SAF as "<timestamp>_count_<onlineid>.json"
+    private fun writePrettyEnvelopeToSaf(context: Context, onlineId: String, prettyJson: String): String? {
+        try {
+            val saf = SaFStorageHelper(context)
+            var vt5Dir: DocumentFile? = saf.getVt5DirIfExists()
+            if (vt5Dir == null) {
+                try { saf.ensureFolders() } catch (_: Exception) {}
+                vt5Dir = saf.getVt5DirIfExists()
+            }
+            if (vt5Dir != null) {
+                val exportsDir = saf.findOrCreateDirectory(vt5Dir, "exports") ?: vt5Dir
+                val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                val safeName = "${nowStr}_count_${onlineId}.json"
+                val created = exportsDir.createFile("application/json", safeName) ?: return null
+                context.contentResolver.openOutputStream(created.uri)?.bufferedWriter(Charsets.UTF_8).use { w ->
+                    w?.write(prettyJson)
+                    w?.flush()
+                }
+                return "Documents/VT5/exports/$safeName"
+            } else {
+                // fallback internal
+                val root = java.io.File(context.filesDir, "VT5")
+                if (!root.exists()) root.mkdirs()
+                val exports = java.io.File(root, "exports")
+                if (!exports.exists()) exports.mkdirs()
+                val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                val filename = "${nowStr}_count_${onlineId}.json"
+                val f = java.io.File(exports, filename)
+                f.writeText(prettyJson, Charsets.UTF_8)
+                return "internal:${f.absolutePath}"
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "writePrettyEnvelopeToSaf failed: ${e.message}", e)
+            return null
+        }
+    }
+
+    /* ---------- Remaining helpers (unchanged) ---------- */
+
+    // Parse a numeric count from string fallback to 1
+    private fun extractCountFromText(text: String): Int {
+        val m = Regex("\\b(\\d+)\\b").find(text)
+        return m?.groups?.get(1)?.value?.toIntOrNull() ?: 1
+    }
+
     private fun initializeVolumeKeyHandler() {
         try {
             volumeKeyHandler = VolumeKeyHandler(this)
@@ -1309,6 +1531,51 @@ class TellingScherm : AppCompatActivity() {
             }
         }
     }
+    // Write envelope + response to SAF exports (Documents/VT5/exports) - audit file
+    private fun writeEnvelopeResponseToSaf(context: Context, tellingId: String, envelopeJson: String, responseText: String): String? {
+        try {
+            val saf = SaFStorageHelper(context)
+            var vt5Dir: DocumentFile? = saf.getVt5DirIfExists()
+            if (vt5Dir == null) {
+                try { saf.ensureFolders() } catch (_: Exception) {}
+                vt5Dir = saf.getVt5DirIfExists()
+            }
+            if (vt5Dir != null) {
+                val exportsDir = saf.findOrCreateDirectory(vt5Dir, "exports") ?: vt5Dir
+                val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                val safeName = "counts_save_response_${tellingId}_$nowStr.txt"
+                val created = exportsDir.createFile("text/plain", safeName) ?: return null
+                context.contentResolver.openOutputStream(created.uri)?.bufferedWriter(Charsets.UTF_8).use { w ->
+                    w?.write("=== Envelope ===\n")
+                    w?.write(envelopeJson)
+                    w?.write("\n\n=== Server response ===\n")
+                    w?.write(responseText)
+                    w?.flush()
+                }
+                return "Documents/VT5/exports/$safeName"
+            } else {
+                // fallback internal
+                val root = java.io.File(context.filesDir, "VT5")
+                if (!root.exists()) root.mkdirs()
+                val exports = java.io.File(root, "exports")
+                if (!exports.exists()) exports.mkdirs()
+                val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                val filename = "counts_save_response_${tellingId}_$nowStr.txt"
+                val f = java.io.File(exports, filename)
+                f.bufferedWriter(Charsets.UTF_8).use { w ->
+                    w.write("=== Envelope ===\n")
+                    w.write(envelopeJson)
+                    w.write("\n\n=== Server response ===\n")
+                    w.write(responseText)
+                    w.flush()
+                }
+                return "internal:${f.absolutePath}"
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "writeEnvelopeResponseToSaf failed: ${e.message}", e)
+            return null
+        }
+    }
 
     // Launch soort selectie
     private fun openSoortSelectieForAdd() {
@@ -1316,11 +1583,5 @@ class TellingScherm : AppCompatActivity() {
         val intent = Intent(this, SoortSelectieScherm::class.java)
             .putExtra(SoortSelectieScherm.EXTRA_TELPOST_ID, telpostId)
         addSoortenLauncher.launch(intent)
-    }
-
-    // Extract a numeric count from a string, fallback to 1
-    private fun extractCountFromText(text: String): Int {
-        val m = Regex("\\b(\\d+)\\b").find(text)
-        return m?.groups?.get(1)?.value?.toIntOrNull() ?: 1
     }
 }
