@@ -341,14 +341,8 @@ class MetadataScherm : AppCompatActivity() {
     }
 
     private fun openTimeSpinnerDialog() {
+        // Start altijd met de huidige tijd (ongeacht eerder ingevulde waarde)
         val cal = Calendar.getInstance()
-        runCatching {
-            val parts = binding.etTijd.text?.toString()?.split(":") ?: emptyList()
-            if (parts.size == 2) {
-                cal.set(Calendar.HOUR_OF_DAY, parts[0].toInt())
-                cal.set(Calendar.MINUTE, parts[1].toInt())
-            }
-        }
         val startHour = cal.get(Calendar.HOUR_OF_DAY)
         val startMinute = cal.get(Calendar.MINUTE)
 
@@ -390,6 +384,7 @@ class MetadataScherm : AppCompatActivity() {
             .show()
     }
 
+    
     /* ---------------- Dropdowns ---------------- */
 
     private fun bindTelpostDropdown() {

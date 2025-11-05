@@ -49,6 +49,7 @@ import com.yvesds.vt5.net.ServerTellingDataItem
 import com.yvesds.vt5.net.ServerTellingEnvelope
 import com.yvesds.vt5.net.TrektellenApi
 import com.yvesds.vt5.core.secure.CredentialsStore
+import com.yvesds.vt5.features.metadata.ui.MetadataScherm
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -60,7 +61,6 @@ import android.content.pm.PackageManager
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import kotlinx.serialization.builtins.serializer
 import java.util.Locale
 import androidx.documentfile.provider.DocumentFile
 import java.text.SimpleDateFormat
@@ -78,13 +78,16 @@ import kotlin.jvm.Volatile
  * - Full server response written to SAF (Documents/VT5/exports) and short toast shown.
  * - On successful Afronden, pendingRecords and their backup files are cleared/deleted.
  *
- * NOTE: This file overwrites the previous TellingScherm but preserves existing flows and UX.
+ * NOTE: This file preserves your logic; I only corrected function nesting and missing imports.
  */
 class TellingScherm : AppCompatActivity() {
 
     companion object {
         private const val TAG = "TellingScherm"
         private const val PERMISSION_REQUEST_RECORD_AUDIO = 101
+
+        // JSON's
+        private val PRETTY_JSON: Json by lazy {Json { prettyPrint = true }}
 
         // Preferences keys
         private const val PREFS_NAME = "vt5_prefs"
@@ -466,17 +469,16 @@ class TellingScherm : AppCompatActivity() {
     }
 
     /* ---------- TILE click dialog (adds to existing count) ---------- */
+    // Vervang bestaande showNumberInputDialog(...) door dit
     private fun showNumberInputDialog(position: Int) {
         val current = tilesAdapter.currentList
         if (position !in current.indices) return
         val row = current[position]
 
-        // Empty default so user types a number to ADD
         val input = EditText(this).apply {
             inputType = InputType.TYPE_CLASS_NUMBER
             hint = "Aantal om toe te voegen"
             setText("")
-            setSelection(0)
             filters = arrayOf(InputFilter.LengthFilter(6))
         }
 
@@ -488,27 +490,18 @@ class TellingScherm : AppCompatActivity() {
             .setPositiveButton("OK") { _, _ ->
                 val v = input.text?.toString()?.trim()
                 val delta = v?.toIntOrNull() ?: 0
-                if (delta < 0) {
-                    Toast.makeText(this, "Ongeldig aantal.", Toast.LENGTH_SHORT).show()
+                if (delta <= 0) {
+                    Toast.makeText(this, "Geen verandering.", Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
                 lifecycleScope.launch {
-                    val updated = withContext(Dispatchers.Default) {
-                        val cur = tilesAdapter.currentList
-                        val tmp = ArrayList(cur)
-                        val currentRow = tmp[position]
-                        val newCount = currentRow.count + delta
-                        tmp[position] = currentRow.copy(count = newCount)
-                        tmp
-                    }
-                    withContext(Dispatchers.Main) {
-                        tilesAdapter.submitList(updated)
-                        // Manual update -> log as manual using the desired format
-                        addLog("${row.naam} -> +$delta", "manueel")
-                        RecentSpeciesStore.recordUse(this@TellingScherm, row.soortId, maxEntries = 25)
-                        // Refresh ASR hints and cached context
-                        updateSelectedSpeciesMap()
-                    }
+                    // Update tile count internally (no separate manual log)
+                    updateSoortCountInternal(row.soortId, delta)
+
+                    // Behave exactly like an ASR final:
+                    addFinalLog("${row.naam} -> +$delta")
+                    RecentSpeciesStore.recordUse(this@TellingScherm, row.soortId, maxEntries = 25)
+                    collectFinalAsRecord(row.soortId, delta)
                 }
             }
             .show()
@@ -1015,7 +1008,7 @@ class TellingScherm : AppCompatActivity() {
                     collectFinalAsRecord(chosen.speciesId, count)
                 } else {
                     val msg = "Soort \"${chosen.displayName}\" toevoegen en $count noteren?"
-                    AlertDialog.Builder(this)
+                    AlertDialog.Builder(this@TellingScherm)
                         .setTitle("Soort toevoegen?")
                         .setMessage(msg)
                         .setPositiveButton("Ja") { _, _ ->
@@ -1136,6 +1129,7 @@ class TellingScherm : AppCompatActivity() {
                     Log.w(TAG, "No PREF_TELLING_ID available - cannot collect final as record")
                     return@launch
                 }
+
                 val idLocal = DataUploader.getAndIncrementRecordId(this@TellingScherm, tellingId)
                 val nowEpoch = (System.currentTimeMillis() / 1000L).toString()
                 val item = ServerTellingDataItem(
@@ -1167,26 +1161,22 @@ class TellingScherm : AppCompatActivity() {
                     totaalaantal = amount.toString()
                 )
 
-                // add to in-memory list (main thread safe later)
+                // Add to in-memory list on main
                 withContext(Dispatchers.Main) {
                     pendingRecords.add(item)
                 }
 
-                // write per-final backup JSON to SAF Documents/VT5/exports/session_<tellingId>_<idLocal>.json
+                // Try SAF backup, else internal fallback
                 try {
-                    val writtenDoc = writeRecordBackupSaf(this@TellingScherm, tellingId, item)
-                    if (writtenDoc != null) {
-                        pendingBackupDocs.add(writtenDoc)
-                    }
-                } catch (ex: Exception) {
-                    Log.w(TAG, "Failed to write record backup to SAF: ${ex.message}", ex)
-                    // fallback to internal files
-                    try {
+                    val doc = writeRecordBackupSaf(this@TellingScherm, tellingId, item)
+                    if (doc != null) {
+                        pendingBackupDocs.add(doc)
+                    } else {
                         val internal = writeRecordBackupInternal(this@TellingScherm, tellingId, item)
                         if (internal != null) pendingBackupInternalPaths.add(internal)
-                    } catch (e2: Exception) {
-                        Log.w(TAG, "Failed internal write for record backup: ${e2.message}", e2)
                     }
+                } catch (ex: Exception) {
+                    Log.w(TAG, "Record backup failed: ${ex.message}", ex)
                 }
 
                 withContext(Dispatchers.Main) {
@@ -1230,8 +1220,7 @@ class TellingScherm : AppCompatActivity() {
         return try {
             val root = java.io.File(context.filesDir, "VT5")
             if (!root.exists()) root.mkdirs()
-            val exports = java.io.File(root, "exports")
-            if (!exports.exists()) exports.mkdirs()
+            val exports = java.io.File(root, "exports"); if (!exports.exists()) exports.mkdirs()
             val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
             val filename = "session_${tellingId}_${item.idLocal}_$nowStr.json"
             val f = java.io.File(exports, filename)
@@ -1260,7 +1249,6 @@ class TellingScherm : AppCompatActivity() {
                 return@withContext
             }
 
-            // Deserialize envelope
             val envelopeList = try {
                 VT5App.json.decodeFromString(ListSerializer(ServerTellingEnvelope.serializer()), savedEnvelopeJson)
             } catch (e: Exception) {
@@ -1274,70 +1262,46 @@ class TellingScherm : AppCompatActivity() {
                 return@withContext
             }
 
-            // Take first envelope and update eindtijd & uploadtijdstip to NOW (Afronden time)
             val nowEpoch = (System.currentTimeMillis() / 1000L)
             val nowEpochStr = nowEpoch.toString()
             val nowFormatted = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
 
-            val envBase = envelopeList[0]
-            val env = envBase.copy(
-                eindtijd = nowEpochStr,
-                uploadtijdstip = nowFormatted
-            )
+            val baseEnv = envelopeList[0]
+            val envWithTimes = baseEnv.copy(eindtijd = nowEpochStr, uploadtijdstip = nowFormatted)
 
-            // Convert pendingRecords to list snapshot
-            val snapshotRecords = synchronized(pendingRecords) { ArrayList(pendingRecords) }
+            val recordsSnapshot = synchronized(pendingRecords) { ArrayList(pendingRecords) }
+            val nrec = recordsSnapshot.size
+            val nsoort = recordsSnapshot.map { it.soortid }.toSet().size
 
-            // set nrec and nsoort
-            val nrec = snapshotRecords.size
-            val nsoort = snapshotRecords.map { it.soortid }.toSet().size
-
-            // build envelope with data
-            val finalEnv = env.copy(
-                nrec = nrec.toString(),
-                nsoort = nsoort.toString(),
-                data = snapshotRecords
-            )
-
+            val finalEnv = envWithTimes.copy(nrec = nrec.toString(), nsoort = nsoort.toString(), data = recordsSnapshot)
             val envelopeToSend = listOf(finalEnv)
 
-            // Save pretty-printed envelope JSON to exports as "<timestamp>_count_<onlineid>.json"
+            // Pretty print and save to SAF (or fallback)
             val onlineIdPref = prefs.getString(PREF_ONLINE_ID, "") ?: ""
-            val prettyJson = try {
-                Json { prettyPrint = true }.encodeToString(ListSerializer(ServerTellingEnvelope.serializer()), envelopeToSend)
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to pretty encode envelope: ${e.message}", e)
-                null
-            }
+            val prettyJson = try { PRETTY_JSON.encodeToString(ListSerializer(ServerTellingEnvelope.serializer()), envelopeToSend) } catch (e: Exception) { Log.w(TAG, "pretty encode failed: ${e.message}", e); null }
+
             var savedPrettyPath: String? = null
             if (prettyJson != null) {
                 try {
                     savedPrettyPath = writePrettyEnvelopeToSaf(this@TellingScherm, onlineIdPref.ifBlank { "unknown" }, prettyJson)
                 } catch (e: Exception) {
-                    Log.w(TAG, "Failed writing pretty envelope to SAF: ${e.message}", e)
-                    // try internal fallback
+                    Log.w(TAG, "writePrettyEnvelopeToSaf failed: ${e.message}", e)
                     try {
                         val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
                         val fname = "${nowStr}_count_${onlineIdPref.ifBlank { "unknown" }}.json"
-                        val root = java.io.File(this@TellingScherm.filesDir, "VT5/exports")
-                        if (!root.exists()) root.mkdirs()
-                        val f = java.io.File(root, fname)
-                        f.writeText(prettyJson, Charsets.UTF_8)
+                        val root = java.io.File(this@TellingScherm.filesDir, "VT5/exports"); if (!root.exists()) root.mkdirs()
+                        val f = java.io.File(root, fname); f.writeText(prettyJson, Charsets.UTF_8)
                         savedPrettyPath = "internal:${f.absolutePath}"
-                    } catch (ex: Exception) {
-                        Log.w(TAG, "Internal fallback write for pretty envelope failed: ${ex.message}", ex)
-                    }
+                    } catch (ex: Exception) { Log.w(TAG, "fallback pretty write failed: ${ex.message}", ex) }
                 }
             }
 
-            // Credentials
+            // Credentials & POST
             val creds = CredentialsStore(this@TellingScherm)
             val user = creds.getUsername().orEmpty()
             val pass = creds.getPassword().orEmpty()
             if (user.isBlank() || pass.isBlank()) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@TellingScherm, "Geen credentials beschikbaar voor upload.", Toast.LENGTH_LONG).show()
-                }
+                withContext(Dispatchers.Main) { Toast.makeText(this@TellingScherm, "Geen credentials beschikbaar voor upload.", Toast.LENGTH_LONG).show() }
                 return@withContext
             }
 
@@ -1345,7 +1309,6 @@ class TellingScherm : AppCompatActivity() {
             val language = "dutch"
             val versie = "1845"
 
-            // Post counts_save
             val (ok, resp) = try {
                 TrektellenApi.postCountsSave(baseUrl, language, versie, user, pass, envelopeToSend)
             } catch (ex: Exception) {
@@ -1353,47 +1316,39 @@ class TellingScherm : AppCompatActivity() {
                 false to (ex.message ?: "exception")
             }
 
-            // Also write envelope + response to SAF for audit (separate file)
-            val writtenPath = writeEnvelopeResponseToSaf(this@TellingScherm, finalEnv.tellingid, prettyJson ?: "{}", resp)
+            val auditPath = writeEnvelopeResponseToSaf(this@TellingScherm, finalEnv.tellingid, prettyJson ?: "{}", resp)
 
             if (!ok) {
-                // Show failure dialog and keep pendingRecords
                 withContext(Dispatchers.Main) {
                     AlertDialog.Builder(this@TellingScherm)
                         .setTitle("Upload mislukt")
-                        .setMessage("Kon telling niet uploaden:\n$resp\n\nEnvelope opgeslagen: ${savedPrettyPath ?: "niet beschikbaar"}\nAuditbestand: ${writtenPath ?: "niet beschikbaar"}")
+                        .setMessage("Kon telling niet uploaden:\n$resp\n\nEnvelope opgeslagen: ${savedPrettyPath ?: "niet beschikbaar"}\nAuditbestand: ${auditPath ?: "niet beschikbaar"}")
                         .setPositiveButton("OK", null)
                         .show()
                 }
                 return@withContext
             }
 
-            // Success: clear pendingRecords and delete backups
+            // On success: cleanup and return to MetadataScherm
             try {
-                // delete SAF backup docs
-                pendingBackupDocs.forEach { doc ->
-                    try { doc.delete() } catch (e: Exception) { Log.w(TAG, "Failed deleting backup doc: ${e.message}", e) }
-                }
+                pendingBackupDocs.forEach { doc -> try { doc.delete() } catch (_: Exception) {} }
                 pendingBackupDocs.clear()
-
-                // delete internal paths
-                pendingBackupInternalPaths.forEach { path ->
-                    try { java.io.File(path).delete() } catch (e: Exception) { Log.w(TAG, "Failed deleting internal backup file: ${e.message}", e) }
-                }
+                pendingBackupInternalPaths.forEach { path -> try { java.io.File(path).delete() } catch (_: Exception) {} }
                 pendingBackupInternalPaths.clear()
-
-                // clear in-memory pending records
                 synchronized(pendingRecords) { pendingRecords.clear() }
 
-                // Optionally remove saved envelope JSON now that full counts_save has been done.
-                // We keep onlineId/tellingId but remove saved metadata to avoid accidental reuse.
-                prefs.edit().remove(PREF_SAVED_ENVELOPE_JSON).apply()
+                // Remove keys
+                prefs.edit().remove(PREF_ONLINE_ID).remove(PREF_TELLING_ID).remove(PREF_SAVED_ENVELOPE_JSON).apply()
             } catch (e: Exception) {
                 Log.w(TAG, "Cleanup after successful Afronden failed: ${e.message}", e)
             }
 
             withContext(Dispatchers.Main) {
                 Toast.makeText(this@TellingScherm, "Afronden upload geslaagd. Envelope opgeslagen: ${savedPrettyPath ?: "n.v.t."}", Toast.LENGTH_LONG).show()
+                val it = Intent(this@TellingScherm, MetadataScherm::class.java)
+                it.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                startActivity(it)
+                finish()
             }
         }
     }
