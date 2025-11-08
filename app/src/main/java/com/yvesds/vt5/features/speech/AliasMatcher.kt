@@ -27,6 +27,13 @@ import kotlin.math.max
  *  - Hotpatch incremental updates avoid full-map copies when possible.
  *  - Defensive/gentle fallbacks and clearer logging.
  *
+ * IMPORTANT runtime behavior change (non-blocking lookup):
+ *  - findExact(...) and findFuzzyCandidates(...) are intentionally non-blocking read-only lookups:
+ *      - If the in-memory index is not yet loaded, these functions return quickly with an empty list
+ *        instead of attempting to synchronously load the CBOR (which previously caused parse stalls).
+ *      - A background loader may be triggered to start if not already running (best-effort),
+ *        but callers should explicitly call ensureLoaded(...) at an appropriate time (e.g., app startup).
+ *
  * Behavior:
  *  - First tries internal app cache file (context.filesDir/aliases_optimized.cbor.gz)
  *  - Fallbacks to SAF Documents/VT5/binaries/aliases_optimized.cbor.gz (copied/read once)
@@ -38,7 +45,7 @@ internal object AliasMatcher {
     private const val ALIASES_CBOR_GZ = "aliases_optimized.cbor.gz"
     private const val BINARIES = "binaries"
 
-    private val json = Json { prettyPrint = false }
+    //private val json = Json { prettyPrint = false }
 
     // In-memory structures (volatile for quick visibility)
     @Volatile private var loadedIndex: RepoAliasIndex? = null
@@ -56,6 +63,10 @@ internal object AliasMatcher {
     /**
      * Ensure internal in-memory alias index is loaded and ready for matching.
      * Multiple concurrent callers will await the same background load.
+     *
+     * This is the explicit, suspending loader that callers may await when they want blocking guarantee
+     * that the index exists. Real-time parse paths should prefer the non-blocking findExact / findFuzzyCandidates
+     * which return empty results when the index is not yet loaded.
      */
     @OptIn(ExperimentalSerializationApi::class)
     suspend fun ensureLoaded(context: Context, saf: SaFStorageHelper) {
@@ -196,21 +207,38 @@ internal object AliasMatcher {
     }
 
     /**
-     * Find exact matches by normalized phrase (quick lookup).
+     * Non-blocking quick exact match lookup by normalized phrase (real-time safe).
      *
-     * Tries normalized/no-diacritics form first (norm), then the lowercase raw form.
+     * NOTE: This function intentionally does NOT call ensureLoaded(...). If the index is not yet loaded,
+     * it will return an empty list immediately (fast). If you need a blocking guarantee, call ensureLoaded(...)
+     * before invoking this function (e.g. at app startup).
+     *
+     * Best-effort: if no loader is running, this will kick off a background loader (best-effort) so the index
+     * becomes available later without blocking the caller.
      */
     suspend fun findExact(aliasPhrase: String, context: Context, saf: SaFStorageHelper): List<AliasRecord> = withContext(Dispatchers.Default) {
-        ensureLoaded(context, saf)
-        val map = aliasMap ?: return@withContext emptyList()
+        // Quick-read snapshot of map — do not trigger synchronous loads here
+        val mapSnapshot = aliasMap
+        if (mapSnapshot == null) {
+            // Kick off background load (best-effort) if not already running
+            synchronized(this@AliasMatcher) {
+                if (loadingDeferred == null) {
+                    loadingDeferred = loaderScope.async { loadIndexInternal(context, saf) }
+                }
+            }
+            return@withContext emptyList()
+        }
+
         val normKey = normalizeLowerNoDiacritics(aliasPhrase.trim())
-        map[normKey]?.let { return@withContext it }
+        mapSnapshot[normKey]?.let { return@withContext it }
         val lowerKey = aliasPhrase.trim().lowercase()
-        map[lowerKey] ?: emptyList()
+        mapSnapshot[lowerKey] ?: emptyList()
     }
 
     /**
-     * Fuzzy candidate search using combined scoring.
+     * Non-blocking fuzzy candidate search using combined scoring.
+     *
+     * Returns quickly with empty list when index not yet loaded.
      */
     suspend fun findFuzzyCandidates(
         phrase: String,
@@ -220,14 +248,24 @@ internal object AliasMatcher {
         threshold: Double = 0.40
     ): List<Pair<AliasRecord, Double>> = withContext(Dispatchers.Default) {
         val t0 = System.nanoTime()
-        ensureLoaded(context, saf)
-        val map = aliasMap ?: return@withContext emptyList()
-        val buckets = firstCharBuckets ?: return@withContext emptyList()
-        val bloom = bloomFilter ?: return@withContext emptyList()
+
+        val map = aliasMap
+        val buckets = firstCharBuckets
+        val bloom = bloomFilter
+        if (map == null || buckets == null || bloom == null) {
+            // ensure background load started (best-effort) and return quickly
+            synchronized(this@AliasMatcher) {
+                if (loadingDeferred == null) {
+                    loadingDeferred = loaderScope.async { loadIndexInternal(context, saf) }
+                }
+            }
+            return@withContext emptyList()
+        }
 
         val q = phrase.trim().lowercase()
         if (q.isEmpty()) return@withContext emptyList()
 
+        // Pre-split tokens
         val tokens = q.split("\\s+".toRegex()).filter { it.isNotBlank() && it.toIntOrNull() == null }
 
         if (tokens.isNotEmpty()) {
@@ -241,36 +279,54 @@ internal object AliasMatcher {
         val firstChar = q[0]
         val bucket = buckets[firstChar] ?: emptyList()
         val len = q.length
-        val shortlist = bucket.asSequence()
+
+        // Build shortlist but cap its size to avoid huge buckets blowing up CPU
+        val SHORTLIST_CAP = 300 // tune if necessary
+        val shortlistList = bucket.asSequence()
             .filter { key ->
                 val l = key.length
                 val diff = kotlin.math.abs(l - len)
                 diff <= max(2, len / 3)
             }
+            .take(SHORTLIST_CAP)
+            .toList()
+
+        if (bucket.size > SHORTLIST_CAP) {
+            Log.d(TAG, "Shortlist capped for '$q' originalBucket=${bucket.size} capped=${SHORTLIST_CAP}")
+        }
 
         val scored = mutableListOf<Pair<AliasRecord, Double>>()
-        for (k in shortlist) {
+
+        // phonemize query once if needed
+        var qPh: String? = null
+        var qPhComputed = false
+
+        for (k in shortlistList) {
             val lev = normalizedLevenshteinRatio(q, k)
             val colSim = runCatching { ColognePhonetic.similarity(q, k) }.getOrDefault(0.0)
             val recs = map[k] ?: continue
             for (r in recs) {
                 val phonSim = if (!r.phonemes.isNullOrBlank()) {
-                    val qPh = runCatching { DutchPhonemizer.phonemize(q) }.getOrDefault("")
-                    runCatching { DutchPhonemizer.phonemeSimilarity(qPh, r.phonemes) }.getOrDefault(0.0)
+                    if (!qPhComputed) {
+                        qPh = runCatching { DutchPhonemizer.phonemize(q) }.getOrDefault("")
+                        qPhComputed = true
+                    }
+                    runCatching { DutchPhonemizer.phonemeSimilarity(qPh ?: "", r.phonemes) }.getOrDefault(0.0)
                 } else 0.0
 
                 val score = (0.45 * lev + 0.35 * colSim + 0.20 * phonSim).coerceIn(0.0, 1.0)
                 if (score >= threshold) scored += Pair(r, score)
             }
+            // Optional: small early exit if we've already collected too many scored candidates
+            if (scored.size > 1000) break
         }
 
         scored.sortByDescending { it.second }
         val result = scored.take(topN)
         val t1 = System.nanoTime()
-        Log.d(TAG, "findFuzzyCandidates: phrase='$q' shortlist=${shortlist.count()} scored=${scored.size} topN=$topN timeMs=${(t1 - t0) / 1_000_000}")
+        Log.d(TAG, "findFuzzyCandidates: phrase='$q' shortlist=${shortlistList.size} scored=${scored.size} topN=$topN timeMs=${(t1 - t0) / 1_000_000}")
         return@withContext result
     }
-
     /**
      * Hot-patch: add a minimal AliasRecord in-memory so new alias is immediately visible.
      *

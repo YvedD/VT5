@@ -111,6 +111,13 @@ class SpeechRecognitionManager(private val activity: Activity) {
     data class SpeciesCount(val speciesId: String, val speciesName: String, val count: Int)
 
     fun initialize() {
+        try {
+            // Ensure match log writer is running before any ASR work/logging
+            MatchLogWriter.start(activity) // 'activity' is the Activity passed to the manager
+        } catch (ex: Exception) {
+            Log.w(TAG, "MatchLogWriter.start() failed in initialize(): ${ex.message}", ex)
+        }
+
         if (SpeechRecognizer.isRecognitionAvailable(activity)) {
             speechRecognizer = SpeechRecognizer.createSpeechRecognizer(activity)
             speechRecognizer?.setRecognitionListener(createRecognitionListener())

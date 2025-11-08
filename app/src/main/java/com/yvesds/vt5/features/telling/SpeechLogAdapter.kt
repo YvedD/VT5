@@ -67,26 +67,23 @@ class SpeechLogAdapter :
         holder.vb.tvTime.text = fmt.format(Date(row.ts * 1000L))
 
         // Use the already-prepared text from TellingScherm; keep adapter logic minimal.
-        var displayText = row.tekst
-
-        // If the caller explicitly wants to strip partials suffixes, they can set showPartialsInRow = false.
-        // But TellingScherm now uses upsertPartialLog to only keep the last partial and composes cleaned text,
-        // so we typically don't need to mutate displayText here.
-
+        val displayText = row.tekst ?: ""
         holder.vb.tvMsg.text = displayText
 
-        // Determine colors (use the current/default text color as fallback)
+        // Precomputed color constants (no parseColor allocations per bind)
+        val COLOR_FINAL = 0xFF00C853.toInt() // bright green
+        val COLOR_WHITE = Color.WHITE
         val defaultColor = holder.vb.tvMsg.currentTextColor
+
         when (row.bron) {
-            "final" -> holder.vb.tvMsg.setTextColor(Color.parseColor("#00C853"))   // bright green
-            "partial" -> holder.vb.tvMsg.setTextColor(Color.parseColor("#FFFFFF")) // subtle gray
-            "alias" -> holder.vb.tvMsg.setTextColor(Color.parseColor("#FFFFFF"))  // amber for alias items
-            "raw" -> holder.vb.tvMsg.setTextColor(Color.parseColor("#FFFFFF"))
-            "systeem", "manueel" -> holder.vb.tvMsg.setTextColor(Color.parseColor("#FFFFFF"))
+            "final" -> holder.vb.tvMsg.setTextColor(COLOR_FINAL)
+            "partial" -> holder.vb.tvMsg.setTextColor(COLOR_WHITE)
+            "alias" -> holder.vb.tvMsg.setTextColor(COLOR_WHITE)
+            "raw" -> holder.vb.tvMsg.setTextColor(COLOR_WHITE)
+            "systeem", "manueel" -> holder.vb.tvMsg.setTextColor(COLOR_WHITE)
             else -> holder.vb.tvMsg.setTextColor(defaultColor)
         }
     }
-
     override fun getItemId(position: Int): Long {
         val item = getItem(position)
         // stable id based on ts and tekst hash and bron - avoid collisions as best effort

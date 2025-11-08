@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 import com.yvesds.vt5.features.serverdata.model.ServerDataCache
+import com.yvesds.vt5.features.speech.MatchLogWriter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -12,6 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
+import androidx.core.content.edit
 
 /**
  * VT5 – App singleton
@@ -30,6 +32,11 @@ class VT5App : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        try {
+            MatchLogWriter.start(this)
+        } catch (ex: Exception) {
+            Log.w(TAG, "Failed to start MatchLogWriter in Application.onCreate: ${ex.message}", ex)
+        }
         instance = this
         Log.d(TAG, "VT5App onCreate - initiating background data preload")
 
@@ -74,7 +81,7 @@ class VT5App : Application() {
         fun nextTellingId(): String {
             val p = prefs()
             val current = p.getLong(KEY_TELLING_ID, 1L)
-            p.edit().putLong(KEY_TELLING_ID, current + 1L).apply()
+            p.edit { putLong(KEY_TELLING_ID, current + 1L) }
             return current.toString()
         }
 

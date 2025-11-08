@@ -139,6 +139,11 @@ class TellingScherm : AppCompatActivity() {
     private var lastPartialUiUpdateMs: Long = 0L
     private val PARTIAL_UI_DEBOUNCE_MS = 200L
 
+    private val RE_ASR_PREFIX = Regex("(?i)^\\s*asr:\\s*")
+    private val RE_TRIM_RAW_NUMBER = Regex("\\s+\\d+(?:[.,]\\d+)?\$")
+    private val RE_TRAILING_NUMBER = Regex("^(.*?)(?:\\s+(\\d+)(?:[.,]\\d+)?)?\$")
+    private val RE_PLUS_NUMBER = Regex("\\+?(\\d+)")
+
     // Cached MatchContext to avoid rebuilding on every parse
     @Volatile
     private var cachedMatchContext: MatchContext? = null
@@ -245,7 +250,22 @@ class TellingScherm : AppCompatActivity() {
         try {
             viewModel = ViewModelProvider(this).get(TellingViewModel::class.java)
             // Observe VM lists and keep adapters in sync (this ensures rotation preserves UI)
-            viewModel.tiles.observe(this) { tilesAdapter.submitList(it) }
+            viewModel.tiles.observe(this) { tiles ->
+                // update adapter (observer will call submitList callback if configured)
+                tilesAdapter.submitList(tiles)
+
+                // Rebuild cachedMatchContext asynchronously on Default to avoid blocking parse path
+                lifecycleScope.launch(Dispatchers.Default) {
+                    try {
+                        val t0 = System.currentTimeMillis()
+                        val mc = buildMatchContext()
+                        cachedMatchContext = mc
+                        Log.d(TAG, "cachedMatchContext refreshed after tiles change (ms=${System.currentTimeMillis() - t0})")
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "Failed rebuilding cachedMatchContext after tiles change: ${ex.message}", ex)
+                    }
+                }
+            }
             viewModel.partials.observe(this) { list ->
                 partialsAdapter.submitList(list) {
                     if (list.isNotEmpty()) {
@@ -861,9 +881,9 @@ class TellingScherm : AppCompatActivity() {
 
         val now = System.currentTimeMillis() / 1000L
         val cleaned = run {
-            var m = msgIn.replace(Regex("(?i)^\\s*asr:\\s*"), "")
+            var m = msgIn.replace(RE_ASR_PREFIX, "")
             if (bron == "raw") {
-                m = m.replace(Regex("\\s+\\d+(?:[.,]\\d+)?$"), "")
+                m = m.replace(RE_TRIM_RAW_NUMBER, "")
             }
             m.trim()
         }
@@ -873,39 +893,49 @@ class TellingScherm : AppCompatActivity() {
         lifecycleScope.launch {
             val newList = withContext(Dispatchers.Default) {
                 if (bron == "final") {
-                    val current = finalsAdapter.currentList
+                    val current = if (::viewModel.isInitialized) viewModel.finals.value.orEmpty() else finalsAdapter.currentList
                     val list = ArrayList(current)
                     list.add(newRow)
                     if (list.size > MAX_LOG_ROWS) {
-                        val drop = list.size - MAX_LOG_ROWS
-                        repeat(drop) { list.removeAt(0) }
+                        repeat(list.size - MAX_LOG_ROWS) { list.removeAt(0) }
                     }
                     list
                 } else {
-                    val current = partialsAdapter.currentList
+                    val current = if (::viewModel.isInitialized) viewModel.partials.value.orEmpty() else partialsAdapter.currentList
                     val list = ArrayList(current)
                     list.add(newRow)
                     if (list.size > MAX_LOG_ROWS) {
-                        val drop = list.size - MAX_LOG_ROWS
-                        repeat(drop) { list.removeAt(0) }
+                        repeat(list.size - MAX_LOG_ROWS) { list.removeAt(0) }
                     }
                     list
                 }
             }
 
             withContext(Dispatchers.Main) {
-                if (bron == "final") {
-                    finalsAdapter.submitList(newList) {
-                        binding.recyclerViewSpeechFinals.scrollToPosition(newList.size - 1)
+                if (::viewModel.isInitialized) {
+                    // UPDATE VIEWMODEL ONLY — observers will update adapters once.
+                    if (bron == "final") {
+                        viewModel.setFinals(newList)
+                        // remove 'partial' rows from partials (keep non-partial logs)
+                        val preserved = viewModel.partials.value?.filter { it.bron != "partial" }.orEmpty()
+                        viewModel.setPartials(preserved)
+                    } else {
+                        viewModel.setPartials(newList)
                     }
                 } else {
-                    partialsAdapter.submitList(newList) {
-                        binding.recyclerViewSpeechPartials.scrollToPosition(newList.size - 1)
+                    // Fallback: no ViewModel — update adapter directly (legacy behavior)
+                    if (bron == "final") {
+                        finalsAdapter.submitList(newList) {
+                            binding.recyclerViewSpeechFinals.scrollToPosition(newList.size - 1)
+                        }
+                        // clear partials from UI
+                        val preserved = partialsAdapter.currentList.filter { it.bron != "partial" }
+                        partialsAdapter.submitList(preserved)
+                    } else {
+                        partialsAdapter.submitList(newList) {
+                            binding.recyclerViewSpeechPartials.scrollToPosition(newList.size - 1)
+                        }
                     }
-                }
-                // Mirror to ViewModel if present
-                if (::viewModel.isInitialized) {
-                    if (bron == "final") viewModel.setFinals(newList) else viewModel.setPartials(newList)
                 }
             }
         }
@@ -947,9 +977,9 @@ class TellingScherm : AppCompatActivity() {
         // Ignore empty partials (common at start of capture)
         if (cleanedRaw.isBlank()) return
 
-        // Parse name and count from raw hypothesis
+        // Parse name and count from raw hypothesis — use precompiled regex to avoid allocations
         val (nameOnly, cnt) = run {
-            val m = Regex("""^(.*?)(?:\s+(\d+)(?:[.,]\d+)?)?$""").find(cleanedRaw)
+            val m = RE_TRAILING_NUMBER.find(cleanedRaw)
             if (m != null) {
                 val name = m.groups[1]?.value?.trim().orEmpty()
                 val c = m.groups[2]?.value?.toIntOrNull() ?: 0
@@ -964,76 +994,60 @@ class TellingScherm : AppCompatActivity() {
 
         lifecycleScope.launch {
             val newList = withContext(Dispatchers.Default) {
-                val current = partialsAdapter.currentList
-                // Remove existing partial entries
+                val current = if (::viewModel.isInitialized) viewModel.partials.value.orEmpty() else partialsAdapter.currentList
                 val filtered = current.filter { it.bron != "partial" }.toMutableList()
-
-                // If previous partial existed and text identical (display), only update timestamp by adding new row
-                val existingPartialIndex = current.indexOfFirst { it.bron == "partial" }
                 val now = System.currentTimeMillis() / 1000L
-                val newRow = SpeechLogRow(ts = now, tekst = display, bron = "partial")
-
-                if (existingPartialIndex != -1) {
-                    filtered.add(newRow)
-                } else {
-                    filtered.add(newRow)
-                }
-
-                if (filtered.size > MAX_LOG_ROWS) {
-                    val drop = filtered.size - MAX_LOG_ROWS
-                    repeat(drop) { filtered.removeAt(0) }
-                }
+                filtered.add(SpeechLogRow(ts = now, tekst = display, bron = "partial"))
+                if (filtered.size > MAX_LOG_ROWS) repeat(filtered.size - MAX_LOG_ROWS) { filtered.removeAt(0) }
                 filtered
             }
+
             withContext(Dispatchers.Main) {
-                partialsAdapter.submitList(newList) {
-                    binding.recyclerViewSpeechPartials.scrollToPosition(newList.size - 1)
+                if (::viewModel.isInitialized) {
+                    viewModel.setPartials(newList)
+                } else {
+                    partialsAdapter.submitList(newList) {
+                        binding.recyclerViewSpeechPartials.scrollToPosition(newList.size - 1)
+                    }
                 }
-                if (::viewModel.isInitialized) viewModel.setPartials(newList)
             }
         }
     }
 
+
     // Append a final log entry (bron = "final")
     // Also remove any existing partials so final doesn't sit next to a stale partial.
+    // Vervang volledige addFinalLog(...) functie door onderstaande versie.
+// Ongeveer vervangt: functie die begon rond regel ~997
+
     private fun addFinalLog(text: String) {
         val now = System.currentTimeMillis() / 1000L
         val newRow = SpeechLogRow(ts = now, tekst = text, bron = "final")
 
         lifecycleScope.launch {
             val updatedFinals = withContext(Dispatchers.Default) {
-                val currentFinals = finalsAdapter.currentList
-                val finalList = ArrayList(currentFinals)
+                val cur = if (::viewModel.isInitialized) viewModel.finals.value.orEmpty() else finalsAdapter.currentList
+                val finalList = ArrayList(cur)
                 finalList.add(newRow)
-                if (finalList.size > MAX_LOG_ROWS) {
-                    val drop = finalList.size - MAX_LOG_ROWS
-                    repeat(drop) { finalList.removeAt(0) }
-                }
+                if (finalList.size > MAX_LOG_ROWS) repeat(finalList.size - MAX_LOG_ROWS) { finalList.removeAt(0) }
                 finalList
             }
-
             val updatedPartials = withContext(Dispatchers.Default) {
-                // Remove partials from partialsAdapter
-                val cur = partialsAdapter.currentList
+                val cur = if (::viewModel.isInitialized) viewModel.partials.value.orEmpty() else partialsAdapter.currentList
                 val filtered = cur.filter { it.bron != "partial" }.toMutableList()
-                if (filtered.size > MAX_LOG_ROWS) {
-                    val drop = filtered.size - MAX_LOG_ROWS
-                    repeat(drop) { filtered.removeAt(0) }
-                }
+                if (filtered.size > MAX_LOG_ROWS) repeat(filtered.size - MAX_LOG_ROWS) { filtered.removeAt(0) }
                 filtered
             }
 
             withContext(Dispatchers.Main) {
-                // Update both lists independently
-                finalsAdapter.submitList(updatedFinals) {
-                    binding.recyclerViewSpeechFinals.scrollToPosition(updatedFinals.size - 1)
-                }
-                partialsAdapter.submitList(updatedPartials)
-
-                // Mirror to ViewModel if present
                 if (::viewModel.isInitialized) {
                     viewModel.setFinals(updatedFinals)
                     viewModel.setPartials(updatedPartials)
+                } else {
+                    finalsAdapter.submitList(updatedFinals) {
+                        binding.recyclerViewSpeechFinals.scrollToPosition(updatedFinals.size - 1)
+                    }
+                    partialsAdapter.submitList(updatedPartials)
                 }
             }
         }
