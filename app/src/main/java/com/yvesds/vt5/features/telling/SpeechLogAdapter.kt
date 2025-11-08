@@ -79,10 +79,10 @@ class SpeechLogAdapter :
         val defaultColor = holder.vb.tvMsg.currentTextColor
         when (row.bron) {
             "final" -> holder.vb.tvMsg.setTextColor(Color.parseColor("#00C853"))   // bright green
-            "partial" -> holder.vb.tvMsg.setTextColor(Color.parseColor("#B0BEC5")) // subtle gray
-            "alias" -> holder.vb.tvMsg.setTextColor(Color.parseColor("#FFC107"))  // amber for alias items
-            "raw" -> holder.vb.tvMsg.setTextColor(defaultColor)
-            "systeem", "manueel" -> holder.vb.tvMsg.setTextColor(defaultColor)
+            "partial" -> holder.vb.tvMsg.setTextColor(Color.parseColor("#FFFFFF")) // subtle gray
+            "alias" -> holder.vb.tvMsg.setTextColor(Color.parseColor("#FFFFFF"))  // amber for alias items
+            "raw" -> holder.vb.tvMsg.setTextColor(Color.parseColor("#FFFFFF"))
+            "systeem", "manueel" -> holder.vb.tvMsg.setTextColor(Color.parseColor("#FFFFFF"))
             else -> holder.vb.tvMsg.setTextColor(defaultColor)
         }
     }

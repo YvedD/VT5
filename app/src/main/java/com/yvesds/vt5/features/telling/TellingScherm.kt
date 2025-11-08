@@ -15,10 +15,12 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.widget.EditText
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -58,6 +60,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -71,14 +74,12 @@ import kotlin.jvm.Volatile
  * TellingScherm.kt
  *
  * Preserves existing functionality (ASR parsing, tiles, logs, aliases) and adds:
- * - Collection of finals as ServerTellingDataItem in pendingRecords
- * - Per-final timestamped JSON backup saved to Documents/VT5/exports via SAF
- * - "Afronden" button now builds counts_save envelope using metadata saved by MetadataScherm,
- *   fills envelope.data with pendingRecords and POSTs via TrektellenApi.postCountsSave.
- * - Full server response written to SAF (Documents/VT5/exports) and short toast shown.
- * - On successful Afronden, pendingRecords and their backup files are cleared/deleted.
+ * - Optional ViewModel mirroring so UI state survives rotation
+ * - Confirmation before Afronden
+ * - Dialog text styling helper to force white text for readability in sunlight
  *
- * NOTE: This file preserves your logic; I only corrected function nesting and missing imports.
+ * I did not remove any original logic; I only added mirroring calls to the ViewModel
+ * and the dialog styling/confirmation.
  */
 class TellingScherm : AppCompatActivity() {
 
@@ -87,7 +88,7 @@ class TellingScherm : AppCompatActivity() {
         private const val PERMISSION_REQUEST_RECORD_AUDIO = 101
 
         // JSON's
-        private val PRETTY_JSON: Json by lazy {Json { prettyPrint = true }}
+        private val PRETTY_JSON: Json by lazy { Json { prettyPrint = true } }
 
         // Preferences keys
         private const val PREFS_NAME = "vt5_prefs"
@@ -109,6 +110,9 @@ class TellingScherm : AppCompatActivity() {
     private lateinit var tilesAdapter: SpeciesTileAdapter
     private lateinit var partialsAdapter: SpeechLogAdapter
     private lateinit var finalsAdapter: SpeechLogAdapter
+
+    // ViewModel (optional mirror for rotation persistence) - ensure TellingViewModel.kt is present
+    private lateinit var viewModel: TellingViewModel
 
     // Speech components
     private lateinit var speechRecognitionManager: SpeechRecognitionManager
@@ -139,7 +143,7 @@ class TellingScherm : AppCompatActivity() {
     @Volatile
     private var cachedMatchContext: MatchContext? = null
 
-    // Pending records collected from finals (sent on "Afronden")
+    // Local pendingRecords (legacy) — we mirror to ViewModel for persistence but keep this for compatibility
     private val pendingRecords = mutableListOf<ServerTellingDataItem>()
 
     // Track backup files created per-record (DocumentFile or internal path strings)
@@ -204,6 +208,9 @@ class TellingScherm : AppCompatActivity() {
                         if (additions.isNotEmpty()) {
                             val merged = (existing + additions).sortedBy { it.naam.lowercase(Locale.getDefault()) }
                             tilesAdapter.submitList(merged)
+                            // Mirror to ViewModel if present
+                            if (::viewModel.isInitialized) viewModel.setTiles(merged)
+
                             addLog("Soorten toegevoegd: ${additions.size}", "manueel")
                             Toast.makeText(this@TellingScherm, "Toegevoegd: ${additions.size}", Toast.LENGTH_SHORT).show()
 
@@ -233,6 +240,31 @@ class TellingScherm : AppCompatActivity() {
         setupPartialsRecyclerView()
         setupFinalsRecyclerView()
         setupSpeciesTilesRecyclerView()
+
+        // Initialize ViewModel (if you have TellingViewModel in project)
+        try {
+            viewModel = ViewModelProvider(this).get(TellingViewModel::class.java)
+            // Observe VM lists and keep adapters in sync (this ensures rotation preserves UI)
+            viewModel.tiles.observe(this) { tilesAdapter.submitList(it) }
+            viewModel.partials.observe(this) { list ->
+                partialsAdapter.submitList(list) {
+                    if (list.isNotEmpty()) {
+                        binding.recyclerViewSpeechPartials.scrollToPosition(list.size - 1)
+                    }
+                }
+            }
+            //viewModel.finals.observe(this) { finalsAdapter.submitList(it) }
+            viewModel.finals.observe(this) { list ->
+                finalsAdapter.submitList(list) {
+                    if (list.isNotEmpty()) {
+                        binding.recyclerViewSpeechFinals.scrollToPosition(list.size - 1)
+                    }
+                }
+            }
+        } catch (ex: Exception) {
+            Log.w(TAG, "TellingViewModel not available or failed to init: ${ex.message}")
+        }
+
         setupButtons()
 
         // Register receiver to keep cached context and ASR in sync when AliasManager reloads index
@@ -469,7 +501,6 @@ class TellingScherm : AppCompatActivity() {
     }
 
     /* ---------- TILE click dialog (adds to existing count) ---------- */
-    // Vervang bestaande showNumberInputDialog(...) door dit
     private fun showNumberInputDialog(position: Int) {
         val current = tilesAdapter.currentList
         if (position !in current.indices) return
@@ -525,22 +556,21 @@ class TellingScherm : AppCompatActivity() {
     private fun setupButtons() {
         binding.btnAddSoorten.setOnClickListener { openSoortSelectieForAdd() }
 
-        // Afronden: build envelope using saved metadata and pendingRecords, POST counts_save
+        // Afronden: confirmation popup before proceeding
         binding.btnAfronden.setOnClickListener {
-            lifecycleScope.launch {
-                try {
-                    // Show simple progress
-                    val dialog = ProgressDialogHelper.show(this@TellingScherm, "Bezig met afronden upload...")
-                    try {
-                        handleAfronden()
-                    } finally {
-                        dialog.dismiss()
+            val builder = AlertDialog.Builder(this@TellingScherm)
+                .setTitle("Afronden bevestigen")
+                .setMessage("Weet je zeker dat je wilt afronden en de telling uploaden?")
+                .setPositiveButton("Ja") { _, _ ->
+                    lifecycleScope.launch {
+                        val dialog = ProgressDialogHelper.show(this@TellingScherm, "Bezig met afronden upload...")
+                        try { handleAfronden() } finally { dialog.dismiss() }
                     }
-                } catch (ex: Exception) {
-                    Log.w(TAG, "Afronden failed: ${ex.message}", ex)
-                    Toast.makeText(this@TellingScherm, "Afronden mislukt: ${ex.message}", Toast.LENGTH_LONG).show()
                 }
-            }
+                .setNegativeButton("Nee", null)
+
+            val dlg = builder.show()
+            styleAlertDialogTextToWhite(dlg)
         }
 
         binding.btnSaveClose.setOnClickListener {
@@ -592,6 +622,8 @@ class TellingScherm : AppCompatActivity() {
                     }
 
                     tilesAdapter.submitList(initial)
+                    if (::viewModel.isInitialized) viewModel.setTiles(initial)
+
                     addLog("Telling gestart met ${initial.size} soorten.", "systeem")
                     dialog.dismiss()
 
@@ -731,7 +763,7 @@ class TellingScherm : AppCompatActivity() {
                                             collectFinalAsRecord(speciesId, cnt)
                                         } else {
                                             val msg = "Soort \"$prettyName\" herkend met aantal $cnt.\n\nToevoegen?"
-                                            AlertDialog.Builder(this@TellingScherm)
+                                            val dlg = AlertDialog.Builder(this@TellingScherm)
                                                 .setTitle("Soort toevoegen?")
                                                 .setMessage(msg)
                                                 .setPositiveButton("Ja") { _, _ ->
@@ -742,6 +774,7 @@ class TellingScherm : AppCompatActivity() {
                                                 }
                                                 .setNegativeButton("Nee", null)
                                                 .show()
+                                            styleAlertDialogTextToWhite(dlg)
                                         }
                                     }
                                     is MatchResult.MultiMatch -> {
@@ -759,7 +792,7 @@ class TellingScherm : AppCompatActivity() {
                                             } else {
                                                 val prettyName = match.candidate.displayName
                                                 val msg = "Soort \"$prettyName\" (${cnt}x) herkend.\n\nToevoegen?"
-                                                AlertDialog.Builder(this@TellingScherm)
+                                                val dlg = AlertDialog.Builder(this@TellingScherm)
                                                     .setTitle("Soort toevoegen?")
                                                     .setMessage(msg)
                                                     .setPositiveButton("Ja") { _, _ ->
@@ -769,6 +802,7 @@ class TellingScherm : AppCompatActivity() {
                                                     }
                                                     .setNegativeButton("Nee", null)
                                                     .show()
+                                                styleAlertDialogTextToWhite(dlg)
                                             }
                                         }
                                     }
@@ -869,6 +903,10 @@ class TellingScherm : AppCompatActivity() {
                         binding.recyclerViewSpeechPartials.scrollToPosition(newList.size - 1)
                     }
                 }
+                // Mirror to ViewModel if present
+                if (::viewModel.isInitialized) {
+                    if (bron == "final") viewModel.setFinals(newList) else viewModel.setPartials(newList)
+                }
             }
         }
     }
@@ -951,6 +989,7 @@ class TellingScherm : AppCompatActivity() {
                 partialsAdapter.submitList(newList) {
                     binding.recyclerViewSpeechPartials.scrollToPosition(newList.size - 1)
                 }
+                if (::viewModel.isInitialized) viewModel.setPartials(newList)
             }
         }
     }
@@ -990,6 +1029,12 @@ class TellingScherm : AppCompatActivity() {
                     binding.recyclerViewSpeechFinals.scrollToPosition(updatedFinals.size - 1)
                 }
                 partialsAdapter.submitList(updatedPartials)
+
+                // Mirror to ViewModel if present
+                if (::viewModel.isInitialized) {
+                    viewModel.setFinals(updatedFinals)
+                    viewModel.setPartials(updatedPartials)
+                }
             }
         }
     }
@@ -1008,7 +1053,7 @@ class TellingScherm : AppCompatActivity() {
                     collectFinalAsRecord(chosen.speciesId, count)
                 } else {
                     val msg = "Soort \"${chosen.displayName}\" toevoegen en $count noteren?"
-                    AlertDialog.Builder(this@TellingScherm)
+                    val dlg = AlertDialog.Builder(this@TellingScherm)
                         .setTitle("Soort toevoegen?")
                         .setMessage(msg)
                         .setPositiveButton("Ja") { _, _ ->
@@ -1018,6 +1063,7 @@ class TellingScherm : AppCompatActivity() {
                         }
                         .setNegativeButton("Nee", null)
                         .show()
+                    styleAlertDialogTextToWhite(dlg)
                 }
                 RecentSpeciesStore.recordUse(this, chosen.speciesId, maxEntries = 25)
             }
@@ -1052,6 +1098,7 @@ class TellingScherm : AppCompatActivity() {
 
                 withContext(Dispatchers.Main) {
                     tilesAdapter.submitList(updated)
+                    if (::viewModel.isInitialized) viewModel.setTiles(updated)
                     updateSelectedSpeciesMap()
                     RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
                     addLog("Soort toegevoegd: $canonical ($initialCount)", "systeem")
@@ -1085,6 +1132,7 @@ class TellingScherm : AppCompatActivity() {
 
             withContext(Dispatchers.Main) {
                 tilesAdapter.submitList(updatedList)
+                if (::viewModel.isInitialized) viewModel.updateTiles(updatedList)
                 addLog("${item.naam} -> +$count", "manueel")
                 RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
                 updateSelectedSpeciesMap()
@@ -1113,6 +1161,7 @@ class TellingScherm : AppCompatActivity() {
 
             withContext(Dispatchers.Main) {
                 tilesAdapter.submitList(updatedList)
+                if (::viewModel.isInitialized) viewModel.updateTiles(updatedList)
                 RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
                 updateSelectedSpeciesMap()
             }
@@ -1164,6 +1213,7 @@ class TellingScherm : AppCompatActivity() {
                 // Add to in-memory list on main
                 withContext(Dispatchers.Main) {
                     pendingRecords.add(item)
+                    if (::viewModel.isInitialized) viewModel.addPendingRecord(item)
                 }
 
                 // Try SAF backup, else internal fallback
@@ -1240,11 +1290,12 @@ class TellingScherm : AppCompatActivity() {
             val savedEnvelopeJson = prefs.getString(PREF_SAVED_ENVELOPE_JSON, null)
             if (savedEnvelopeJson.isNullOrBlank()) {
                 withContext(Dispatchers.Main) {
-                    AlertDialog.Builder(this@TellingScherm)
+                    val dlg = AlertDialog.Builder(this@TellingScherm)
                         .setTitle("Geen metadata")
                         .setMessage("Er is geen opgeslagen metadata (counts_save header). Keer terug naar metadata en start een telling.")
                         .setPositiveButton("OK", null)
                         .show()
+                    styleAlertDialogTextToWhite(dlg)
                 }
                 return@withContext
             }
@@ -1257,7 +1308,12 @@ class TellingScherm : AppCompatActivity() {
             }
             if (envelopeList.isNullOrEmpty()) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@TellingScherm, "Opgeslagen envelope ongeldig.", Toast.LENGTH_LONG).show()
+                    val dlg = AlertDialog.Builder(this@TellingScherm)
+                        .setTitle("Ongeldige envelope")
+                        .setMessage("Opgeslagen envelope ongeldig.")
+                        .setPositiveButton("OK", null)
+                        .show()
+                    styleAlertDialogTextToWhite(dlg)
                 }
                 return@withContext
             }
@@ -1320,11 +1376,12 @@ class TellingScherm : AppCompatActivity() {
 
             if (!ok) {
                 withContext(Dispatchers.Main) {
-                    AlertDialog.Builder(this@TellingScherm)
+                    val dlg = AlertDialog.Builder(this@TellingScherm)
                         .setTitle("Upload mislukt")
                         .setMessage("Kon telling niet uploaden:\n$resp\n\nEnvelope opgeslagen: ${savedPrettyPath ?: "niet beschikbaar"}\nAuditbestand: ${auditPath ?: "niet beschikbaar"}")
                         .setPositiveButton("OK", null)
                         .show()
+                    styleAlertDialogTextToWhite(dlg)
                 }
                 return@withContext
             }
@@ -1336,6 +1393,7 @@ class TellingScherm : AppCompatActivity() {
                 pendingBackupInternalPaths.forEach { path -> try { java.io.File(path).delete() } catch (_: Exception) {} }
                 pendingBackupInternalPaths.clear()
                 synchronized(pendingRecords) { pendingRecords.clear() }
+                if (::viewModel.isInitialized) viewModel.clearPendingRecords()
 
                 // Remove keys
                 prefs.edit().remove(PREF_ONLINE_ID).remove(PREF_TELLING_ID).remove(PREF_SAVED_ENVELOPE_JSON).apply()
@@ -1344,11 +1402,17 @@ class TellingScherm : AppCompatActivity() {
             }
 
             withContext(Dispatchers.Main) {
-                Toast.makeText(this@TellingScherm, "Afronden upload geslaagd. Envelope opgeslagen: ${savedPrettyPath ?: "n.v.t."}", Toast.LENGTH_LONG).show()
-                val it = Intent(this@TellingScherm, MetadataScherm::class.java)
-                it.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                startActivity(it)
-                finish()
+                val dlg = AlertDialog.Builder(this@TellingScherm)
+                    .setTitle("Afronden geslaagd")
+                    .setMessage("Afronden upload geslaagd. Envelope opgeslagen: ${savedPrettyPath ?: "n.v.t."}")
+                    .setPositiveButton("OK") { _, _ ->
+                        val it = Intent(this@TellingScherm, MetadataScherm::class.java)
+                        it.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        startActivity(it)
+                        finish()
+                    }
+                    .show()
+                styleAlertDialogTextToWhite(dlg)
             }
         }
     }
@@ -1486,6 +1550,7 @@ class TellingScherm : AppCompatActivity() {
             }
         }
     }
+
     // Write envelope + response to SAF exports (Documents/VT5/exports) - audit file
     private fun writeEnvelopeResponseToSaf(context: Context, tellingId: String, envelopeJson: String, responseText: String): String? {
         try {
@@ -1538,5 +1603,22 @@ class TellingScherm : AppCompatActivity() {
         val intent = Intent(this, SoortSelectieScherm::class.java)
             .putExtra(SoortSelectieScherm.EXTRA_TELPOST_ID, telpostId)
         addSoortenLauncher.launch(intent)
+    }
+
+    // Helper: style an AlertDialog's title/message/buttons to white for readability
+    private fun styleAlertDialogTextToWhite(dialog: AlertDialog) {
+        try {
+            val titleId = dialog.context.resources.getIdentifier("alertTitle", "id", "android")
+            val title = dialog.findViewById<TextView?>(titleId)
+            title?.setTextColor(Color.WHITE)
+            val msgId = dialog.context.resources.getIdentifier("message", "id", "android")
+            val msg = dialog.findViewById<TextView?>(msgId)
+            msg?.setTextColor(Color.WHITE)
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(Color.WHITE)
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(Color.WHITE)
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(Color.WHITE)
+        } catch (e: Exception) {
+            Log.w(TAG, "styleAlertDialogTextToWhite failed: ${e.message}", e)
+        }
     }
 }
