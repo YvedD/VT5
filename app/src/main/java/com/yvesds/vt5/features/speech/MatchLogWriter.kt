@@ -2,6 +2,7 @@ package com.yvesds.vt5.features.speech
 
 import android.content.Context
 import android.util.Log
+import com.yvesds.vt5.utils.RingBuffer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -15,27 +16,16 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicBoolean
+import androidx.core.content.edit
 
 /**
  * Lightweight background logger for parser match entries.
  *
- * Behaviour additions:
+ * Behaviour:
  * - Background writer with single consumer coroutine (idempotent start).
+ * - In-memory tail buffer (bounded) so callers can obtain the recent N log lines
+ *   without reading entire files (useful for SAF fallback rewrite).
  * - Periodical cleanup of internal "match_logs" folder: only keep files from the last 7 days.
- *   Cleanup runs at most once per calendar day (compares LocalDate) and the last-cleanup date
- *   + list of deleted files are persisted to SharedPreferences so they can be inspected.
- *
- * Usage:
- *  - MatchLogWriter.start(context)           // optional, safe to call multiple times
- *  - suspend MatchLogWriter.enqueue(line)    // suspending, respects backpressure
- *  - MatchLogWriter.enqueueFireAndForget(context, line) // non-suspending, may drop on full
- *
- * Notes:
- * - Cleanup uses the file lastModified timestamp and an age cutoff (now - 7 days).
- * - The preferences keys used:
- *     PREFS_NAME = "matchlog_prefs"
- *     KEY_LAST_CLEANUP_ISO = "matchlog_last_cleanup_iso"
- *     KEY_LAST_CLEANUP_DELETED = "matchlog_last_cleanup_deleted" (pipe-separated filenames)
  */
 object MatchLogWriter {
     private const val TAG = "MatchLogWriter"
@@ -57,12 +47,13 @@ object MatchLogWriter {
     // Keep N days (inclusive) of logs (last seven 24-hour windows)
     private const val KEEP_DAYS = 7L
 
+    // In-memory tail buffer size (lines kept for quick snapshot, used by SAF fallback logic)
+    private const val TAIL_SIZE = 1000
+    private val tailBuffer: RingBuffer<String> = RingBuffer(TAIL_SIZE, overwriteOldest = true)
+
     /**
      * Start the background writer if not already running.
      * Idempotent and cheap to call.
-     *
-     * This will also perform a best-effort cleanup of old match_logs once per calendar day
-     * (the cleanup itself runs on the IO dispatcher and will not block the caller).
      */
     fun start(context: Context) {
         if (!started.compareAndSet(false, true)) return
@@ -75,6 +66,9 @@ object MatchLogWriter {
                 // Run cleanup if needed before we start writing to today's file
                 try {
                     performCleanupIfNeeded(dir, context)
+                    // log last cleanup metadata for visibility
+                    val (lastDate, deleted) = getLastCleanupInfo(context)
+                    Log.d(TAG, "match_logs last cleanup: date=$lastDate deleted=${deleted.size}")
                 } catch (ex: Exception) {
                     Log.w(TAG, "match_logs cleanup failed: ${ex.message}", ex)
                 }
@@ -87,6 +81,8 @@ object MatchLogWriter {
                             writer.append(entry)
                             writer.newLine()
                             writer.flush()
+                            // Also maintain the in-memory bounded tail for quick snapshots
+                            tailBuffer.add(entry)
                         } catch (ex: Exception) {
                             Log.w(TAG, "Failed writing match log entry: ${ex.message}", ex)
                         }
@@ -102,11 +98,7 @@ object MatchLogWriter {
 
     /**
      * Suspend and enqueue a line. This will suspend when the channel is full (backpressure).
-     * Use this when you want guaranteed delivery (at the cost of suspension).
-     *
-     * Kept as part of the API even if currently unused in your codebase.
      */
-    @Suppress("unused")
     suspend fun enqueue(line: String) {
         channel.send(line)
     }
@@ -122,16 +114,15 @@ object MatchLogWriter {
         if (!res.isSuccess) {
             // Drop the entry, but log so we can spot persistent overload
             Log.w(TAG, "MatchLogWriter buffer full — dropping log line")
+        } else {
+            // also keep in tail buffer even if not yet written by writer (best-effort)
+            tailBuffer.add(line)
         }
     }
 
     /**
-     * Optional: call to shut down the writer and close channel (not strictly required).
-     * After calling stop(), start() will not auto-restart the writer unless you recreate the object or restart the process.
-     *
-     * Kept as part of the API even if currently unused; suppressed unused warning.
+     * Optional: call to shut down the writer and close channel.
      */
-    @Suppress("unused")
     fun stop() {
         runCatching {
             channel.close()
@@ -139,6 +130,16 @@ object MatchLogWriter {
             Log.w(TAG, "MatchLogWriter.stop() failed to close channel: ${it.message}", it)
         }
     }
+
+    /**
+     * Return a snapshot (oldest -> newest) of the in-memory tail buffer.
+     */
+    fun getTailSnapshot(): List<String> = tailBuffer.toList()
+
+    /**
+     * Return the tail as a single string with newline separators (convenience).
+     */
+    fun dumpTailAsString(): String = getTailSnapshot().joinToString("\n")
 
     // -------------------------
     // Cleanup helpers
@@ -156,7 +157,7 @@ object MatchLogWriter {
                 try {
                     val last = LocalDate.parse(lastIso)
                     today.isAfter(last)
-                } catch (ex: Exception) {
+                } catch (_: Exception) {
                     true
                 }
             }
@@ -191,10 +192,10 @@ object MatchLogWriter {
             }
 
             // Persist cleanup metadata: date + deleted filenames (pipe-separated)
-            prefs.edit()
-                .putString(KEY_LAST_CLEANUP_ISO, today.toString())
-                .putString(KEY_LAST_CLEANUP_DELETED, deleted.joinToString("|"))
-                .apply()
+            prefs.edit {
+                putString(KEY_LAST_CLEANUP_ISO, today.toString())
+                    .putString(KEY_LAST_CLEANUP_DELETED, deleted.joinToString("|"))
+            }
 
             Log.i(TAG, "match_logs cleanup completed: deleted=${deleted.size} files")
         } catch (ex: Exception) {

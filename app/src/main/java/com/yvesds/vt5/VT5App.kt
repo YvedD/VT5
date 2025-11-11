@@ -6,10 +6,14 @@ import android.content.SharedPreferences
 import android.util.Log
 import com.yvesds.vt5.features.serverdata.model.ServerDataCache
 import com.yvesds.vt5.features.speech.MatchLogWriter
+import com.yvesds.vt5.features.speech.AliasMatcher
+import com.yvesds.vt5.features.alias.AliasManager
+import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
@@ -42,6 +46,45 @@ class VT5App : Application() {
 
         // Preload data in de achtergrond - verhoogt app responsiviteit
         preloadDataAsync()
+
+        // Best-effort: preload alias indexes so first recognitions don't block on CBOR/SAN load.
+        // We deliberately split IO checks and CPU-bound work:
+        //  - small SAF existence checks run on IO
+        //  - heavy index building / CPU work runs on Default
+        appScope.launch {
+            try {
+                val saf = SaFStorageHelper(applicationContext)
+                // Quick IO check: is Documents/VT5 present? (run on IO)
+                val vt5Exists = withContext(Dispatchers.IO) { saf.getVt5DirIfExists() != null }
+
+                // Run index preloads on Default so CPU-bound work uses Default threads.
+                // Note: ensureLoaded / ensureIndexLoadedSuspend internally use appropriate dispatchers
+                // for their IO vs CPU phases; calling from Default ensures CPU phases run on Default.
+                withContext(Dispatchers.Default) {
+                    try {
+                        AliasMatcher.ensureLoaded(applicationContext, saf)
+                        Log.d(TAG, "AliasMatcher.ensureLoaded: background preload complete")
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "AliasMatcher.ensureLoaded failed (background): ${ex.message}", ex)
+                    }
+
+                    try {
+                        // AliasManager.ensureIndexLoadedSuspend does IO & CPU; calling from Default lets its CPU parts run there.
+                        AliasManager.ensureIndexLoadedSuspend(applicationContext, saf)
+                        Log.d(TAG, "AliasManager.ensureIndexLoadedSuspend: background preload complete")
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "AliasManager.ensureIndexLoadedSuspend failed (background): ${ex.message}", ex)
+                    }
+                }
+
+                // If vt5 wasn't present we still tried the safe preloads; nothing to block startup on.
+                if (!vt5Exists) {
+                    Log.d(TAG, "VT5 SAF root not present during preload; preloads attempted best-effort")
+                }
+            } catch (ex: Exception) {
+                Log.w(TAG, "Background alias index preload skipped: ${ex.message}", ex)
+            }
+        }
     }
 
     /**

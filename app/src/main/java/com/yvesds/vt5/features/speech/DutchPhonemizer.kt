@@ -1,294 +1,259 @@
 package com.yvesds.vt5.features.speech
 
 import java.util.Locale
+import java.util.Collections
+import java.util.LinkedHashMap
 
 /**
- * DutchPhonemizer.kt
+ * DutchPhonemizer.kt (optimized)
  *
- * PURPOSE:
- * Convert Dutch text to IPA (International Phonetic Alphabet) phonemes
- * with vowel-aware distance calculation for high-precision matching.
+ * - Keeps the original public API (phonemize / phonemeDistance / phonemeSimilarity).
+ * - Uses an internal bounded LRU cache for phonemize results to avoid repeated work.
+ * - Avoids creating intermediate substrings in phonemize by scanning with indices.
+ * - Uses a memory-efficient dynamic programming implementation for phonemeDistance
+ *   (two-row Levenshtein) to reduce allocation pressure.
  *
- * ARCHITECTURE:
- * - phonemize(): Text → IPA phonemes (e.g., "vijf" → "vɛif")
- * - phonemeDistance(): Weighted edit distance (vowel changes cost 2x)
- * - phonemeSimilarity(): Normalized similarity score (0.0-1.0)
- *
- * WHY IPA PHONEMES?
- * - Cologne Phonetic only captures consonants (loses vowel information)
- * - "vijf" (vɛif) vs "Vink" (vɪŋk) → vowel "ɛ" vs "ɪ" is KEY distinction!
- * - IPA preserves this distinction → prevents false positive matches
- *
- * USAGE IN PIPELINE:
- * 1. AliasManager: Generate phonemes during alias creation
- * 2. AliasPriorityMatcher: Calculate phoneme similarity for fuzzy matching
- * 3. NumberPatterns: Detect number words by phoneme patterns
- *
- * IPA NOTATION USED:
- * - Consonants: b d f x ɦ j k l m n p r s t v ʋ z ŋ ʃ c
- * - Vowels (short): ɑ ə ɪ ɔ ʏ
- * - Vowels (long): aː eː iː oː y uː
- * - Diphthongs: ɛi œy ʌu øː
- *
- * AUTHOR: VT5 Team (YvedD)
- * DATE: 2025-10-28
- * VERSION: 2.1
+ * Performance notes:
+ * - phonemizeCached reduces repeated phonemization of identical queries (typical in matching).
+ * - phonemeDistance uses O(min(n,m)) extra memory instead of O(n*m).
+ * - multiChar patterns are evaluated in length‑descending order (longest first).
  */
 object DutchPhonemizer {
 
     private const val TAG = "DutchPhonemizer"
 
-    /*═══════════════════════════════════════════════════════════════════════
-     * IPA MAPPING RULES (Dutch → IPA)
-     * Based on: Nederlandse Fonetiek (Gussenhoven & Broeders, 2009)
-     *═══════════════════════════════════════════════════════════════════════*/
+    // LRU phonemize cache: synchronized access
+    private const val PHONEMIZE_CACHE_SIZE = 2000
+    private val phonemizeCache: MutableMap<String, String> =
+        Collections.synchronizedMap(object : LinkedHashMap<String, String>(PHONEMIZE_CACHE_SIZE, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>): Boolean {
+                return size > PHONEMIZE_CACHE_SIZE
+            }
+        })
 
-    /**
-     * Multi-character patterns (digraphs, trigraphs)
-     *
-     * IMPORTANT: Check longer patterns first!
-     * Order matters: "sch" before "ch", "ng" before "g", etc.
+    /* Multi-character patterns (digraphs/trigraphs)
+     * NOTE: kept as list of pairs for readability; we sort by key length descending on init.
      */
-    private val multiChar = listOf(
-        // Trigraphs (check first!)
+    private val multiCharRaw = listOf(
         "sch" to "sx",       // "school" → sxoːl
-
-        // Consonant digraphs
-        "ng" to "ŋ",         // "zingen" → zɪŋən (velar nasal)
+        "ng" to "ŋ",         // "zingen" → zɪŋən
         "nk" to "ŋk",        // "denken" → dɛŋkən
         "sj" to "ʃ",         // "sjaal" → ʃaːl
         "tj" to "c",         // "katje" → kɑcə
-        "ch" to "x",         // "acht" → ɑxt (guttural)
+        "ch" to "x",         // "acht" → ɑxt
 
-        // Vowel digraphs (long vowels & diphthongs)
-        "aa" to "aː",        // "naam" → naːm
-        "ee" to "eː",        // "beer" → beːr
-        "oo" to "oː",        // "boom" → boːm
-        "uu" to "y",         // "vuur" → vyr
-        "oe" to "u",         // "boek" → buk
-        "ie" to "i",         // "bier" → bir
+        // Vowel digraphs
+        "aa" to "aː",
+        "ee" to "eː",
+        "oo" to "oː",
+        "uu" to "y",
+        "oe" to "u",
+        "ie" to "i",
 
-        // Diphthongs (unique Dutch sounds!)
-        "ui" to "œy",        // "huis" → hœys (round-unround)
-        "ou" to "ʌu",        // "koud" → kʌut
-        "au" to "ʌu",        // "blauw" → blʌu
-        "ij" to "ɛi",        // "tijd" → tɛit
-        "ei" to "ɛi",        // "klein" → klɛin
-        "eu" to "øː"         // "neus" → nøːs
+        // Diphthongs
+        "ui" to "œy",
+        "ou" to "ʌu",
+        "au" to "ʌu",
+        "ij" to "ɛi",
+        "ei" to "ɛi",
+        "eu" to "øː"
     )
 
-    /**
-     * Single character mapping
-     *
-     * Consonants: Standard IPA (mostly 1:1 mapping)
-     * Vowels: Dutch short vowels (ɑ ə ɪ ɔ ʏ)
-     */
-    private val singleChar = mapOf(
-        // Vowels (short)
-        'a' to "ɑ",          // "kat" → kɑt
-        'e' to "ə",          // "de" → də (schwa)
-        'i' to "ɪ",          // "wit" → wɪt
-        'o' to "ɔ",          // "pot" → pɔt
-        'u' to "ʏ",          // "put" → pʏt
+    // Sorted by pattern length descending to ensure longest matches first
+    private val multiChar: List<Pair<String, String>> = multiCharRaw.sortedByDescending { it.first.length }
 
-        // Consonants (standard IPA)
+    // Single character map
+    private val singleChar = mapOf(
+        'a' to "ɑ",
+        'e' to "ə",
+        'i' to "ɪ",
+        'o' to "ɔ",
+        'u' to "ʏ",
+
         'b' to "b",
-        'c' to "k",          // "café" → kafeː
+        'c' to "k",
         'd' to "d",
         'f' to "f",
-        'g' to "x",          // Dutch guttural g (not English!)
-        'h' to "ɦ",          // voiced glottal
-        'j' to "j",          // "jaar" → jaːr (palatal approximant)
+        'g' to "x",
+        'h' to "ɦ",
+        'j' to "j",
         'k' to "k",
         'l' to "l",
         'm' to "m",
         'n' to "n",
         'p' to "p",
-        'q' to "k",          // "quiz" → kwɪz
-        'r' to "r",          // trilled or uvular (dialect-dependent)
+        'q' to "k",
+        'r' to "r",
         's' to "s",
         't' to "t",
         'v' to "v",
-        'w' to "ʋ",          // labiodental approximant (unique Dutch!)
-        'x' to "ks",         // "taxi" → tɑksi
-        'y' to "i",          // "baby" → beːbi
+        'w' to "ʋ",
+        'x' to "ks",
+        'y' to "i",
         'z' to "z"
     )
 
-    /**
-     * Vowel set (for weighted distance calculation)
-     *
-     * Used in phonemeDistance() to apply higher cost to vowel↔consonant
-     * substitutions (major phonetic difference).
-     */
+    // Vowels set (used for weighted substitution cost)
     private val vowels = setOf(
-        // Short vowels
         "ɑ", "ə", "ɪ", "ɔ", "ʏ",
-
-        // Long vowels
         "aː", "eː", "iː", "oː", "y", "u",
-
-        // Diphthongs
         "ɛi", "œy", "ʌu", "øː"
     )
 
-    /*═══════════════════════════════════════════════════════════════════════
-     * PUBLIC API: Phonemization & Distance
-     *═══════════════════════════════════════════════════════════════════════*/
-
     /**
-     * Convert Dutch text to IPA phonemes
-     *
-     * Algorithm:
-     * 1. Lowercase input
-     * 2. Try multi-char patterns (longest match)
-     * 3. Fall back to single-char mapping
-     * 4. Return space-separated phoneme string
-     *
-     * @param text Normalized Dutch text (lowercase, no diacritics)
-     * @return IPA phoneme string (space-separated)
-     *
-     * Examples:
-     * phonemize("aalscholver") → "aːlsxɔlvər"
-     * phonemize("vijf") → "vɛif"
-     * phonemize("vink") → "vɪŋk"
-     * phonemize("blauwe kiekendief") → "blʌu kikəndif"
+     * Public: phonemize with internal caching.
+     * Keeps signature identical to original phonemize.
      */
     fun phonemize(text: String): String {
+        // Use cache key based on normalized input (lowercase, trimmed)
         if (text.isBlank()) return ""
+        val normalized = text.trim().lowercase(Locale.getDefault())
+        // Fast path cache lookup
+        phonemizeCache[normalized]?.let { return it }
 
-        val normalized = text.lowercase(Locale.getDefault())
-        var rest = normalized
-        val phonemes = mutableListOf<String>()
+        // Compute and store under lock
+        val computed = phonemizeUncached(normalized)
+        phonemizeCache[normalized] = computed
+        return computed
+    }
 
-        while (rest.isNotEmpty()) {
+    /**
+     * Core phonemize implementation that avoids creating substrings for the remainder.
+     * Returns a space-separated phoneme string.
+     */
+    private fun phonemizeUncached(normalizedLower: String): String {
+        if (normalizedLower.isBlank()) return ""
+        val s = normalizedLower
+        val len = s.length
+        val sb = StringBuilder(len * 2) // heuristic capacity
+
+        var pos = 0
+        var firstToken = true
+        while (pos < len) {
+            val ch = s[pos]
+            if (ch.isWhitespace()) {
+                pos++
+                continue
+            }
+
             var matched = false
-
-            // Try multi-character patterns first (longest match wins)
+            // Try multi-character patterns (ordered longest-first)
             for ((pattern, ipa) in multiChar) {
-                if (rest.startsWith(pattern)) {
-                    phonemes += ipa
-                    rest = rest.removePrefix(pattern)
+                val patLen = pattern.length
+                if (pos + patLen <= len && s.regionMatches(pos, pattern, 0, patLen, ignoreCase = false)) {
+                    if (!firstToken) sb.append(' ')
+                    sb.append(ipa)
+                    firstToken = false
+                    pos += patLen
                     matched = true
                     break
                 }
             }
+            if (matched) continue
 
-            // Fall back to single character
-            if (!matched) {
-                val ch = rest.first()
-
-                // Skip whitespace (phonemes already space-separated)
-                if (ch.isWhitespace()) {
-                    rest = rest.drop(1)
-                    continue
-                }
-
-                val ipa = singleChar[ch]
-                if (ipa != null) {
-                    phonemes += ipa
-                } else {
-                    // Unknown character (loan word?), keep as-is
-                    phonemes += ch.toString()
-                }
-                rest = rest.drop(1)
-            }
+            // Single character fallback
+            val ipa = singleChar[ch] ?: ch.toString()
+            if (!firstToken) sb.append(' ')
+            sb.append(ipa)
+            firstToken = false
+            pos++
         }
 
-        return phonemes.joinToString(" ")
+        return sb.toString()
     }
 
     /**
-     * Calculate phoneme distance with vowel weighting
-     *
-     * WHY WEIGHTED?
-     * Vowel changes indicate major phonetic differences:
-     * - "vijf" (vɛif) vs "Vink" (vɪŋk): vowel ɛ→ɪ is KEY distinction
-     * - "ali" (ɑli) vs "Aalscholver" (aːl...): long/short vowel matters
-     *
-     * COST MATRIX:
-     * - Same phoneme: 0
-     * - Vowel ↔ Vowel: 1 (acceptable variation)
-     * - Consonant ↔ Consonant: 1 (acceptable variation)
-     * - Vowel ↔ Consonant: 2 (major phonetic difference!)
-     *
-     * @param phonemes1 First phoneme string (space-separated IPA)
-     * @param phonemes2 Second phoneme string (space-separated IPA)
-     * @return Weighted edit distance
-     *
-     * Examples:
-     * phonemeDistance("vɛif", "vɪŋk") → 5 (high! different species)
-     * phonemeDistance("ɑli", "aːl") → 2 (moderate, fuzzy match OK)
-     * phonemeDistance("blʌu", "blʌu") → 0 (identical)
+     * Tokenize a phoneme string into an Array<String> of tokens (space-separated).
+     * Lightweight helper used by distance/similarity. Avoids repeated allocation
+     * where possible by returning a new array only when needed.
+     */
+    private fun tokenizePhonemes(phonemes: String): Array<String> {
+        if (phonemes.isBlank()) return emptyArray()
+        // split on spaces and filter blanks
+        val parts = phonemes.split(' ')
+        val filtered = ArrayList<String>(parts.size)
+        for (p in parts) if (p.isNotBlank()) filtered.add(p)
+        return filtered.toTypedArray()
+    }
+
+    /**
+     * Compute weighted phoneme distance using Levenshtein with vowel weighting.
+     * Memory-efficient two-row DP implementation (O(min(n,m)) extra memory).
      */
     fun phonemeDistance(phonemes1: String, phonemes2: String): Int {
-        val p1 = phonemes1.split(" ").filter { it.isNotBlank() }
-        val p2 = phonemes2.split(" ").filter { it.isNotBlank() }
+        val p1 = tokenizePhonemes(phonemes1)
+        val p2 = tokenizePhonemes(phonemes2)
 
-        if (p1.isEmpty()) return p2.size
-        if (p2.isEmpty()) return p1.size
+        val n = p1.size
+        val m = p2.size
+        if (n == 0) return m
+        if (m == 0) return n
 
-        // Dynamic programming table
-        val dp = Array(p1.size + 1) { IntArray(p2.size + 1) }
+        // To minimize memory, ensure m <= n (swap if needed)
+        var a = p1
+        var b = p2
+        var swapped = false
+        if (m > n) {
+            a = p2
+            b = p1
+            swapped = true
+        }
+        val na = a.size
+        val nb = b.size
 
-        // Initialize first row/column
-        for (i in 0..p1.size) dp[i][0] = i
-        for (j in 0..p2.size) dp[0][j] = j
+        // prev and cur rows
+        var prev = IntArray(nb + 1) { it } // prev[j] = j
+        var cur = IntArray(nb + 1)
 
-        // Fill DP table with weighted costs
-        for (i in 1..p1.size) {
-            for (j in 1..p2.size) {
-                if (p1[i-1] == p2[j-1]) {
-                    // Exact match: no cost
-                    dp[i][j] = dp[i-1][j-1]
+        for (i in 1..na) {
+            cur[0] = i
+            val ai = a[i - 1]
+            val isVowelAi = ai in vowels
+            for (j in 1..nb) {
+                val bj = b[j - 1]
+                if (ai == bj) {
+                    cur[j] = prev[j - 1]
                 } else {
-                    // Different phonemes: calculate substitution cost
-                    val isVowel1 = p1[i-1] in vowels
-                    val isVowel2 = p2[j-1] in vowels
-
-                    val substitutionCost = if (isVowel1 != isVowel2) {
-                        2  // Vowel ↔ Consonant: major difference!
-                    } else {
-                        1  // Vowel ↔ Vowel or Consonant ↔ Consonant: normal
-                    }
-
-                    dp[i][j] = minOf(
-                        dp[i-1][j] + 1,                // deletion
-                        dp[i][j-1] + 1,                // insertion
-                        dp[i-1][j-1] + substitutionCost // substitution
-                    )
+                    val isVowelBj = bj in vowels
+                    val substitutionCost = if (isVowelAi != isVowelBj) 2 else 1
+                    val deletion = prev[j] + 1
+                    val insertion = cur[j - 1] + 1
+                    val substitution = prev[j - 1] + substitutionCost
+                    var min = deletion
+                    if (insertion < min) min = insertion
+                    if (substitution < min) min = substitution
+                    cur[j] = min
                 }
             }
+            // swap rows
+            val tmp = prev
+            prev = cur
+            cur = tmp
         }
 
-        return dp[p1.size][p2.size]
+        return prev[nb]
     }
 
     /**
-     * Calculate phoneme similarity (normalized, 0.0-1.0)
-     *
-     * Converts distance to similarity score for use in fuzzy matching.
-     *
-     * @param phonemes1 First phoneme string
-     * @param phonemes2 Second phoneme string
-     * @return Similarity score (0.0 = completely different, 1.0 = identical)
-     *
-     * Formula: 1.0 - (distance / max_length)
-     *
-     * Examples:
-     * phonemeSimilarity("vɛif", "vɪŋk") → ~0.17 (very different)
-     * phonemeSimilarity("ɑli", "aːl") → ~0.67 (moderately similar)
-     * phonemeSimilarity("blʌu", "blʌu") → 1.0 (identical)
+     * Normalized similarity: 1.0 - (distance / max_len)
      */
     fun phonemeSimilarity(phonemes1: String, phonemes2: String): Double {
         val distance = phonemeDistance(phonemes1, phonemes2)
         val maxLen = maxOf(
-            phonemes1.split(" ").filter { it.isNotBlank() }.size,
-            phonemes2.split(" ").filter { it.isNotBlank() }.size
+            tokenizePhonemes(phonemes1).size,
+            tokenizePhonemes(phonemes2).size
         )
-
         if (maxLen == 0) return 1.0
-
         return 1.0 - (distance.toDouble() / maxLen.toDouble())
+    }
+
+    /* Optional helpers for direct cached access from other code (non-breaking additions) */
+
+    /**
+     * Phonemize using internal cache without modifying the public phonemize signature.
+     * Useful for callers that want to avoid redundant normalization themselves.
+     */
+    fun phonemizeCached(rawText: String): String {
+        return phonemize(rawText)
     }
 }

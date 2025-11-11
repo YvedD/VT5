@@ -5,12 +5,12 @@ import android.util.Log
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.features.alias.AliasIndex as RepoAliasIndex
 import com.yvesds.vt5.features.alias.AliasRecord
+import com.yvesds.vt5.utils.TextUtils
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.cbor.Cbor
-import kotlinx.serialization.json.Json
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
@@ -20,32 +20,21 @@ import kotlin.math.max
 /**
  * AliasMatcher (optimized)
  *
- * Improvements:
- *  - Loads/parses CBOR on Dispatchers.IO and builds heavy indexes on Dispatchers.Default.
- *  - Uses a single Deferred loader to avoid duplicate concurrent loads and to let callers await completion.
- *  - Builds maps off-main and atomically swaps them in when ready to avoid partially-populated state.
- *  - Hotpatch incremental updates avoid full-map copies when possible.
- *  - Defensive/gentle fallbacks and clearer logging.
+ * - Loads/parses CBOR on Dispatchers.IO and builds heavy indexes on Dispatchers.Default.
+ * - Uses a single Deferred loader to avoid duplicate concurrent loads and to let callers await completion.
+ * - Builds maps off-main and atomically swaps them in when ready to avoid partially-populated state.
+ * - Hotpatch incremental updates avoid full-map copies when possible.
+ * - Defensive/gentle fallbacks and clearer logging.
  *
- * IMPORTANT runtime behavior change (non-blocking lookup):
- *  - findExact(...) and findFuzzyCandidates(...) are intentionally non-blocking read-only lookups:
- *      - If the in-memory index is not yet loaded, these functions return quickly with an empty list
- *        instead of attempting to synchronously load the CBOR (which previously caused parse stalls).
- *      - A background loader may be triggered to start if not already running (best-effort),
- *        but callers should explicitly call ensureLoaded(...) at an appropriate time (e.g., app startup).
- *
- * Behavior:
- *  - First tries internal app cache file (context.filesDir/aliases_optimized.cbor.gz)
- *  - Fallbacks to SAF Documents/VT5/binaries/aliases_optimized.cbor.gz (copied/read once)
- *  - Subsequent calls will await an in-progress load instead of launching another
+ * Runtime behavior (non-blocking lookups):
+ * - findExact(...) and findFuzzyCandidates(...) are non-blocking read paths:
+ *   they return quickly with empty results if the in-memory index isn't loaded.
+ *   ensureLoaded(...) is the explicit suspending loader to call at app startup.
  */
-
 internal object AliasMatcher {
     private const val TAG = "AliasMatcher"
     private const val ALIASES_CBOR_GZ = "aliases_optimized.cbor.gz"
     private const val BINARIES = "binaries"
-
-    //private val json = Json { prettyPrint = false }
 
     // In-memory structures (volatile for quick visibility)
     @Volatile private var loadedIndex: RepoAliasIndex? = null
@@ -60,13 +49,12 @@ internal object AliasMatcher {
     private val loaderScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     @Volatile private var loadingDeferred: Deferred<Unit>? = null
 
+    // Reusable regex for tokenization
+    private val WHITESPACE = Regex("\\s+")
+
     /**
      * Ensure internal in-memory alias index is loaded and ready for matching.
      * Multiple concurrent callers will await the same background load.
-     *
-     * This is the explicit, suspending loader that callers may await when they want blocking guarantee
-     * that the index exists. Real-time parse paths should prefer the non-blocking findExact / findFuzzyCandidates
-     * which return empty results when the index is not yet loaded.
      */
     @OptIn(ExperimentalSerializationApi::class)
     suspend fun ensureLoaded(context: Context, saf: SaFStorageHelper) {
@@ -75,7 +63,6 @@ internal object AliasMatcher {
 
         // Ensure single loader is created
         val job = synchronized(this) {
-            // If already loading, reuse it
             loadingDeferred ?: loaderScope.async {
                 loadIndexInternal(context, saf)
             }.also { loadingDeferred = it }
@@ -84,7 +71,6 @@ internal object AliasMatcher {
         try {
             job.await()
         } finally {
-            // Clear the deferred if it's the same job (allow retries on next call)
             synchronized(this) {
                 if (loadingDeferred === job) loadingDeferred = null
             }
@@ -96,12 +82,9 @@ internal object AliasMatcher {
      */
     @OptIn(ExperimentalSerializationApi::class)
     private suspend fun loadIndexInternal(context: Context, saf: SaFStorageHelper) = withContext(Dispatchers.IO) {
-        // Quick double-check inside IO context
         if (aliasMap != null && phoneticCache != null) return@withContext
 
-        // Use lock to avoid duplicate SAF reads / races when fallback paths are used
         loadMutex.withLock {
-            // Re-check inside lock
             if (aliasMap != null && phoneticCache != null) return@withLock
 
             // 1) Try internal cache first (app-private)
@@ -114,9 +97,8 @@ internal object AliasMatcher {
                                 val bytes = gis.readBytes()
                                 if (bytes.isNotEmpty()) {
                                     val idx: RepoAliasIndex = Cbor.decodeFromByteArray(RepoAliasIndex.serializer(), bytes)
-                                    // Build maps off-main
                                     val maps = withContext(Dispatchers.Default) { buildIndexMaps(idx) }
-                                    // Swap in atomically
+                                    // Atomic swap
                                     aliasMap = maps.map
                                     phoneticCache = maps.phonCache
                                     firstCharBuckets = maps.buckets
@@ -129,7 +111,6 @@ internal object AliasMatcher {
                         }
                     }.onFailure {
                         Log.w(TAG, "ensureLoaded: failed loading internal cache: ${it.message}", it)
-                        // fallthrough to SAF fallback
                     }
                 }
             } catch (ex: Exception) {
@@ -154,7 +135,7 @@ internal object AliasMatcher {
                 return@withLock
             }
 
-            val bytes = kotlin.runCatching {
+            val bytes = runCatching {
                 context.contentResolver.openInputStream(cborDoc.uri)?.use { it.readBytes() }
             }.getOrNull()
 
@@ -174,7 +155,6 @@ internal object AliasMatcher {
             val idxFromCbor: RepoAliasIndex = Cbor.decodeFromByteArray(RepoAliasIndex.serializer(), ungz)
             val maps = withContext(Dispatchers.Default) { buildIndexMaps(idxFromCbor) }
 
-            // Atomically swap
             aliasMap = maps.map
             phoneticCache = maps.phonCache
             firstCharBuckets = maps.buckets
@@ -189,12 +169,10 @@ internal object AliasMatcher {
      */
     @OptIn(ExperimentalSerializationApi::class)
     suspend fun reloadIndex(context: Context, saf: SaFStorageHelper) {
-        // Cancel any background loader to start fresh
         val current = synchronized(this) { loadingDeferred }
         current?.cancelAndJoinSafe()
         synchronized(this) { loadingDeferred = null }
 
-        // Clear current maps
         loadedIndex = null
         aliasMap = null
         phoneticCache = null
@@ -202,7 +180,6 @@ internal object AliasMatcher {
         bloomFilter = null
         cborMissingWarned.set(false)
 
-        // Run a fresh load and await
         ensureLoaded(context, saf)
     }
 
@@ -212,15 +189,10 @@ internal object AliasMatcher {
      * NOTE: This function intentionally does NOT call ensureLoaded(...). If the index is not yet loaded,
      * it will return an empty list immediately (fast). If you need a blocking guarantee, call ensureLoaded(...)
      * before invoking this function (e.g. at app startup).
-     *
-     * Best-effort: if no loader is running, this will kick off a background loader (best-effort) so the index
-     * becomes available later without blocking the caller.
      */
     suspend fun findExact(aliasPhrase: String, context: Context, saf: SaFStorageHelper): List<AliasRecord> = withContext(Dispatchers.Default) {
-        // Quick-read snapshot of map — do not trigger synchronous loads here
         val mapSnapshot = aliasMap
         if (mapSnapshot == null) {
-            // Kick off background load (best-effort) if not already running
             synchronized(this@AliasMatcher) {
                 if (loadingDeferred == null) {
                     loadingDeferred = loaderScope.async { loadIndexInternal(context, saf) }
@@ -229,7 +201,7 @@ internal object AliasMatcher {
             return@withContext emptyList()
         }
 
-        val normKey = normalizeLowerNoDiacritics(aliasPhrase.trim())
+        val normKey = TextUtils.normalizeLowerNoDiacritics(aliasPhrase.trim())
         mapSnapshot[normKey]?.let { return@withContext it }
         val lowerKey = aliasPhrase.trim().lowercase()
         mapSnapshot[lowerKey] ?: emptyList()
@@ -253,7 +225,6 @@ internal object AliasMatcher {
         val buckets = firstCharBuckets
         val bloom = bloomFilter
         if (map == null || buckets == null || bloom == null) {
-            // ensure background load started (best-effort) and return quickly
             synchronized(this@AliasMatcher) {
                 if (loadingDeferred == null) {
                     loadingDeferred = loaderScope.async { loadIndexInternal(context, saf) }
@@ -265,8 +236,8 @@ internal object AliasMatcher {
         val q = phrase.trim().lowercase()
         if (q.isEmpty()) return@withContext emptyList()
 
-        // Pre-split tokens
-        val tokens = q.split("\\s+".toRegex()).filter { it.isNotBlank() && it.toIntOrNull() == null }
+        // Pre-split tokens using precompiled regex to avoid allocations in tight loops
+        val tokens = WHITESPACE.split(q).filter { it.isNotBlank() && it.toIntOrNull() == null }
 
         if (tokens.isNotEmpty()) {
             val anyTokenMatches = tokens.any { token -> token.hashCode().toLong() in bloom }
@@ -327,6 +298,7 @@ internal object AliasMatcher {
         Log.d(TAG, "findFuzzyCandidates: phrase='$q' shortlist=${shortlistList.size} scored=${scored.size} topN=$topN timeMs=${(t1 - t0) / 1_000_000}")
         return@withContext result
     }
+
     /**
      * Hot-patch: add a minimal AliasRecord in-memory so new alias is immediately visible.
      *
@@ -335,7 +307,7 @@ internal object AliasMatcher {
      */
     fun addAliasHotpatch(speciesId: String, aliasRaw: String, canonical: String? = null, tilename: String? = null) {
         try {
-            val norm = normalizeLowerNoDiacritics(aliasRaw)
+            val norm = TextUtils.normalizeLowerNoDiacritics(aliasRaw)
             if (norm.isBlank()) return
 
             val aliasLower = aliasRaw.trim().lowercase()
@@ -392,10 +364,6 @@ internal object AliasMatcher {
     // Internal helpers
     // ----------------------
 
-    /**
-     * Build index maps from AliasIndex (pure computation; safe to run on Dispatchers.Default).
-     * Returns a lightweight immutable container so caller can atomically swap references.
-     */
     private data class IndexMaps(
         val map: Map<String, List<AliasRecord>>,
         val phonCache: Map<String, String>,
@@ -473,14 +441,6 @@ internal object AliasMatcher {
             System.arraycopy(cur, 0, prev, 0, lb + 1)
         }
         return prev[lb]
-    }
-
-    private fun normalizeLowerNoDiacritics(input: String): String {
-        val lower = input.lowercase()
-        val decomposed = java.text.Normalizer.normalize(lower, java.text.Normalizer.Form.NFD)
-        val noDiacritics = decomposed.replace("\\p{Mn}+".toRegex(), "")
-        val cleaned = noDiacritics.replace("[^\\p{L}\\p{Nd}]+".toRegex(), " ").trim()
-        return cleaned.replace("\\s+".toRegex(), " ")
     }
 
     // ---- small utility ----

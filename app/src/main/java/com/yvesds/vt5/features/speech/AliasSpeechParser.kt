@@ -3,33 +3,34 @@ package com.yvesds.vt5.features.speech
 
 import android.content.Context
 import android.util.Log
-import android.widget.Toast
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
+import com.yvesds.vt5.utils.TextUtils
+import com.yvesds.vt5.utils.RingBuffer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.time.Instant
 import java.util.Locale
+import java.util.UUID
 
 /**
- * AliasSpeechParser (UPDATED)
+ * AliasSpeechParser (pending buffer + central TextUtils)
  *
- * - parseSpokenWithContext / parseSpokenWithHypotheses (N-best) as before.
- * - Fast-path exact lookup added: scans top N ASR hypotheses for normalized exact matches.
- * - Logging (writeMatchLog / writeLog) made robust and non-blocking via MatchLogWriter.
- * - Respects coroutine cancellation (ensureActive).
+ * - Uses TextUtils.normalizeLowerNoDiacritics / parseTrailingInteger for consistent behavior.
+ * - Keeps a bounded pending buffer for heavy scoring and a background worker to process it.
+ * - Avoids leaking private internal types on the public listener API.
  *
- * Note: relies on external model/data classes (MatchResult, ParseResult, ParseLogEntry, Candidate, etc.)
- * which must be defined elsewhere in the project as before.
+ * This is the same behaviour as before but with normalization centralized and fewer duplicated helpers.
  */
-
 class AliasSpeechParser(
     private val context: Context,
     private val saf: SaFStorageHelper
@@ -37,15 +38,10 @@ class AliasSpeechParser(
     companion object {
         private const val TAG = "AliasSpeechParser"
         private val json = Json { prettyPrint = true }
-        private val FILTER_WORDS = setOf("luisteren", "luisteren...", "luister")
-        private const val SAF_TAIL_LINES = 1000
 
-        // Fast-path configuration (user choice: threshold=0.99, scan top 3)
-        private const val FAST_ASR_CONF_THRESHOLD = 0.99  // site-accept threshold
-        private const val FAST_N_HYPOTHESES = 3          // scan top N hypotheses for fast-path
-
-        // Precompiled regexes (avoid reallocation)
-        private val RE_TRAILING_NUMBER = Regex("""^(.*?)(?:\s+(\d+)(?:[.,]\d+)?)?$""")
+        // Fast-path configuration
+        private const val FAST_ASR_CONF_THRESHOLD = 0.99
+        private const val FAST_N_HYPOTHESES = 3
     }
 
     // Background scope for non-blocking background work (SAF writes etc.)
@@ -60,7 +56,7 @@ class AliasSpeechParser(
         }
     }
 
-    // Serializable data classes for logging (fixes kotlinx.serialization crash)
+    // Serializable data classes for logging
     @Serializable
     data class MatchLogEntry(
         val timestampIso: String,
@@ -99,31 +95,111 @@ class AliasSpeechParser(
         val confidence: Float
     )
 
-    // normalization function matching PrecomputeAliasIndex.normalizeLowerNoDiacritics
-    private fun normalizeLowerNoDiacritics(input: String): String {
-        val lower = input.lowercase(Locale.getDefault())
-        val decomposed = java.text.Normalizer.normalize(lower, java.text.Normalizer.Form.NFD)
-        val noDiacritics = decomposed.replace("\\p{Mn}+".toRegex(), "")
-        val cleaned = noDiacritics.replace("[^\\p{L}\\p{Nd}]+".toRegex(), " ").trim()
-        return cleaned.replace("\\s+".toRegex(), " ")
+    // ---------------------------
+    // Pending buffer + worker (internal types)
+    // ---------------------------
+    private data class PendingAsr(
+        val id: String,
+        val text: String,
+        val confidence: Float,
+        val matchContext: MatchContext,
+        val partials: List<String>,
+        val attempts: Int = 0,
+        val timestampMs: Long = System.currentTimeMillis()
+    )
+
+    // Per-parser pending buffer (bounded). Capacity adjustable; default 8.
+    private val pendingBuffer = RingBuffer<PendingAsr>(capacity = 8, overwriteOldest = true)
+
+    @Volatile
+    private var pendingWorkerStarted = false
+
+    // Public listener uses simple signature to avoid leaking internal PendingAsr type.
+    private var pendingResultListener: ((id: String, result: MatchResult) -> Unit)? = null
+
+    /**
+     * Register a listener to receive results for pending items.
+     * Listener receives the pending item id and the MatchResult.
+     */
+    fun setPendingResultListener(listener: (id: String, result: MatchResult) -> Unit) {
+        pendingResultListener = listener
     }
 
-    private fun parseIntToken(token: String): Int? {
-        return token.toIntOrNull()
+    private fun onPendingMatchResult(item: PendingAsr, result: MatchResult) {
+        try {
+            pendingResultListener?.invoke(item.id, result)
+        } catch (ex: Exception) {
+            Log.w(TAG, "onPendingMatchResult listener failed: ${ex.message}", ex)
+        }
     }
+
+    private fun ensurePendingWorkerRunning() {
+        if (pendingWorkerStarted) return
+        pendingWorkerStarted = true
+        bgScope.launch {
+            try {
+                while (true) {
+                    ensureActive()
+                    val item = pendingBuffer.poll()
+                    if (item == null) {
+                        delay(50L)
+                        continue
+                    }
+
+                    try {
+                        val perItemTimeoutMs = 1200L
+                        val normalizedText = TextUtils.normalizeLowerNoDiacritics(item.text)
+                        val maybeResult = withTimeoutOrNull(perItemTimeoutMs) {
+                            AliasPriorityMatcher.match(normalizedText, item.matchContext, context, saf)
+                        }
+
+                        if (maybeResult == null) {
+                            Log.w(TAG, "Pending heavy match timed out for id=${item.id} text='${item.text}'")
+                            if (item.attempts < 1) {
+                                val retryItem = item.copy(attempts = item.attempts + 1)
+                                pendingBuffer.add(retryItem)
+                            } else {
+                                writeMatchLogNonBlocking(item.text, MatchResult.NoMatch(item.text, "pending_timed_out"), item.partials, asrHypotheses = listOf(item.text to item.confidence))
+                            }
+                            continue
+                        }
+
+                        val result = maybeResult
+
+                        writeMatchLogNonBlocking(item.text, result, item.partials, asrHypotheses = listOf(item.text to item.confidence))
+                        onPendingMatchResult(item, result)
+                    } catch (ex: CancellationException) {
+                        throw ex
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "Error processing pending item id=${item.id}: ${ex.message}", ex)
+                    }
+                }
+            } catch (ex: CancellationException) {
+                Log.i(TAG, "Pending worker cancelled")
+            } catch (ex: Exception) {
+                Log.w(TAG, "Pending worker failed: ${ex.message}", ex)
+            } finally {
+                pendingWorkerStarted = false
+            }
+        }
+    }
+
+    // ---------------------------
+    // End pending buffer + worker
+    // ---------------------------
 
     suspend fun parseSpokenWithContext(
         rawAsr: String,
         matchContext: MatchContext,
         partials: List<String> = emptyList()
-    ): MatchResult = withContext(Dispatchers.IO) {
+    ): MatchResult = withContext(Dispatchers.Default) {
         ensureActive()
         val t0 = System.currentTimeMillis()
 
         // Filter out "Luisteren..." system prompt
         val rawTrim = rawAsr.trim()
-        val rawLowerNoPunct = normalizeLowerNoDiacritics(rawTrim)
-        if (rawLowerNoPunct.isBlank() || FILTER_WORDS.contains(rawLowerNoPunct)) {
+        val rawLowerNoPunct = TextUtils.normalizeLowerNoDiacritics(rawTrim)
+        if (rawLowerNoPunct.isBlank() || TextUtils.isFilterWord(rawLowerNoPunct)) {
             Log.d(TAG, "parseSpokenWithContext ignored system prompt: '$rawAsr'")
             return@withContext MatchResult.NoMatch(rawAsr, "filtered-prompt")
         }
@@ -133,14 +209,20 @@ class AliasSpeechParser(
             val t1 = System.currentTimeMillis()
             Log.i(TAG, "parseSpokenWithContext finished: input='${rawAsr}' result=${result::class.simpleName} timeMs=${t1 - t0}")
 
-            // Write NDJSON log (no ASR hypotheses provided for single-hypothesis calls)
-            // Offload IO via background writer
-            writeMatchLogNonBlocking(rawAsr, result, partials, asrHypotheses = null)
+            val filteredPartials = partials.filter { p ->
+                val n = TextUtils.normalizeLowerNoDiacritics(p)
+                !TextUtils.FILTER_WORDS.contains(n)
+            }
 
+            writeMatchLogNonBlocking(rawAsr, result, filteredPartials, asrHypotheses = null)
             return@withContext result
         } catch (ex: Exception) {
             Log.w(TAG, "parseSpokenWithContext failed: ${ex.message}", ex)
-            writeMatchLogNonBlocking(rawAsr, MatchResult.NoMatch(rawAsr, "exception"), partials, asrHypotheses = null)
+            val filteredPartials = partials.filter { p ->
+                val n = TextUtils.normalizeLowerNoDiacritics(p)
+                !TextUtils.FILTER_WORDS.contains(n)
+            }
+            writeMatchLogNonBlocking(rawAsr, MatchResult.NoMatch(rawAsr, "exception"), filteredPartials, asrHypotheses = null)
             return@withContext MatchResult.NoMatch(rawAsr, "exception")
         }
     }
@@ -149,38 +231,37 @@ class AliasSpeechParser(
         hypotheses: List<Pair<String, Float>>,
         matchContext: MatchContext,
         partials: List<String> = emptyList(),
-        asrWeight: Double = 0.4 // weight of ASR confidence vs matcher score
-    ): MatchResult = withContext(Dispatchers.IO) {
+        asrWeight: Double = 0.4
+    ): MatchResult = withContext(Dispatchers.Default) {
         ensureActive()
         val t0 = System.currentTimeMillis()
         if (hypotheses.isEmpty()) return@withContext MatchResult.NoMatch("", "empty-hypotheses")
 
-        // Configuration: only run heavy matcher for top K hypotheses and add per-hypothesis timeout.
-        val HEAVY_HYP_COUNT = 3             // only run heavy matcher for top 3 hypotheses
-        val PER_HYP_TIMEOUT_MS = 800L       // ms timeout per heavy match
+        val HEAVY_HYP_COUNT = 3
+        val INLINE_HEAVY_TIMEOUT_MS = 300L
 
-        // Pre-normalize hypotheses: trim + lowercase once to avoid casing-driven slow paths
         val normalizedHyps = hypotheses.map { (text, conf) ->
             text.trim().lowercase(Locale.getDefault()) to conf
         }
 
-        // FAST-PATH: try inexpensive exact lookups on top N hypotheses to provide near-instant accepts.
+        val filteredPartials = partials.filter { p ->
+            val n = TextUtils.normalizeLowerNoDiacritics(p)
+            !TextUtils.FILTER_WORDS.contains(n)
+        }
+
+        // FAST-PATH
         for ((hyp, asrConfFloat) in normalizedHyps.take(FAST_N_HYPOTHESES)) {
             ensureActive()
             val raw = hyp
             if (raw.isEmpty()) continue
 
-            // extract trailing integer if present (e.g., "aalscholver 3")
-            val m = RE_TRAILING_NUMBER.find(raw)
-            val nameOnly = m?.groups?.get(1)?.value?.trim().orEmpty()
-            val extractedCount = m?.groups?.get(2)?.value?.toIntOrNull() ?: 0
-
-            val norm = normalizeLowerNoDiacritics(nameOnly)
+            val (nameOnly, extractedCount) = TextUtils.parseTrailingInteger(raw)
+            val norm = TextUtils.normalizeLowerNoDiacritics(nameOnly)
             if (norm.isBlank()) continue
 
             try {
                 val tFind0 = System.currentTimeMillis()
-                val records = AliasMatcher.findExact(norm, context, saf) // non-blocking read
+                val records = AliasMatcher.findExact(norm, context, saf)
                 val tFind1 = System.currentTimeMillis()
                 if (tFind1 - tFind0 > 100) {
                     Log.d(TAG, "findExact slow for '$norm' timeMs=${tFind1 - tFind0}")
@@ -188,24 +269,21 @@ class AliasSpeechParser(
 
                 if (records.isEmpty()) continue
 
-                // reduce to unique species ids
                 val speciesSet = records.map { it.speciesid }.toSet()
                 var chosenSid: String? = null
 
                 if (speciesSet.size == 1) {
                     chosenSid = speciesSet.first()
                 } else {
-                    // prefer any species that is currently in tiles
                     val inTiles = speciesSet.firstOrNull { it in matchContext.tilesSpeciesIds }
                     if (inTiles != null) chosenSid = inTiles
                 }
 
                 if (chosenSid == null) {
-                    // ambiguous, let heavy matcher handle it
                     continue
                 }
 
-                val amount = if (extractedCount > 0) extractedCount else 1
+                val amount = extractedCount ?: 1
                 val isInTiles = chosenSid in matchContext.tilesSpeciesIds
                 val isSiteAllowed = chosenSid in matchContext.siteAllowedIds
                 val asrConf = asrConfFloat.toDouble().coerceIn(0.0, 1.0)
@@ -220,61 +298,83 @@ class AliasSpeechParser(
                         source = if (isInTiles) "fast_tiles" else "fast_site"
                     )
                     val mr = MatchResult.AutoAccept(candidate, raw, "fastpath", amount)
-                    // Log the fastpath accept with full ASR hypotheses for telemetry (non-blocking)
-                    writeMatchLogNonBlocking(raw, mr, partials, asrHypotheses = hypotheses)
+                    writeMatchLogNonBlocking(raw, mr, filteredPartials, asrHypotheses = hypotheses)
                     Log.d(TAG, "FASTPATH accept: species=$chosenSid source=${mr.source} amount=$amount hyp='$raw' asrConf=$asrConf")
                     return@withContext mr
                 }
             } catch (ex: Exception) {
                 Log.w(TAG, "FASTPATH lookup error for '$raw': ${ex.message}", ex)
-                // on error, just continue to heavy path
             }
         }
 
-        // No fast-path hit — proceed with heavy matching but only for top HEAVY_HYP_COUNT hypotheses.
+        // Heavy path (non-blocking preference)
         var bestCombined = Double.NEGATIVE_INFINITY
         var bestResult: MatchResult = MatchResult.NoMatch(hypotheses.first().first, "none")
         var idx = 0
+        var enqueuedAny = false
 
         for ((hyp, asrConfFloat) in normalizedHyps.take(HEAVY_HYP_COUNT)) {
             ensureActive()
             val rawTrim = hyp
-            val normalized = normalizeLowerNoDiacritics(rawTrim)
+            val normalized = TextUtils.normalizeLowerNoDiacritics(rawTrim)
             if (normalized.isBlank()) {
                 idx++; continue
             }
 
             try {
-                // Per-hypothesis timeout to avoid one slow match blocking everything
-                val maybeMr = withTimeoutOrNull(PER_HYP_TIMEOUT_MS) {
+                val maybeMrInline = withTimeoutOrNull(INLINE_HEAVY_TIMEOUT_MS) {
                     AliasPriorityMatcher.match(normalized, matchContext, context, saf)
                 }
 
-                if (maybeMr == null) {
-                    Log.w(TAG, "AliasPriorityMatcher.match timed out for '$normalized' after ${PER_HYP_TIMEOUT_MS}ms")
-                    idx++; continue
-                }
-                val mr = maybeMr
+                if (maybeMrInline != null) {
+                    val mr = maybeMrInline
 
-                // If matcher strongly auto-accepts, return immediately
-                if (mr is MatchResult.AutoAccept || mr is MatchResult.MultiMatch) {
-                    writeMatchLogNonBlocking(rawTrim, mr, partials, asrHypotheses = hypotheses)
-                    return@withContext mr
-                }
+                    if (mr is MatchResult.AutoAccept || mr is MatchResult.MultiMatch) {
+                        writeMatchLogNonBlocking(rawTrim, mr, filteredPartials, asrHypotheses = hypotheses)
+                        return@withContext mr
+                    }
 
-                val matcherScore = when (mr) {
-                    is MatchResult.AutoAcceptAddPopup -> mr.candidate.score
-                    is MatchResult.SuggestionList -> mr.candidates.firstOrNull()?.score ?: 0.0
-                    is MatchResult.NoMatch -> 0.0
-                    else -> 0.0
-                }
+                    val matcherScore = when (mr) {
+                        is MatchResult.AutoAcceptAddPopup -> mr.candidate.score
+                        is MatchResult.SuggestionList -> mr.candidates.firstOrNull()?.score ?: 0.0
+                        is MatchResult.NoMatch -> 0.0
+                        is MatchResult.AutoAccept -> mr.candidate.score
+                        is MatchResult.MultiMatch -> mr.matches.firstOrNull()?.candidate?.score ?: 0.0
+                        else -> 0.0
+                    }
 
-                val asrConf = asrConfFloat.toDouble().coerceIn(0.0, 1.0)
-                val combined = asrWeight * asrConf + (1.0 - asrWeight) * matcherScore
+                    val asrConf = asrConfFloat.toDouble().coerceIn(0.0, 1.0)
+                    val combined = asrWeight * asrConf + (1.0 - asrWeight) * matcherScore
 
-                if (combined > bestCombined) {
-                    bestCombined = combined
-                    bestResult = mr
+                    if (combined > bestCombined) {
+                        bestCombined = combined
+                        bestResult = mr
+                    }
+                } else {
+                    val pending = PendingAsr(
+                        id = UUID.randomUUID().toString(),
+                        text = rawTrim,
+                        confidence = asrConfFloat,
+                        matchContext = matchContext,
+                        partials = filteredPartials
+                    )
+                    ensurePendingWorkerRunning()
+                    val added = pendingBuffer.add(pending)
+                    enqueuedAny = enqueuedAny || added
+                    if (!added) {
+                        val inlineFallback = withTimeoutOrNull(250L) {
+                            AliasPriorityMatcher.match(TextUtils.normalizeLowerNoDiacritics(pending.text), matchContext, context, saf)
+                        }
+                        if (inlineFallback != null) {
+                            val mr = inlineFallback
+                            writeMatchLogNonBlocking(pending.text, mr, pending.partials, asrHypotheses = listOf(pending.text to pending.confidence))
+                            return@withContext mr
+                        } else {
+                            Log.w(TAG, "Pending buffer full; dropped pending utterance id=${pending.id}")
+                        }
+                    } else {
+                        writeMatchLogNonBlocking(rawTrim, MatchResult.NoMatch(rawTrim, "queued"), filteredPartials, asrHypotheses = hypotheses)
+                    }
                 }
             } catch (ex: Exception) {
                 Log.w(TAG, "Error matching hypothesis #$idx '${hyp}': ${ex.message}", ex)
@@ -283,16 +383,13 @@ class AliasSpeechParser(
             idx++
         }
 
-        // If we haven't found anything promising from top heavy hypotheses, consider a light pass over remaining hyps:
         if (bestCombined == Double.NEGATIVE_INFINITY) {
-            for ((hyp, asrConfFloat) in normalizedHyps.drop(HEAVY_HYP_COUNT)) {
+            for ((hyp, _) in normalizedHyps.drop(HEAVY_HYP_COUNT)) {
                 ensureActive()
-                // quick, cheap checks only: maybe fast exact or very cheap fuzzy check via AliasMatcher.findExact
-                val quickNorm = normalizeLowerNoDiacritics(hyp)
+                val quickNorm = TextUtils.normalizeLowerNoDiacritics(hyp)
                 if (quickNorm.isBlank()) continue
                 val recs = AliasMatcher.findExact(quickNorm, context, saf)
                 if (recs.isNotEmpty()) {
-                    // prefer single result or tile-presence
                     val speciesSet = recs.map { it.speciesid }.toSet()
                     val chosen = when {
                         speciesSet.size == 1 -> speciesSet.first()
@@ -301,7 +398,7 @@ class AliasSpeechParser(
                     if (chosen != null) {
                         val candidate = Candidate(speciesId = chosen, displayName = matchContext.speciesById[chosen]?.first ?: hyp, score = 0.9, isInTiles = chosen in matchContext.tilesSpeciesIds, source = "quick_exact")
                         val mr = MatchResult.AutoAccept(candidate, hyp, "quick_exact", 1)
-                        writeMatchLogNonBlocking(hyp, mr, partials, asrHypotheses = hypotheses)
+                        writeMatchLogNonBlocking(hyp, mr, filteredPartials, asrHypotheses = hypotheses)
                         return@withContext mr
                     }
                 }
@@ -311,27 +408,23 @@ class AliasSpeechParser(
         val t1 = System.currentTimeMillis()
         Log.i(TAG, "parseSpokenWithHypotheses finished: bestHyp='${bestResult.hypothesis}' type=${bestResult::class.simpleName} timeMs=${t1 - t0}")
 
-        // Log chosen result including ASR N-best hypotheses (non-blocking)
         val firstHypText = hypotheses.firstOrNull()?.first ?: ""
-        writeMatchLogNonBlocking(firstHypText, bestResult, partials, asrHypotheses = hypotheses)
+        if (enqueuedAny && bestCombined == Double.NEGATIVE_INFINITY) {
+            writeMatchLogNonBlocking(firstHypText, MatchResult.NoMatch(firstHypText, "queued"), filteredPartials, asrHypotheses = hypotheses)
+            return@withContext MatchResult.NoMatch(firstHypText, "queued")
+        }
 
+        writeMatchLogNonBlocking(firstHypText, bestResult, filteredPartials, asrHypotheses = hypotheses)
         return@withContext bestResult
     }
 
-    /**
-     * Non-blocking match log writer:
-     * - Builds serializable entry (cheap)
-     * - Enqueues to MatchLogWriter for reliable internal file write (background)
-     * - Kicks off a best-effort SAF write on IO dispatcher without blocking the caller
-     */
     private fun writeMatchLogNonBlocking(
         rawInput: String,
         result: MatchResult,
-        partials: List<String>,
+        filteredPartials: List<String>,
         asrHypotheses: List<Pair<String, Float>>? = null
     ) {
         try {
-            // Build candidate log (cheap)
             val candidateLog = when (result) {
                 is MatchResult.AutoAccept -> CandidateLog(
                     speciesId = result.candidate.speciesId,
@@ -352,12 +445,11 @@ class AliasSpeechParser(
                     topScore = result.candidates.firstOrNull()?.score,
                     source = result.source
                 )
-                is MatchResult.MultiMatch -> null  // Use multiMatches field instead
+                is MatchResult.MultiMatch -> null
                 is MatchResult.NoMatch -> null
                 else -> null
             }
 
-            // Build multi-match log (if applicable)
             val multiMatchesLog = if (result is MatchResult.MultiMatch) {
                 result.matches.map { match ->
                     MultiMatchLog(
@@ -370,7 +462,6 @@ class AliasSpeechParser(
                 }
             } else null
 
-            // Build ASR hypotheses list (cheap map)
             val asrHyps = asrHypotheses?.map { (text, conf) -> AsrHypothesis(text, conf) }
 
             val entry = MatchLogEntry(
@@ -380,47 +471,40 @@ class AliasSpeechParser(
                 hypothesis = result.hypothesis,
                 candidate = candidateLog,
                 multiMatches = multiMatchesLog,
-                partials = partials.filter { p ->
-                    val n = normalizeLowerNoDiacritics(p)
-                    !FILTER_WORDS.contains(n)
-                },
+                partials = filteredPartials,
                 asr_hypotheses = asrHyps
             )
 
             val logLine = json.encodeToString(entry)
 
-            // 1) Enqueue internal background write (fast, non-blocking)
             MatchLogWriter.enqueueFireAndForget(context, logLine)
 
-            // 2) Best-effort SAF export in background (do not block caller)
             bgScope.launch {
                 try {
                     val date = Instant.now().toString().substring(0, 10).replace("-", "")
                     val filename = "match_log_$date.ndjson"
 
                     val vt5 = saf.getVt5DirIfExists()
-                    if (vt5 == null) {
-                        // No SAF root; nothing to do
-                        return@launch
-                    }
+                    if (vt5 == null) return@launch
 
                     val exports = vt5.findFile("exports")?.takeIf { it.isDirectory } ?: vt5.createDirectory("exports")
                     ?: return@launch
 
                     val file = exports.findFile(filename)
+                    val bytes = (logLine + "\n").toByteArray(Charsets.UTF_8)
+
                     if (file == null || !file.exists()) {
                         val newFile = exports.createFile("application/x-ndjson", filename) ?: return@launch
                         context.contentResolver.openOutputStream(newFile.uri, "w")?.use { os ->
-                            os.write((logLine + "\n").toByteArray(Charsets.UTF_8))
+                            os.write(bytes)
                             os.flush()
                         }
                         Log.d(TAG, "Match log written to SAF: ${newFile.uri}")
                     } else {
-                        // Try append
                         var appended = false
                         try {
                             context.contentResolver.openOutputStream(file.uri, "wa")?.use { os ->
-                                os.write((logLine + "\n").toByteArray(Charsets.UTF_8))
+                                os.write(bytes)
                                 os.flush()
                                 appended = true
                             }
@@ -430,15 +514,8 @@ class AliasSpeechParser(
 
                         if (!appended) {
                             try {
-                                // Fallback bounded rewrite
-                                val tailDeque = ArrayDeque<String>(SAF_TAIL_LINES)
-                                context.contentResolver.openInputStream(file.uri)?.bufferedReader()?.useLines { lines ->
-                                    for (ln in lines) {
-                                        tailDeque.add(ln)
-                                        if (tailDeque.size > SAF_TAIL_LINES) tailDeque.removeFirst()
-                                    }
-                                }
-                                val prefix = if (tailDeque.isNotEmpty()) tailDeque.joinToString("\n") + "\n" else ""
+                                val tailLines = MatchLogWriter.getTailSnapshot()
+                                val prefix = if (tailLines.isNotEmpty()) tailLines.joinToString("\n") + "\n" else ""
                                 val newContent = prefix + logLine + "\n"
 
                                 exports.findFile(filename)?.delete()
@@ -447,7 +524,7 @@ class AliasSpeechParser(
                                     os.write(newContent.toByteArray(Charsets.UTF_8))
                                     os.flush()
                                 }
-                                Log.d(TAG, "Match log rewritten to SAF (fallback)")
+                                Log.d(TAG, "Match log rewritten to SAF (in-memory tail)")
                             } catch (ex: Exception) {
                                 Log.w(TAG, "SAF match log fallback failed: ${ex.message}", ex)
                             }
@@ -459,81 +536,6 @@ class AliasSpeechParser(
             }
         } catch (ex: Exception) {
             Log.e(TAG, "writeMatchLogNonBlocking failed building/enqueueing log: ${ex.message}", ex)
-        }
-    }
-
-    /**
-     * Parsing log (ParseResult) — non-blocking write via MatchLogWriter + best-effort SAF write
-     */
-    fun writeLogNonBlocking(result: ParseResult, partials: List<String> = emptyList()) {
-        try {
-            val entry = ParseLogEntry(
-                timestampIso = Instant.now().toString(),
-                rawInput = result.rawInput,
-                parseResult = result,
-                partials = partials.filter { p ->
-                    val n = normalizeLowerNoDiacritics(p)
-                    !FILTER_WORDS.contains(n)
-                }
-            )
-            val logLine = json.encodeToString(entry)
-
-            // internal write
-            MatchLogWriter.enqueueFireAndForget(context, logLine)
-
-            // best-effort SAF write in background
-            bgScope.launch {
-                try {
-                    val date = Instant.now().toString().substring(0, 10).replace("-", "")
-                    val filename = "parsing_log_$date.ndjson"
-                    val vt5 = saf.getVt5DirIfExists() ?: return@launch
-                    val exports = vt5.findFile("exports")?.takeIf { it.isDirectory } ?: vt5.createDirectory("exports") ?: return@launch
-                    var file = exports.findFile(filename)
-                    if (file == null) {
-                        file = exports.createFile("application/x-ndjson", filename) ?: return@launch
-                        context.contentResolver.openOutputStream(file.uri, "w")?.use { os ->
-                            os.write((logLine + "\n").toByteArray(Charsets.UTF_8))
-                            os.flush()
-                        }
-                    } else {
-                        var appended = false
-                        try {
-                            context.contentResolver.openOutputStream(file.uri, "wa")?.use { os ->
-                                os.write((logLine + "\n").toByteArray(Charsets.UTF_8))
-                                os.flush()
-                                appended = true
-                            }
-                        } catch (ex: Exception) {
-                            Log.w(TAG, "SAF append for parsing_log failed: ${ex.message}")
-                        }
-                        if (!appended) {
-                            try {
-                                val tailDeque = ArrayDeque<String>(SAF_TAIL_LINES)
-                                context.contentResolver.openInputStream(file.uri)?.bufferedReader()?.useLines { lines ->
-                                    for (ln in lines) {
-                                        tailDeque.add(ln)
-                                        if (tailDeque.size > SAF_TAIL_LINES) tailDeque.removeFirst()
-                                    }
-                                }
-                                val prefix = if (tailDeque.isNotEmpty()) tailDeque.joinToString("\n") + "\n" else ""
-                                val newContent = prefix + logLine + "\n"
-                                exports.findFile(filename)?.delete()
-                                val recreated = exports.createFile("application/x-ndjson", filename) ?: return@launch
-                                context.contentResolver.openOutputStream(recreated.uri, "w")?.use { os ->
-                                    os.write(newContent.toByteArray(Charsets.UTF_8))
-                                    os.flush()
-                                }
-                            } catch (ex: Exception) {
-                                Log.w(TAG, "SAF rewrite for parsing_log failed: ${ex.message}", ex)
-                            }
-                        }
-                    }
-                } catch (ex: Exception) {
-                    Log.e(TAG, "Failed background parsing log SAF write: ${ex.message}", ex)
-                }
-            }
-        } catch (ex: Exception) {
-            Log.e(TAG, "Failed to write parse log (non-blocking): ${ex.message}", ex)
         }
     }
 }

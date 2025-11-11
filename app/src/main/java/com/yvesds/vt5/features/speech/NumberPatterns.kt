@@ -1,27 +1,15 @@
 package com.yvesds.vt5.features.speech
 
 import com.yvesds.vt5.features.alias.AliasRecord
+import com.yvesds.vt5.utils.TextUtils
 
 /**
  * NumberPatterns.kt
  *
  * Hard-coded Dutch number words (0-100) and fast phonetic/cologne filters.
- * Designed to:
- *  - parseNumberWord(word): Int?
- *  - isNumberWord(text): Boolean
- *  - isNumberCologne(cologne): Boolean
- *  - isNumberPhoneme(phonemes): Boolean
- *  - filterNumberCandidates(candidates): List<AliasRecord>
- *
- * This file intentionally contains robust mappings and tolerant phoneme checks
- * to reduce false positives where ASR outputs a number-word and fuzzy matching
- * could otherwise match a species alias (e.g., "vijf" -> "Vink").
- *
- * Author: VT5 Team (YvedD)
- * Date: 2025-10-28
- * Version: 2.1
+ * Provides robust parsing and tolerant phoneme checks to reduce false positives
+ * where ASR outputs a number-word and fuzzy matching could otherwise match a species alias.
  */
-
 object NumberPatterns {
 
     // -------------------------
@@ -54,14 +42,13 @@ object NumberPatterns {
         "dertig" to 30, "veertig" to 40, "vijftig" to 50, "zestig" to 60,
         "zeventig" to 70, "tachtig" to 80, "negentig" to 90, "honderd" to 100
     ) + (21..99).associate { i ->
-        // simple generative variants are not exhaustive; keep explicit entries for common forms
+        // include numeric strings as fallback keys ("21", "22", ...)
         i.toString() to i
     }
 
     // -------------------------------------------------
     // Layer 2: Cologne code fast-match patterns (set)
     // -------------------------------------------------
-    // These codes are approximate / common codes for written numbers (used as fast filter)
     private val numberCologneCodes: Set<String> = setOf(
         "65", "07", "06", "2", "27", "37", "35", "08", "086", "042", "064", "26",
         "26424", "47424", "37424", "35424", "08424", "042424", "064424", "06272"
@@ -70,29 +57,36 @@ object NumberPatterns {
     // -------------------------------------------------
     // Layer 3: IPA phoneme patterns (small snippets)
     // -------------------------------------------------
-    // Keep short snippet forms that capture the vowel or characteristic sequence
     private val numberPhonemePatterns: Set<String> = setOf(
-        "vɛif", "vɛif", // vijf
-        "eːn", "tweː", "driː", "viːr", "zɛs", "zeːvən", "ɑxt", "neːɣən", "tiːn",
+        "vɛif", "eːn", "tweː", "driː", "viːr", "zɛs", "zeːvən", "ɑxt", "neːɣən", "tiːn",
         "ɛlf", "twaːlf", "dərtiɣ", "veːrtiɣ", "vɛiftiɣ", "zɛstiɣ", "hɔndərt"
     )
 
     // PUBLIC API ----------------------------------------------------------------
 
     fun parseNumberWord(word: String): Int? {
-        val w = word.trim().lowercase()
-        // direct map
-        numberWords[w]?.let { return it }
-        // try remove punctuation
-        val cleaned = w.replace("[^\\p{L}\\p{Nd}]".toRegex(), "")
-        return numberWords[cleaned]
+        // Use centralized normalization so "één", punctuation, extra spaces etc. are treated consistently
+        val normalized = TextUtils.normalizeLowerNoDiacritics(word)
+        if (normalized.isBlank()) return null
+
+        // direct map lookup
+        numberWords[normalized]?.let { return it }
+
+        // handle bare digits possibly embedded in punctuation (e.g., "3," -> "3")
+        val digitsOnly = normalized.replace("[^0-9]".toRegex(), "")
+        if (digitsOnly.isNotBlank()) {
+            digitsOnly.toIntOrNull()?.let { return it }
+        }
+
+        return null
     }
 
     fun isNumberWord(text: String): Boolean {
-        val w = text.trim().lowercase()
-        if (numberWords.containsKey(w)) return true
-        val cleaned = w.replace("[^\\p{L}\\p{Nd}]".toRegex(), "")
-        return numberWords.containsKey(cleaned)
+        val normalized = TextUtils.normalizeLowerNoDiacritics(text)
+        if (normalized.isBlank()) return false
+        if (numberWords.containsKey(normalized)) return true
+        val digitsOnly = normalized.replace("[^0-9]".toRegex(), "")
+        return digitsOnly.isNotBlank() && digitsOnly.toIntOrNull() != null
     }
 
     fun isNumberCologne(cologne: String?): Boolean {
@@ -112,19 +106,25 @@ object NumberPatterns {
     }
 
     /**
+     * Predicate: is this AliasRecord likely a number (so we should ignore it for species matching)?
+     * Lightweight, avoids allocating lists; used in tight loops.
+     */
+    fun isNumberCandidate(rec: AliasRecord): Boolean {
+        // Check textual alias first (alias field is raw alias string)
+        if (isNumberWord(rec.alias)) return true
+        // cologne code
+        if (!rec.cologne.isNullOrBlank() && isNumberCologne(rec.cologne)) return true
+        // phoneme patterns
+        if (!rec.phonemes.isNullOrBlank() && isNumberPhoneme(rec.phonemes)) return true
+        return false
+    }
+
+    /**
      * Filter out candidate alias records that appear to be number words.
-     * We accept a list of AliasRecord and return filtered list.
+     * Kept for compatibility; internally uses isNumberCandidate.
      */
     fun filterNumberCandidates(candidates: List<AliasRecord>): List<AliasRecord> {
-        return candidates.filter { rec ->
-            // textual alias check
-            if (isNumberWord(rec.alias)) return@filter false
-            // cologne check
-            if (rec.cologne != null && isNumberCologne(rec.cologne)) return@filter false
-            // phoneme check
-            if (rec.phonemes != null && isNumberPhoneme(rec.phonemes)) return@filter false
-            true
-        }
+        return candidates.filter { rec -> !isNumberCandidate(rec) }
     }
 
     // Utility: Levenshtein (simple implementation)
