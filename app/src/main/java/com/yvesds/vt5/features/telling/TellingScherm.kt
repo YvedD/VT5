@@ -69,6 +69,7 @@ import androidx.documentfile.provider.DocumentFile
 import java.text.SimpleDateFormat
 import java.util.Date
 import kotlin.jvm.Volatile
+import androidx.core.content.edit
 
 /**
  * TellingScherm.kt
@@ -142,7 +143,7 @@ class TellingScherm : AppCompatActivity() {
     private val RE_ASR_PREFIX = Regex("(?i)^\\s*asr:\\s*")
     private val RE_TRIM_RAW_NUMBER = Regex("\\s+\\d+(?:[.,]\\d+)?\$")
     private val RE_TRAILING_NUMBER = Regex("^(.*?)(?:\\s+(\\d+)(?:[.,]\\d+)?)?\$")
-    private val RE_PLUS_NUMBER = Regex("\\+?(\\d+)")
+    //private val RE_PLUS_NUMBER = Regex("\\+?(\\d+)")
 
     // Cached MatchContext to avoid rebuilding on every parse
     @Volatile
@@ -1332,11 +1333,16 @@ class TellingScherm : AppCompatActivity() {
                 return@withContext
             }
 
+            // Inject saved onlineId (if present) into the envelope BEFORE building finalEnv/POST.
+            val envelopeWithOnline = applySavedOnlineIdToEnvelope(envelopeList)
+            // Persist the saved envelope (now containing onlineId) so prefs remains consistent.
+            persistSavedEnvelopeJson(envelopeWithOnline)
+
             val nowEpoch = (System.currentTimeMillis() / 1000L)
             val nowEpochStr = nowEpoch.toString()
             val nowFormatted = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
 
-            val baseEnv = envelopeList[0]
+            val baseEnv = envelopeWithOnline[0]
             val envWithTimes = baseEnv.copy(eindtijd = nowEpochStr, uploadtijdstip = nowFormatted)
 
             val recordsSnapshot = synchronized(pendingRecords) { ArrayList(pendingRecords) }
@@ -1400,6 +1406,28 @@ class TellingScherm : AppCompatActivity() {
                 return@withContext
             }
 
+            // On success: try to parse the onlineId the server returned and persist it back to prefs.
+            try {
+                val returnedOnlineId = parseOnlineIdFromResponse(resp)
+                if (!returnedOnlineId.isNullOrBlank()) {
+                    prefs.edit { putString(PREF_ONLINE_ID, returnedOnlineId) }
+
+                    // Update saved envelope JSON (ensure saved envelope reflects server-confirmed onlineId)
+                    try {
+                        val updated = envelopeWithOnline.toMutableList()
+                        if (updated.isNotEmpty()) {
+                            val first = updated[0].copy(onlineid = returnedOnlineId)
+                            updated[0] = first
+                            persistSavedEnvelopeJson(updated)
+                        }
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "Failed persisting envelope with returned onlineId: ${ex.message}", ex)
+                    }
+                }
+            } catch (ex: Exception) {
+                Log.w(TAG, "Parsing/handling returned onlineId failed: ${ex.message}", ex)
+            }
+
             // On success: cleanup and return to MetadataScherm
             try {
                 pendingBackupDocs.forEach { doc -> try { doc.delete() } catch (_: Exception) {} }
@@ -1409,8 +1437,10 @@ class TellingScherm : AppCompatActivity() {
                 synchronized(pendingRecords) { pendingRecords.clear() }
                 if (::viewModel.isInitialized) viewModel.clearPendingRecords()
 
-                // Remove keys
-                prefs.edit().remove(PREF_ONLINE_ID).remove(PREF_TELLING_ID).remove(PREF_SAVED_ENVELOPE_JSON).apply()
+                // Remove keys (we completed the telling)
+                prefs.edit {
+                    remove(PREF_ONLINE_ID).remove(PREF_TELLING_ID).remove(PREF_SAVED_ENVELOPE_JSON)
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "Cleanup after successful Afronden failed: ${e.message}", e)
             }
@@ -1469,6 +1499,38 @@ class TellingScherm : AppCompatActivity() {
     }
 
     /* ---------- Remaining helpers (unchanged) ---------- */
+    private fun applySavedOnlineIdToEnvelope(envelopeList: List<com.yvesds.vt5.net.ServerTellingEnvelope>): List<com.yvesds.vt5.net.ServerTellingEnvelope> {
+        try {
+            // read saved onlineId from the same prefs file used elsewhere in the activity
+            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val savedOnlineId = prefs.getString("pref_online_id", null) ?: prefs.getString("pref_onlineid", null) // tolerance for key variants
+            if (savedOnlineId.isNullOrBlank()) return envelopeList
+
+            // copy the list and replace the first envelope's onlineid field
+            val updated = envelopeList.toMutableList()
+            if (updated.isNotEmpty()) {
+                val first = updated[0]
+                // create a copy with the server online id filled in
+                val replaced = first.copy(onlineid = savedOnlineId)
+                updated[0] = replaced
+            }
+            return updated.toList()
+        } catch (ex: Exception) {
+            // on any error, fall back to original envelope (do not block the upload)
+            android.util.Log.w("TellingScherm", "applySavedOnlineIdToEnvelope failed: ${ex.message}", ex)
+            return envelopeList
+        }
+    }
+
+    private fun persistSavedEnvelopeJson(envelopeList: List<com.yvesds.vt5.net.ServerTellingEnvelope>) {
+        try {
+            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val jsonText = PRETTY_JSON.encodeToString(kotlinx.serialization.builtins.ListSerializer(com.yvesds.vt5.net.ServerTellingEnvelope.serializer()), envelopeList)
+            prefs.edit { putString(PREF_SAVED_ENVELOPE_JSON, jsonText) }
+        } catch (ex: Exception) {
+            Log.w("TellingScherm", "persistSavedEnvelopeJson failed: ${ex.message}", ex)
+        }
+    }
 
     // Parse a numeric count from string fallback to 1
     private fun extractCountFromText(text: String): Int {
@@ -1618,16 +1680,66 @@ class TellingScherm : AppCompatActivity() {
             .putExtra(SoortSelectieScherm.EXTRA_TELPOST_ID, telpostId)
         addSoortenLauncher.launch(intent)
     }
+    private fun parseOnlineIdFromResponse(resp: String): String? {
+        try {
+            if (resp.isBlank()) return null
 
-    // Helper: style an AlertDialog's title/message/buttons to white for readability
+            // 1) Try JSON object
+            try {
+                val trimmed = resp.trim()
+                if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+                    // Use org.json for flexible parsing of unknown shapes
+                    val jsonRoot = org.json.JSONTokener(trimmed).nextValue()
+                    when (jsonRoot) {
+                        is org.json.JSONObject -> {
+                            val jo = jsonRoot
+                            if (jo.has("onlineid")) return jo.get("onlineid").toString()
+                            if (jo.has("onlineId")) return jo.get("onlineId").toString()
+                            if (jo.has("online_id")) return jo.get("online_id").toString()
+                        }
+                        is org.json.JSONArray -> {
+                            val ja = jsonRoot
+                            if (ja.length() > 0) {
+                                val first = ja.optJSONObject(0)
+                                if (first != null) {
+                                    if (first.has("onlineid")) return first.get("onlineid").toString()
+                                    if (first.has("onlineId")) return first.get("onlineId").toString()
+                                    if (first.has("online_id")) return first.get("online_id").toString()
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // continue to regex fallback
+            }
+
+            // 2) Regex fallback: find digits following onlineid keyword
+            val re = Regex("""["']?(?:onlineid|onlineId|online_id)["']?\s*[:=]\s*["']?(\d+)["']?""", RegexOption.IGNORE_CASE)
+            val m = re.find(resp)
+            if (m != null) return m.groupValues[1]
+
+            // 3) Another fallback: any 5-10 digit number that looks like an id (risky; last resort)
+            val numRe = Regex("""\b(\d{4,12})\b""")
+            val m2 = numRe.find(resp)
+            if (m2 != null) return m2.groupValues[1]
+        } catch (ex: Exception) {
+            Log.w(TAG, "parseOnlineIdFromResponse failed: ${ex.message}", ex)
+        }
+        return null
+    }
+
     private fun styleAlertDialogTextToWhite(dialog: AlertDialog) {
         try {
-            val titleId = dialog.context.resources.getIdentifier("alertTitle", "id", "android")
-            val title = dialog.findViewById<TextView?>(titleId)
+            // The AlertDialog title view id is provided by AppCompat, not android.R.
+            val title = dialog.findViewById<TextView?>(androidx.appcompat.R.id.alertTitle)
             title?.setTextColor(Color.WHITE)
-            val msgId = dialog.context.resources.getIdentifier("message", "id", "android")
-            val msg = dialog.findViewById<TextView?>(msgId)
+
+            // The message id is platform-stable
+            val msg = dialog.findViewById<TextView?>(android.R.id.message)
             msg?.setTextColor(Color.WHITE)
+
+            // Buttons are only available after show(); caller already calls this after .show()
             dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(Color.WHITE)
             dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(Color.WHITE)
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(Color.WHITE)
