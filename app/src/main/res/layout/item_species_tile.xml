@@ -30,16 +30,16 @@
             android:ellipsize="end"
             android:maxLines="2"
             android:text="Soortnaam"
-            android:textColor="@color/vt5_light_blue"
-            android:textSize="12sp" />
+            android:textColor="@color/vt5_white"
+            android:textSize="16sp" />
 
         <TextView
             android:id="@+id/tvCount"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="0"
-            android:textColor="@color/vt5_primary"
-            android:textSize="14sp"
+            android:textColor="@color/vt5_green"
+            android:textSize="16sp"
             android:textStyle="bold" />
     </LinearLayout>
 </com.google.android.material.card.MaterialCardView>
