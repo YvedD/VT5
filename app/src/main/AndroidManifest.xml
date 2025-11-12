@@ -8,6 +8,10 @@
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
 
+    <!-- Declare microphone as required hardware feature (prevents install on devices without a mic).
+         Remove or set android:required="false" if you want to allow install on devices without mic. -->
+    <uses-feature android:name="android.hardware.microphone" android:required="true" />
+
     <application
         android:name=".VT5App"
         android:allowBackup="true"
@@ -17,42 +21,52 @@
         <!-- OpstartScherm -->
         <activity
             android:name=".hoofd.HoofdActiviteit"
-            android:exported="true">
+            android:exported="true"
+            android:screenOrientation="sensorPortrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
         <!-- InstallatieScherm -->
         <activity
             android:name=".features.opstart.ui.InstallatieScherm"
-            android:exported="false" />
+            android:exported="false"
+            android:screenOrientation="sensorPortrait" />
+
         <!-- Nieuw: MetadataScherm -->
         <activity
             android:name=".features.metadata.ui.MetadataScherm"
             android:exported="false"
-            android:windowSoftInputMode="stateHidden|adjustResize" />
+            android:windowSoftInputMode="stateHidden|adjustResize"
+            android:screenOrientation="sensorPortrait" />
 
         <!-- SoortSelectieScherm -->
         <activity
             android:name=".features.soort.ui.SoortSelectieScherm"
             android:exported="false"
-            android:windowSoftInputMode="stateHidden|adjustResize" />
+            android:windowSoftInputMode="stateHidden|adjustResize"
+            android:screenOrientation="sensorPortrait" />
+
         <!-- TellingScherm -->
         <activity
             android:name=".features.telling.TellingScherm"
             android:exported="false"
-            android:windowSoftInputMode="stateHidden|adjustResize" />
+            android:windowSoftInputMode="stateHidden|adjustResize"
+            android:screenOrientation="sensorPortrait" />
 
         <activity
             android:name="com.yvesds.vt5.features.telling.HuidigeStandScherm"
             android:exported="false"
-            android:windowSoftInputMode="stateHidden|adjustResize" />
+            android:windowSoftInputMode="stateHidden|adjustResize"
+            android:screenOrientation="sensorPortrait" />
 
         <!-- AnnotatieScherm (nieuw) -->
         <activity
             android:name=".features.telling.AnnotatieScherm"
             android:exported="false"
-            android:windowSoftInputMode="stateHidden|adjustResize" />
+            android:windowSoftInputMode="stateHidden|adjustResize"
+            android:screenOrientation="sensorPortrait" />
     </application>
 </manifest>

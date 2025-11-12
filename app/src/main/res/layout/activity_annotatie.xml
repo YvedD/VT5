@@ -1,45 +1,263 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:orientation="vertical"
-    android:padding="16dp"
+    android:id="@+id/annot_root"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp">
 
     <TextView
-        android:id="@+id/tvAnnotatieTitle"
-        android:layout_width="match_parent"
+        android:id="@+id/title"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:paddingBottom="8dp"
-        android:text="Details waarneming"
-        android:textStyle="bold" />
+        android:text="@string/annotatie_titel"
+        android:textStyle="bold"
+        android:textSize="20sp"
+        android:paddingBottom="8dp" />
 
-    <EditText
-        android:id="@+id/edtAnnotatie"
+    <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Voer annotatie in (niet persistent)"
-        android:minLines="3"
-        android:gravity="top"
-        android:inputType="textMultiLine" />
+        android:layout_height="0dp"
+        android:layout_weight="1">
 
+        <!-- row with five equal-width vertical columns -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <!-- Column: leeftijd -->
+            <LinearLayout
+                android:id="@+id/col_leeftijd_container"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:padding="6dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Leeftijd"
+                    android:textStyle="bold"
+                    android:paddingBottom="6dp" />
+
+                <LinearLayout
+                    android:id="@+id/col_leeftijd"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <!-- Pre-drawn placeholder toggle buttons (texts will be set from annotations.json) -->
+                    <androidx.appcompat.widget.AppCompatToggleButton
+                        android:id="@+id/btn_leeftijd_1"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content" />
+
+                    <androidx.appcompat.widget.AppCompatToggleButton
+                        android:id="@+id/btn_leeftijd_2"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content" />
+
+                    <androidx.appcompat.widget.AppCompatToggleButton
+                        android:id="@+id/btn_leeftijd_3"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content" />
+
+                    <androidx.appcompat.widget.AppCompatToggleButton
+                        android:id="@+id/btn_leeftijd_4"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content" />
+
+                    <androidx.appcompat.widget.AppCompatToggleButton
+                        android:id="@+id/btn_leeftijd_5"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content" />
+
+                    <androidx.appcompat.widget.AppCompatToggleButton
+                        android:id="@+id/btn_leeftijd_6"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content" />
+
+                    <androidx.appcompat.widget.AppCompatToggleButton
+                        android:id="@+id/btn_leeftijd_7"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content" />
+
+                    <androidx.appcompat.widget.AppCompatToggleButton
+                        android:id="@+id/btn_leeftijd_8"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content" />
+
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Column: geslacht -->
+            <LinearLayout
+                android:id="@+id/col_geslacht_container"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:padding="6dp">
+
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Geslacht" android:textStyle="bold" android:paddingBottom="6dp" />
+
+                <LinearLayout
+                    android:id="@+id/col_geslacht"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_geslacht_1" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_geslacht_2" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_geslacht_3" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_geslacht_4" android:layout_width="match_parent" android:layout_height="wrap_content" />
+
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Column: kleed -->
+            <LinearLayout
+                android:id="@+id/col_kleed_container"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:padding="6dp">
+
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Kleed" android:textStyle="bold" android:paddingBottom="6dp" />
+
+                <LinearLayout
+                    android:id="@+id/col_kleed"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_kleed_1" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_kleed_2" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_kleed_3" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_kleed_4" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_kleed_5" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_kleed_6" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_kleed_7" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_kleed_8" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Column: location -->
+            <LinearLayout
+                android:id="@+id/col_location_container"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:padding="6dp">
+
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Locatie" android:textStyle="bold" android:paddingBottom="6dp" />
+
+                <LinearLayout
+                    android:id="@+id/col_location"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_location_1" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_location_2" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_location_3" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_location_4" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_location_5" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_location_6" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Column: height -->
+            <LinearLayout
+                android:id="@+id/col_height_container"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical"
+                android:padding="6dp">
+
+                <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Hoogte" android:textStyle="bold" android:paddingBottom="6dp" />
+
+                <LinearLayout
+                    android:id="@+id/col_height"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical">
+
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_height_1" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_height_2" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_height_3" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_height_4" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_height_5" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_height_6" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_height_7" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                    <androidx.appcompat.widget.AppCompatToggleButton android:id="@+id/btn_height_8" android:layout_width="match_parent" android:layout_height="wrap_content" />
+                </LinearLayout>
+            </LinearLayout>
+
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- Checkboxes row -->
     <LinearLayout
-        android:layout_marginTop="16dp"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:gravity="end">
+        android:paddingTop="8dp"
+        android:gravity="start">
 
-        <Button
-            android:id="@+id/btnAnnotatieCancel"
+        <CheckBox
+            android:id="@+id/cb_zw"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Annuleren" />
+            android:text="ZW" />
 
-        <Button
-            android:id="@+id/btnAnnotatieOk"
+        <CheckBox
+            android:id="@+id/cb_no"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:text="OK" />
+            android:text="NO"
+            android:layout_marginStart="12dp" />
+
+        <CheckBox
+            android:id="@+id/cb_lokaal"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Lokaal"
+            android:layout_marginStart="12dp" />
+
+        <CheckBox
+            android:id="@+id/cb_markeren"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Markeren"
+            android:layout_marginStart="12dp" />
     </LinearLayout>
+
+    <!-- Buttons -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="end"
+        android:paddingTop="8dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btn_cancel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/annotatie_annuleren" />
+
+        <Button
+            android:id="@+id/btn_ok"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/annotatie_ok"
+            android:layout_marginStart="12dp" />
+    </LinearLayout>
+
 </LinearLayout>

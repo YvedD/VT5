@@ -16,6 +16,7 @@ import com.yvesds.vt5.core.secure.CredentialsStore
 import com.yvesds.vt5.core.ui.ProgressDialogHelper
 import com.yvesds.vt5.databinding.SchermInstallatieBinding
 import com.yvesds.vt5.features.alias.AliasManager
+import com.yvesds.vt5.features.annotation.AnnotationsManager
 import com.yvesds.vt5.features.opstart.usecases.ServerJsonDownloader
 import com.yvesds.vt5.features.opstart.usecases.TrektellenAuth
 import com.yvesds.vt5.features.serverdata.model.ServerDataCache
@@ -270,6 +271,28 @@ class InstallatieScherm : AppCompatActivity() {
                     language = "dutch",
                     versie = "1845"
                 )
+            }
+
+            // Ensure our hardcoded annotations.json is present in Documents/VT5/assets.
+            // If the file does not exist, create it from the hardcoded string below.
+            withContext(Dispatchers.IO) {
+                try {
+                    val created = writeAnnotationsJsonToSaf(vt5Dir)
+                    if (created != null) {
+                        Log.i(TAG, "annotations.json ensured in SAF: ${created.name}")
+                        // After creating/ensuring the file, also populate the in-memory cache for immediate use.
+                        try {
+                            AnnotationsManager.loadCache(this@InstallatieScherm)
+                            Log.i(TAG, "Annotations cache loaded")
+                        } catch (ex: Exception) {
+                            Log.w(TAG, "Failed loading annotations cache: ${ex.message}", ex)
+                        }
+                    } else {
+                        Log.w(TAG, "annotations.json not created (already present or error).")
+                    }
+                } catch (ex: Exception) {
+                    Log.w(TAG, "Failed ensuring annotations.json in SAF: ${ex.message}", ex)
+                }
             }
 
             // Invalidate cache
@@ -534,6 +557,103 @@ class InstallatieScherm : AppCompatActivity() {
                     .setPositiveButton("OK", null)
                     .show()
             }
+        }
+    }
+
+    /**
+     * Write a hardcoded annotations.json into Documents/VT5/assets/annotations.json via SAF.
+     * - If the file already exists, do nothing.
+     * - Returns the created/existing DocumentFile or null on failure.
+     */
+    private fun writeAnnotationsJsonToSaf(vt5Dir: DFile?): DFile? {
+        if (vt5Dir == null) return null
+        try {
+            // Ensure assets dir exists under Documents/VT5
+            val assetsDir = vt5Dir.findFile("assets")?.takeIf { it.isDirectory } ?: vt5Dir.createDirectory("assets")
+            ?: run {
+                Log.w(TAG, "Could not create/find assets directory in SAF")
+                return null
+            }
+
+            // If already present, skip creation
+            val existing = assetsDir.findFile("annotations.json")
+            if (existing != null) {
+                Log.d(TAG, "annotations.json already present in SAF, skipping creation")
+                return existing
+            }
+
+            // Create file and write the hardcoded JSON content
+            val created = assetsDir.createFile("application/json", "annotations.json") ?: run {
+                Log.w(TAG, "Failed to create annotations.json in SAF")
+                return null
+            }
+
+            // Hardcoded JSON content (exactly as provided by user)
+            val jsonText = """
+            {
+              "leeftijd": [
+                { "tekst": "adult",        "veld": "leeftijd", "waarde": "A" },
+                { "tekst": "juveniel",     "veld": "leeftijd", "waarde": "J" },
+                { "tekst": ">1kj",         "veld": "leeftijd", "waarde": "I" },
+                { "tekst": "1kj",          "veld": "leeftijd", "waarde": "1" },
+                { "tekst": "2kj",          "veld": "leeftijd", "waarde": "2" },
+                { "tekst": "3kj",          "veld": "leeftijd", "waarde": "3" },
+                { "tekst": "4kj",          "veld": "leeftijd", "waarde": "4" },
+                { "tekst": "niet juv.",    "veld": "leeftijd", "waarde": "Non-Juv" }
+              ],
+
+              "geslacht": [
+                { "tekst": "man",         "veld": "geslacht", "waarde": "M" },
+                { "tekst": "vrouw",       "veld": "geslacht", "waarde": "F" },
+                { "tekst": "vrouwkleed",  "veld": "geslacht", "waarde": "FC" }
+              ],
+
+              "kleed": [
+                { "tekst": "zomerkleed",  "veld": "kleed", "waarde": "B" },
+                { "tekst": "winterkleed", "veld": "kleed", "waarde": "W" },
+                { "tekst": "man",         "veld": "kleed", "waarde": "M" },
+                { "tekst": "vrouw",       "veld": "kleed", "waarde": "F" },
+                { "tekst": "licht",       "veld": "kleed", "waarde": "L" },
+                { "tekst": "donker",      "veld": "kleed", "waarde": "D" },
+                { "tekst": "eclips",      "veld": "kleed", "waarde": "E" },
+                { "tekst": "intermediar", "veld": "kleed", "waarde": "I" }
+              ],
+
+              "teltype": [
+                { "tekst": "Handteller",   "veld": "teltype_C", "waarde": "C" }
+              ],
+
+               "height": [
+                { "tekst": "<25m",    "veld": "location", "waarde": "<25m" },
+                { "tekst": "<50m",    "veld": "location", "waarde": "<50m" },
+                { "tekst": "50-100m", "veld": "location", "waarde": "50-100m" },
+                { "tekst": "100-200m","veld": "location", "waarde": "100-200m" },
+                { "tekst": ">200m",   "veld": "location", "waarde": ">200m" }
+              ],
+
+              "location": [
+                { "tekst": "zee",       "veld": "height", "waarde": "zee" },
+                { "tekst": "branding",  "veld": "height", "waarde": "branding" },
+                { "tekst": "duinen",    "veld": "height", "waarde": "duinen" },
+                { "tekst": "binnenkant","veld": "height", "waarde": "binnenkant" },
+                { "tekst": "polders",   "veld": "height", "waarde": "polders" },
+                { "tekst": "bos",       "veld": "height", "waarde": "bos" },
+                { "tekst": "over water","veld": "height", "waarde": "over water" }
+              ]
+            }
+            """.trimIndent()
+
+            // write via contentResolver
+            contentResolver.openOutputStream(created.uri, "w")?.use { out ->
+                out.write(jsonText.toByteArray(Charsets.UTF_8))
+                out.flush()
+            }
+
+            Log.i(TAG, "Wrote annotations.json to SAF: ${created.uri}")
+            return created
+        } catch (ex: Exception) {
+            Log.w(TAG, "writeAnnotationsJsonToSaf failed: ${ex.message}", ex)
+            return null
         }
     }
 }

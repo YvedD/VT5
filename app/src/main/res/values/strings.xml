@@ -32,6 +32,7 @@
     <string name="msg_credentials_opgeslagen">Credentials opgeslagen</string>
     <string name="dlg_titel_result">Resultaat</string>
     <string name="dlg_ok">OK</string>
+    <string name="dlg_cancel">Annuleren</string>
     <string name="dlg_disable_next">Pop-ups uitzetten (alleen voor login-check)</string>
 
     <string name="btn_download_jsons">Serverdata ophalen</string>
@@ -40,9 +41,16 @@
     <string name="btn_alias_precompute">Pré-compute aliassen</string>
     <string name="dlg_busy_titel">Bezig…</string>
 
-    <string name="annotatie_titel">Annotatie (placeholder)</string>
+    <!-- Annotatie strings -->
+    <string name="annotatie_titel">Annotatie</string>
     <string name="annotatie_ok">OK</string>
     <string name="annotatie_annuleren">Annuleren</string>
+
+    <string name="msg_loading_annotations">Annotaties laden…</string>
+    <string name="msg_annotations_not_available">Annotaties niet beschikbaar. Controleer Documents/VT5/assets/annotations.json of voer "Serverdata ophalen" uit.</string>
+    <string name="annotatie_none">(geen opties)</string>
+    <string name="annotatie_opmerkingen_label">Opmerkingen</string>
+    <string name="annotatie_opmerkingen_hint">Vrije tekst (optioneel)</string>
 
     <string name="btn_klaar">Klaar</string>
 </resources>

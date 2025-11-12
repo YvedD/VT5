@@ -20,6 +20,7 @@ object RecentSpeciesStore {
     private const val TAG = "RecentSpeciesStore"
     private const val PREFS = "recent_species_prefs"
     private const val KEY = "recent_species_list"
+    private const val DEFAULT_MAX_RECENTS = 40 // verander dit naar bv. 50
 
     // In-memory cache van recente soorten
     private var cachedRecents: List<Pair<String, Long>>? = null
@@ -30,7 +31,7 @@ object RecentSpeciesStore {
      * Registreer het gebruik van een soort-id. Standaard max 25 entries.
      * Promoot bestaande soort naar boven of voegt nieuwe toe.
      */
-    fun recordUse(context: Context, soortId: String, maxEntries: Int = 25) {
+    fun recordUse(context: Context, soortId: String, maxEntries: Int = DEFAULT_MAX_RECENTS) {
         val list = load(context).toMutableList()
         val now = System.currentTimeMillis()
         val without = list.filterNot { it.first == soortId }
