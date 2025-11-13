@@ -42,7 +42,7 @@
     <string name="dlg_busy_titel">Bezig…</string>
 
     <!-- Annotatie strings -->
-    <string name="annotatie_titel">Annotatie</string>
+    <string name="annotatie_titel">Details waarneming</string>
     <string name="annotatie_ok">OK</string>
     <string name="annotatie_annuleren">Annuleren</string>
 

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <!-- Zwarte achtergrond voor de default niet-geselecteerde knop -->
+    <solid android:color="@color/vt5_black" />
+    <!-- Lichte blauwe rand zodat de outline zichtbaar blijft -->
+    <stroke android:width="@dimen/vt5_btn_stroke" android:color="@color/vt5_light_blue" />
+    <corners android:radius="@dimen/vt5_btn_corner" />
+    <padding android:left="8dp" android:top="6dp" android:right="8dp" android:bottom="6dp" />
+</shape>

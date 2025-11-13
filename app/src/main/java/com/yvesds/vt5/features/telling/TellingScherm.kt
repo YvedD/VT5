@@ -58,6 +58,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.decodeFromString
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -228,6 +229,51 @@ class TellingScherm : AppCompatActivity() {
                     }
                 }
             }
+        }
+    }
+
+    // ActivityResultLauncher for AnnotatieScherm results; prefer new JSON payload, fallback to legacy fields
+    // Full ActivityResult callback (replace the existing annotationLauncher registration body).
+    // This is the function that processes the result Intent from AnnotatieScherm and calls the helper above.
+    // Full ActivityResult callback (replace existing annotationLauncher body with this).
+    private val annotationLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        if (res.resultCode != Activity.RESULT_OK) return@registerForActivityResult
+        val data = res.data ?: return@registerForActivityResult
+
+        val annotationsJson = data.getStringExtra(AnnotatieScherm.EXTRA_ANNOTATIONS_JSON)
+        val legacyText = data.getStringExtra(AnnotatieScherm.EXTRA_TEXT)
+        val legacyTs = data.getLongExtra(AnnotatieScherm.EXTRA_TS, 0L)
+        val rowPos = data.getIntExtra("extra_row_pos", -1)
+
+        if (!annotationsJson.isNullOrBlank()) {
+            try {
+                applyAnnotationsToPendingRecord(annotationsJson, rowTs = legacyTs, rowPos = rowPos)
+            } catch (ex: Exception) {
+                Log.w(TAG, "annotationLauncher: applyAnnotationsToPendingRecord failed: ${ex.message}", ex)
+            }
+        } else {
+            // Legacy fallback: if legacyText present, store as opmerkingen if we can match record by timestamp
+            if (!legacyText.isNullOrBlank() && legacyTs > 0L) {
+                try {
+                    val singleMapJson = kotlinx.serialization.json.Json.encodeToString(mapOf("opmerkingen" to legacyText))
+                    applyAnnotationsToPendingRecord(singleMapJson, rowTs = legacyTs, rowPos = rowPos)
+                } catch (ex: Exception) {
+                    Log.w(TAG, "annotationLauncher: legacy apply failed: ${ex.message}", ex)
+                }
+            }
+        }
+
+        // UI feedback: keep existing log behaviour
+        runCatching {
+            val summary = if (!annotationsJson.isNullOrBlank()) {
+                val map = kotlinx.serialization.json.Json.decodeFromString<Map<String, String?>>(annotationsJson)
+                map.entries.joinToString(", ") { (k, v) -> "$k=${v ?: ""}" }
+            } else {
+                legacyText ?: ""
+            }
+            if (summary.isNotBlank()) addLog("Annotatie toegepast: $summary", "annotatie")
+        }.onFailure { ex ->
+            Log.w(TAG, "annotationLauncher: summarizing annotation failed: ${ex.message}", ex)
         }
     }
 
@@ -467,7 +513,7 @@ class TellingScherm : AppCompatActivity() {
         finalsAdapter.showPartialsInRow = false
         binding.recyclerViewSpeechFinals.adapter = finalsAdapter
 
-        // Gesture handling for finals: open AnnotatieScherm on tap
+        // Gesture handling for finals: open AnnotatieScherm on tap (now for result)
         val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
             override fun onSingleTapUp(e: MotionEvent): Boolean {
                 val child = binding.recyclerViewSpeechFinals.findChildViewUnder(e.x, e.y)
@@ -476,12 +522,13 @@ class TellingScherm : AppCompatActivity() {
                     if (pos != RecyclerView.NO_POSITION) {
                         val row = finalsAdapter.currentList.getOrNull(pos) ?: return true
                         if (row.bron == "final") {
-                            // Start annotation screen (rudimentary)
+                            // Start AnnotatieScherm for result. Pass row position so we can update correct row later.
                             val intent = Intent(this@TellingScherm, AnnotatieScherm::class.java).apply {
-                                putExtra(AnnotatieScherm.EXTRA_TEXT, row.tekst)
+                                putExtra(AnnotatieScherm.EXTRA_TEXT, row.tekst) // legacy compatibility
                                 putExtra(AnnotatieScherm.EXTRA_TS, row.ts)
+                                putExtra("extra_row_pos", pos)
                             }
-                            startActivity(intent)
+                            annotationLauncher.launch(intent)
                         }
                     }
                 }
@@ -999,7 +1046,9 @@ class TellingScherm : AppCompatActivity() {
                 val filtered = current.filter { it.bron != "partial" }.toMutableList()
                 val now = System.currentTimeMillis() / 1000L
                 filtered.add(SpeechLogRow(ts = now, tekst = display, bron = "partial"))
-                if (filtered.size > MAX_LOG_ROWS) repeat(filtered.size - MAX_LOG_ROWS) { filtered.removeAt(0) }
+                if (filtered.size > MAX_LOG_ROWS) {
+                    repeat(filtered.size - MAX_LOG_ROWS) { filtered.removeAt(0) }
+                }
                 filtered
             }
 
@@ -1014,7 +1063,6 @@ class TellingScherm : AppCompatActivity() {
             }
         }
     }
-
 
     // Append a final log entry (bron = "final")
     // Also remove any existing partials so final doesn't sit next to a stale partial.
@@ -1727,6 +1775,97 @@ class TellingScherm : AppCompatActivity() {
             Log.w(TAG, "parseOnlineIdFromResponse failed: ${ex.message}", ex)
         }
         return null
+    }
+    // Helper: apply annotations JSON to the matching pending record in-memory (and write a single-record backup).
+// Paste this function into TellingScherm (near other helpers).
+    // Helper: apply annotations JSON to the matching pending record in-memory (and write a single-record backup).
+    private fun applyAnnotationsToPendingRecord(
+        annotationsJson: String,
+        rowTs: Long = 0L,
+        rowPos: Int = -1
+    ) {
+        try {
+            // Json parser WITHOUT allowTrailingCommas (per jouw wens); ignoreUnknownKeys helps resilience.
+            val parser = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
+            // Decode to a map of storeKey -> value using the parser variable (fixes "unused variable" warning)
+            val map: Map<String, String?> = try {
+                parser.decodeFromString(annotationsJson)
+            } catch (ex: Exception) {
+                Log.w(TAG, "applyAnnotationsToPendingRecord: failed to decode annotations JSON: ${ex.message}", ex)
+                return
+            }
+
+            synchronized(pendingRecords) {
+                if (pendingRecords.isEmpty()) {
+                    Log.w(TAG, "applyAnnotationsToPendingRecord: no pendingRecords to apply annotations to")
+                    return
+                }
+
+                // Try to find matching pending record by rowPos -> finals timestamp -> pending.tijdstip
+                var idx = -1
+                if (rowPos >= 0) {
+                    val finalsList = if (::viewModel.isInitialized) viewModel.finals.value.orEmpty() else finalsAdapter.currentList
+                    val finalRowTs = finalsList.getOrNull(rowPos)?.ts
+                    if (finalRowTs != null) {
+                        idx = pendingRecords.indexOfFirst { it.tijdstip == finalRowTs.toString() }
+                    }
+                }
+
+                // fallback: try by explicit rowTs if provided
+                if (idx == -1 && rowTs > 0L) {
+                    idx = pendingRecords.indexOfFirst { it.tijdstip == rowTs.toString() }
+                }
+
+                if (idx == -1) {
+                    Log.w(TAG, "applyAnnotationsToPendingRecord: no matching pending record found (rowPos=$rowPos, rowTs=$rowTs)")
+                    return
+                }
+
+                if (idx < 0 || idx >= pendingRecords.size) {
+                    Log.w(TAG, "applyAnnotationsToPendingRecord: computed index out of bounds: $idx")
+                    return
+                }
+
+                val old = pendingRecords[idx]
+
+                // Create updated copy: only overwrite fields present in the annotations map,
+                // otherwise retain existing values. Adjust field names if your ServerTellingDataItem differs.
+                val updated = old.copy(
+                    leeftijd = map["leeftijd"] ?: old.leeftijd,
+                    geslacht = map["geslacht"] ?: old.geslacht,
+                    kleed = map["kleed"] ?: old.kleed,
+                    location = map["location"] ?: old.location,
+                    height = map["height"] ?: old.height,
+                    lokaal = map["lokaal"] ?: old.lokaal,
+                    markeren = map["markeren"] ?: old.markeren,
+                    opmerkingen = map["opmerkingen"] ?: map["remarks"] ?: old.opmerkingen
+                )
+
+                // Replace in-memory pending record
+                pendingRecords[idx] = updated
+
+                // Mirror to ViewModel if present
+                if (::viewModel.isInitialized) {
+                    viewModel.setPendingRecords(pendingRecords.toList())
+                }
+
+                Log.d(TAG, "Applied annotations to pendingRecords[$idx]: $map")
+
+                // Attempt to write single-record backup so change is persisted to SAF (best-effort)
+                try {
+                    val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    val tellingId = prefs.getString(PREF_TELLING_ID, null)
+                    if (!tellingId.isNullOrBlank()) {
+                        writeRecordBackupSaf(this@TellingScherm, tellingId, updated)
+                    }
+                } catch (ex: Exception) {
+                    Log.w(TAG, "applyAnnotationsToPendingRecord: backup write failed: ${ex.message}", ex)
+                }
+            }
+        } catch (ex: Exception) {
+            Log.w(TAG, "applyAnnotationsToPendingRecord failed: ${ex.message}", ex)
+        }
     }
 
     private fun styleAlertDialogTextToWhite(dialog: AlertDialog) {

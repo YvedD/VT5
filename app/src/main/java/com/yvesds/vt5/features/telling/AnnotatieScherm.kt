@@ -188,7 +188,8 @@ class AnnotatieScherm : AppCompatActivity() {
         if (options.size > preIds.size) {
             for (i in preIds.size until options.size) {
                 val opt = options[i]
-                val dynBtn = AppCompatToggleButton(this).apply {
+                val themeWrapper = android.view.ContextThemeWrapper(this, R.style.Widget_VT5_Button_Outlined)
+                val dynBtn = androidx.appcompat.widget.AppCompatToggleButton(themeWrapper).apply {
                     text = opt.tekst
                     textOn = opt.tekst
                     textOff = opt.tekst
@@ -201,8 +202,7 @@ class AnnotatieScherm : AppCompatActivity() {
                     setOnClickListener { v -> onGroupButtonClicked(group, v as AppCompatToggleButton) }
                 }
                 container.addView(dynBtn)
-                btnList.add(dynBtn)
-            }
+                btnList.add(dynBtn)            }
         }
 
         groupButtons[group] = btnList
@@ -236,7 +236,7 @@ class AnnotatieScherm : AppCompatActivity() {
             btn.setTextColor(Color.WHITE)
         } else {
             btn.setBackgroundColor(ContextCompat.getColor(this, android.R.color.transparent))
-            btn.setTextColor(ContextCompat.getColor(this, android.R.color.secondary_text_dark))
+            btn.setTextColor(ContextCompat.getColor(this, android.R.color.white))
         }
     }
 }

@@ -1,6 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:state_enabled="false" android:drawable="@drawable/vt5_btn_shape_normal" />
-    <item android:state_pressed="true" android:drawable="@drawable/vt5_btn_shape_pressed" />
-    <item android:state_focused="true" android:drawable="@drawable/vt5_btn_shape_pressed" />
-    <item android:drawable="@drawable/vt5_btn_shape_normal" />
+
+    <!-- Checked: full filled blue -->
+    <item android:state_checked="true" android:drawable="@drawable/vt5_btn_checked" />
+
+    <!-- Pressed (visual feedback) - optional overlay; keep before default so press shows -->
+    <item android:state_pressed="true" android:drawable="@drawable/vt5_btn_pressed" />
+
+    <!-- Default / unchecked: black background with light-blue outline -->
+    <item android:drawable="@drawable/vt5_btn_unchecked" />
 </selector>
