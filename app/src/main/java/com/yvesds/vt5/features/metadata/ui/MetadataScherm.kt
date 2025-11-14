@@ -156,11 +156,12 @@ class MetadataScherm : AppCompatActivity() {
                     return@launch
                 }
 
-                // Stap 2: Wacht kort op VT5App background preload (max 3 sec)
-                Log.d(TAG, "⏳ WAITING: for VT5App background preload (max 3s)...")
+                // Stap 2: Wacht op VT5App background preload (max 10 sec)
+                // Geven preload genoeg tijd - laden van alle data kost ~5-8 seconden
+                Log.d(TAG, "⏳ WAITING: for VT5App background preload (max 10s)...")
                 var preloadResult: DataSnapshot? = null
                 val startTime = System.currentTimeMillis()
-                val maxWaitMs = 3000L
+                val maxWaitMs = 10000L
                 
                 // Poll elke 100ms tot cache klaar is of timeout
                 while (System.currentTimeMillis() - startTime < maxWaitMs) {
