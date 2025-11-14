@@ -465,8 +465,8 @@ class MetadataScherm : AppCompatActivity() {
                         key.startsWith("gain_") ||
                         key.startsWith("verstoring_")
             }
-            val labels = filtered.mapNotNull { it.tekst }
-            val values = filtered.map { it.value ?: "" }
+            val labels = filtered.map { it.text }
+            val values = filtered.map { it.value }
             binding.acTypeTelling.setAdapter(
                 ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
             )

@@ -120,9 +120,16 @@ class ServerDataRepository(
 
             // Process data
             val sitesById = sites.associateBy { it.telpostid }
+            
+            // Convert CodeItem to CodeItemSlim and filter relevant categories
+            val relevantCategories = setOf(
+                "neerslag", "typetelling_trek", "wind", "windoms",
+                "leeftijd", "geslacht", "teltype", "kleed"
+            )
             val codesByCategory = codes
-                .filter { it.category != null }
-                .groupBy { it.category!! }
+                .filter { it.category in relevantCategories }
+                .mapNotNull { CodeItemSlim.fromCodeItem(it) }
+                .groupBy { it.category }
 
             // Create minimal snapshot
             val snap = DataSnapshot(
