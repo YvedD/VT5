@@ -156,21 +156,21 @@ class MetadataScherm : AppCompatActivity() {
                     return@launch
                 }
 
-                // Stap 2: Wacht op VT5App background preload (max 10 sec)
-                // Geven preload genoeg tijd - laden van alle data kost ~5-8 seconden
-                Log.d(TAG, "⏳ WAITING: for VT5App background preload (max 10s)...")
+                // Stap 2: Wacht op VT5App background preload (max 3 sec voor codes-only)
+                // Codes-only preload duurt ~50ms, full data later in background
+                Log.d(TAG, "⏳ WAITING: for VT5App codes preload (max 3s)...")
                 var preloadResult: DataSnapshot? = null
                 val startTime = System.currentTimeMillis()
-                val maxWaitMs = 10000L
+                val maxWaitMs = 3000L  // Reduced: codes load fast (~50ms)
                 
-                // Poll elke 100ms tot cache klaar is of timeout
+                // Poll elke 50ms tot cache klaar is of timeout (non-blocking with delay)
                 while (System.currentTimeMillis() - startTime < maxWaitMs) {
                     preloadResult = ServerDataCache.getCachedOrNull()
                     if (preloadResult != null) {
                         Log.d(TAG, "✅ FAST: VT5App preload ready after ${System.currentTimeMillis() - startTime}ms")
                         break
                     }
-                    Thread.sleep(100)
+                    kotlinx.coroutines.delay(50)  // Non-blocking delay
                 }
 
                 if (preloadResult != null) {
