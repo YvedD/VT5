@@ -46,8 +46,12 @@ object ServerDataCache {
     fun getCachedOrNull(): DataSnapshot? = cached
 
     /**
-     * Start a best-effort background preload without suspending the caller.
-     * If a loader is already running or cache exists this returns immediately.
+     * Two-phase startup:
+     * Phase 1: Load ONLY codes (ultra-fast, ~50ms)
+     * Phase 2: Load everything else in background when idle
+     *
+     * This allows MetadataScherm to open instantly with just codes,
+     * while heavy data (species, sites, protocols) loads in background.
      */
     fun preload(context: Context) {
         // Fast-path: already cached -> nothing to do
@@ -62,16 +66,58 @@ object ServerDataCache {
             return
         }
 
-        // Start loader but don't await it (best-effort)
+        // Phase 1: Load ONLY codes immediately (ultra-fast)
         synchronized(this) {
             if (loadingDeferred == null || loadingDeferred?.isCompleted == true) {
-                Log.d(TAG, "Starting background preload (best-effort)")
+                Log.d(TAG, "Starting FAST preload: codes only (phase 1)")
                 loadingDeferred = loaderScope.async {
-                    loadFromSaf(context)
+                    loadCodesOnly(context)
                 }
-                // do not await here
+                
+                // Phase 2: Schedule full data load in background (delayed start)
+                loaderScope.launch {
+                    delay(500) // Wait 500ms to ensure app is idle
+                    try {
+                        Log.d(TAG, "Starting background preload: full data (phase 2)")
+                        val fullSnapshot = loadFromSaf(context)
+                        cached = fullSnapshot
+                        Log.i(TAG, "Phase 2 complete: all data loaded in background")
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "Phase 2 background load failed: ${ex.message}", ex)
+                    }
+                }
             } else {
                 Log.d(TAG, "Preload: loader already present")
+            }
+        }
+    }
+    
+    /**
+     * Phase 1: Load ONLY codes - ultra-fast startup
+     * Creates a minimal DataSnapshot with just codes (55 records, 3 fields = ~4KB)
+     */
+    private suspend fun loadCodesOnly(context: Context): DataSnapshot = withContext(Dispatchers.IO) {
+        val start = System.currentTimeMillis()
+        try {
+            Log.d(TAG, "loadCodesOnly: loading just codes for instant startup")
+            val repo = ServerDataRepository(context.applicationContext)
+            val codesByCategory = repo.loadCodesOnly()
+            
+            // Create minimal snapshot with only codes
+            val snap = DataSnapshot(codesByCategory = codesByCategory)
+            cached = snap
+            val elapsed = System.currentTimeMillis() - start
+            Log.i(TAG, "loadCodesOnly: loaded codes in ${elapsed}ms (instant startup!)")
+            return@withContext snap
+        } catch (ex: Exception) {
+            Log.e(TAG, "loadCodesOnly failed: ${ex.message}", ex)
+            throw ex
+        } finally {
+            synchronized(this@ServerDataCache) {
+                val cur = loadingDeferred
+                if (cur != null && cur.isCompleted) {
+                    loadingDeferred = null
+                }
             }
         }
     }

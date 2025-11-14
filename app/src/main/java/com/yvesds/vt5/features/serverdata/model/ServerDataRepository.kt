@@ -96,6 +96,33 @@ class ServerDataRepository(
     }
 
     /**
+     * Load ONLY codes data - ultra-fast for app startup
+     * Only 55 records with 3 fields = ~4KB memory
+     * This allows MetadataScherm to open instantly
+     */
+    suspend fun loadCodesOnly(): Map<String, List<CodeItemSlim>> = withContext(Dispatchers.IO) {
+        val saf = SaFStorageHelper(context)
+        val vt5Root = saf.getVt5DirIfExists() ?: return@withContext emptyMap()
+        val serverdata = vt5Root.findChildByName("serverdata")?.takeIf { it.isDirectory }
+            ?: return@withContext emptyMap()
+
+        val codes = runCatching {
+            readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES)
+        }.getOrElse { emptyList() }
+
+        // Filter and convert to slim format
+        val relevantCategories = setOf(
+            "neerslag", "typetelling_trek", "wind", "windoms",
+            "leeftijd", "geslacht", "teltype", "kleed"
+        )
+        
+        return@withContext codes
+            .filter { it.category in relevantCategories }
+            .mapNotNull { CodeItemSlim.fromCodeItem(it) }
+            .groupBy { it.category }
+    }
+
+    /**
      * Load only minimal data required for startup
      * - Optimized for faster initial rendering
      */
