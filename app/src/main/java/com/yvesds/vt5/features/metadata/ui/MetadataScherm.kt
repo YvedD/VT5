@@ -46,6 +46,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -138,6 +139,9 @@ class MetadataScherm : AppCompatActivity() {
     /**
      * Eerste fase: laad alleen de noodzakelijke data voor het vullen van de dropdown menus
      * Dit zorgt voor een veel snellere initiële lading
+     *
+     * Optimalisatie: Probeer eerst kort te wachten op de background preload uit VT5App
+     * voordat we loadMinimalData() aanroepen. Dit voorkomt dubbel laden.
      */
     private fun loadEssentialData() {
         uiScope.launch {
@@ -145,18 +149,38 @@ class MetadataScherm : AppCompatActivity() {
                 // Check eerst of we al volledige data in cache hebben
                 val cachedData = ServerDataCache.getCachedOrNull()
                 if (cachedData != null) {
-                    Log.d(TAG, "Using fully cached data")
+                    Log.d(TAG, "Using fully cached data (instant)")
                     snapshot = cachedData
                     initializeDropdowns()
-
-                    // Start het laden van de volledige data in de achtergrond
                     scheduleBackgroundLoading()
                     return@launch
                 }
 
-                // Toon de progress dialog
+                // Probeer kort te wachten op de background preload (max 2 sec)
+                // Dit is de preload die VT5App.onCreate() al gestart heeft
+                Log.d(TAG, "Waiting briefly for background preload...")
+                val preloadResult = withTimeoutOrNull(2000) {
+                    try {
+                        ServerDataCache.getOrLoad(this@MetadataScherm)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Background preload failed: ${e.message}")
+                        null
+                    }
+                }
+
+                if (preloadResult != null) {
+                    // Background preload was succesvol binnen timeout
+                    Log.d(TAG, "Using data from background preload (fast path)")
+                    snapshot = preloadResult
+                    initializeDropdowns()
+                    scheduleBackgroundLoading()
+                    return@launch
+                }
+
+                // Fallback: background preload was te traag of gefaald
+                // Laad minimale data met progress indicator
+                Log.d(TAG, "Background preload timeout - loading minimal data")
                 ProgressDialogHelper.withProgress(this@MetadataScherm, "Bezig met laden van gegevens...") {
-                    // Laad de minimale data
                     val repo = ServerDataRepository(this@MetadataScherm)
                     val minimal = repo.loadMinimalData()
                     snapshot = minimal
@@ -165,7 +189,6 @@ class MetadataScherm : AppCompatActivity() {
                         initializeDropdowns()
                     }
 
-                    // Start het laden van de volledige data in de achtergrond
                     scheduleBackgroundLoading()
                 }
             } catch (e: Exception) {
@@ -255,8 +278,8 @@ class MetadataScherm : AppCompatActivity() {
                 val windLabel = WeatherManager.degTo16WindLabel(cur.windDirection10m)
                 val windCodes = snapshot.codesByCategory["wind"].orEmpty()
                 val valueByLabel = windCodes.associateBy(
-                    { (it.tekst ?: "").uppercase(Locale.getDefault()) },
-                    { it.value ?: "" }
+                    { it.text.uppercase(Locale.getDefault()) },
+                    { it.value }
                 )
                 val foundWindCode = valueByLabel[windLabel] ?: valueByLabel["N"] ?: "n"
                 gekozenWindrichtingCode = foundWindCode
@@ -275,8 +298,8 @@ class MetadataScherm : AppCompatActivity() {
                 gekozenNeerslagCode = rainCode
                 val rainCodes = snapshot.codesByCategory["neerslag"].orEmpty()
                 val rainLabelByValue = rainCodes.associateBy(
-                    { it.value ?: "" },
-                    { it.tekst ?: (it.value ?: "") }
+                    { it.value },
+                    { it.text }
                 )
                 val rainLabel = rainLabelByValue[rainCode] ?: rainCode
                 binding.acNeerslag.setText(rainLabel, false)
@@ -384,7 +407,7 @@ class MetadataScherm : AppCompatActivity() {
             .show()
     }
 
-    
+
     /* ---------------- Dropdowns ---------------- */
 
     private fun bindTelpostDropdown() {
@@ -411,8 +434,8 @@ class MetadataScherm : AppCompatActivity() {
         // WINDRICHTING (veld == "wind")
         runCatching {
             val windCodes = getCodesForField("wind")
-            val labels = windCodes.mapNotNull { it.tekst }
-            val values = windCodes.map { it.value ?: "" }
+            val labels = windCodes.map { it.text }
+            val values = windCodes.map { it.value }
             binding.acWindrichting.setAdapter(
                 ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
             )
@@ -444,8 +467,8 @@ class MetadataScherm : AppCompatActivity() {
         // NEERSLAG (veld == "neerslag")
         runCatching {
             val rainCodes = getCodesForField("neerslag")
-            val labels = rainCodes.mapNotNull { it.tekst }
-            val values = rainCodes.map { it.value ?: "" }
+            val labels = rainCodes.map { it.text }
+            val values = rainCodes.map { it.value }
             binding.acNeerslag.setAdapter(
                 ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
             )
@@ -454,19 +477,11 @@ class MetadataScherm : AppCompatActivity() {
             }
         }
 
-        // TYPE TELLING (veld == "typetelling_trek") met filters op tekstkey
+        // TYPE TELLING (veld == "typetelling_trek")
         runCatching {
-            val all = getCodesForField("typetelling_trek")
-            val filtered = all.filterNot { c ->
-                val key = c.key ?: ""
-                key.contains("_sound") ||
-                        key.contains("_ringen") ||
-                        key.startsWith("samplingrate_") ||
-                        key.startsWith("gain_") ||
-                        key.startsWith("verstoring_")
-            }
-            val labels = filtered.mapNotNull { it.tekst }
-            val values = filtered.map { it.value ?: "" }
+            val typeCodes = getCodesForField("typetelling_trek")
+            val labels = typeCodes.map { it.text }
+            val values = typeCodes.map { it.value }
             binding.acTypeTelling.setAdapter(
                 ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
             )
@@ -476,7 +491,7 @@ class MetadataScherm : AppCompatActivity() {
         }
     }
 
-    /** 
+    /**
      * Haal codes per veld uit snapshot en sorteer op tekst (alfabetisch).
      * Note: CodeItemSlim has no sortering field, so we sort by text only.
      */
