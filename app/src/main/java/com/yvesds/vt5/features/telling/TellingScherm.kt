@@ -128,6 +128,14 @@ class TellingScherm : AppCompatActivity() {
     private lateinit var aliasEditor: AliasEditor
     private val safHelper by lazy { SaFStorageHelper(this) }
 
+    // NEW: Helper classes for refactored code
+    private lateinit var logManager: TellingLogManager
+    private lateinit var dialogHelper: TellingDialogHelper
+    private lateinit var backupManager: TellingBackupManager
+    private lateinit var dataProcessor: TellingDataProcessor
+    private lateinit var uiManager: TellingUiManager
+    private lateinit var afrondHandler: TellingAfrondHandler
+
     // Prefs
     private lateinit var prefs: android.content.SharedPreferences
 
@@ -140,11 +148,6 @@ class TellingScherm : AppCompatActivity() {
     // Partial UI debounce + only keep last partial
     private var lastPartialUiUpdateMs: Long = 0L
     private val PARTIAL_UI_DEBOUNCE_MS = 200L
-
-    private val RE_ASR_PREFIX = Regex("(?i)^\\s*asr:\\s*")
-    private val RE_TRIM_RAW_NUMBER = Regex("\\s+\\d+(?:[.,]\\d+)?\$")
-    private val RE_TRAILING_NUMBER = Regex("^(.*?)(?:\\s+(\\d+)(?:[.,]\\d+)?)?\$")
-    //private val RE_PLUS_NUMBER = Regex("\\+?(\\d+)")
 
     // Cached MatchContext to avoid rebuilding on every parse
     @Volatile
@@ -287,11 +290,15 @@ class TellingScherm : AppCompatActivity() {
         setContentView(binding.root)
 
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        
+        // Initialize helper classes
+        initializeHelpers()
+
+        // Initialize legacy helpers
         aliasEditor = AliasEditor(this, safHelper)
 
-        setupPartialsRecyclerView()
-        setupFinalsRecyclerView()
-        setupSpeciesTilesRecyclerView()
+        // Setup UI using UiManager
+        setupUiWithManager()
 
         // Initialize ViewModel (if you have TellingViewModel in project)
         try {
@@ -299,7 +306,7 @@ class TellingScherm : AppCompatActivity() {
             // Observe VM lists and keep adapters in sync (this ensures rotation preserves UI)
             viewModel.tiles.observe(this) { tiles ->
                 // update adapter (observer will call submitList callback if configured)
-                tilesAdapter.submitList(tiles)
+                uiManager.updateTiles(tiles)
 
                 // Rebuild cachedMatchContext asynchronously on Default to avoid blocking parse path
                 lifecycleScope.launch(Dispatchers.Default) {
@@ -314,25 +321,14 @@ class TellingScherm : AppCompatActivity() {
                 }
             }
             viewModel.partials.observe(this) { list ->
-                partialsAdapter.submitList(list) {
-                    if (list.isNotEmpty()) {
-                        binding.recyclerViewSpeechPartials.scrollToPosition(list.size - 1)
-                    }
-                }
+                uiManager.updatePartials(list)
             }
-            //viewModel.finals.observe(this) { finalsAdapter.submitList(it) }
             viewModel.finals.observe(this) { list ->
-                finalsAdapter.submitList(list) {
-                    if (list.isNotEmpty()) {
-                        binding.recyclerViewSpeechFinals.scrollToPosition(list.size - 1)
-                    }
-                }
+                uiManager.updateFinals(list)
             }
         } catch (ex: Exception) {
             Log.w(TAG, "TellingViewModel not available or failed to init: ${ex.message}")
         }
-
-        setupButtons()
 
         // Register receiver to keep cached context and ASR in sync when AliasManager reloads index
         try {
@@ -346,6 +342,149 @@ class TellingScherm : AppCompatActivity() {
 
         // Preload tiles (if preselected) then initialize ASR
         loadPreselection()
+    }
+
+    /**
+     * Initialize all helper classes for refactored code.
+     */
+    private fun initializeHelpers() {
+        logManager = TellingLogManager(MAX_LOG_ROWS)
+        dialogHelper = TellingDialogHelper(this, this, safHelper)
+        backupManager = TellingBackupManager(this, safHelper)
+        dataProcessor = TellingDataProcessor()
+        uiManager = TellingUiManager(this, this, binding)
+        afrondHandler = TellingAfrondHandler(this, backupManager, dataProcessor)
+    }
+
+    /**
+     * Setup UI using the UiManager helper.
+     */
+    private fun setupUiWithManager() {
+        // Setup RecyclerViews
+        uiManager.setupPartialsRecyclerView()
+        uiManager.setupFinalsRecyclerView()
+        uiManager.setupSpeciesTilesRecyclerView()
+
+        // Store adapter references for backward compatibility
+        partialsAdapter = uiManager.getCurrentPartials().let { SpeechLogAdapter().apply { submitList(it) } }
+        finalsAdapter = uiManager.getCurrentFinals().let { SpeechLogAdapter().apply { submitList(it) } }
+        tilesAdapter = SpeciesTileAdapter { position -> 
+            showNumberInputDialog(position) 
+        }
+        
+        // Setup callbacks for UI manager
+        uiManager.onPartialTapCallback = { pos, row -> handlePartialTap(pos, row) }
+        uiManager.onFinalTapCallback = { pos, row -> handleFinalTap(pos, row) }
+        uiManager.onTileTapCallback = { pos -> showNumberInputDialog(pos) }
+        uiManager.onAddSoortenCallback = { openSoortSelectieForAdd() }
+        uiManager.onAfrondenCallback = { handleAfrondenWithConfirmation() }
+        uiManager.onSaveCloseCallback = { tiles -> handleSaveClose(tiles) }
+
+        // Setup buttons
+        uiManager.setupButtons()
+    }
+
+    /* ---------- UI Callback Handlers ---------- */
+
+    /**
+     * Handle tap on partial log entry - show alias dialog.
+     */
+    private fun handlePartialTap(pos: Int, row: SpeechLogRow) {
+        when (row.bron) {
+            "partial", "raw" -> {
+                val (nameOnly, cnt) = parseNameAndCountFromDisplay(row.tekst)
+                ensureAvailableSpeciesFlat { flat ->
+                    dialogHelper.showAddAliasDialog(nameOnly, cnt, flat, 
+                        onAliasAdded = { speciesId, canonical, count ->
+                            addLog("Alias toegevoegd: '$nameOnly' → $canonical", "alias")
+                            Toast.makeText(this, "Alias opgeslagen (buffer).", Toast.LENGTH_SHORT).show()
+                            
+                            lifecycleScope.launch {
+                                Toast.makeText(this@TellingScherm, "Index wordt bijgewerkt...", Toast.LENGTH_SHORT).show()
+                                val ok = withContext(Dispatchers.IO) {
+                                    try {
+                                        AliasManager.forceRebuildCborNow(this@TellingScherm, safHelper)
+                                        true
+                                    } catch (ex: Exception) {
+                                        Log.w(TAG, "forceRebuildCborNow failed: ${ex.message}", ex)
+                                        false
+                                    }
+                                }
+                                if (ok) {
+                                    Toast.makeText(this@TellingScherm, "Alias opgeslagen en index bijgewerkt", Toast.LENGTH_SHORT).show()
+                                    refreshAliasesRuntimeAsync()
+                                } else {
+                                    Toast.makeText(this@TellingScherm, "Alias opgeslagen (index update later)", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                            
+                            if (count > 0) {
+                                addSpeciesToTilesIfNeeded(speciesId, canonical, count)
+                            }
+                        },
+                        fragmentManager = supportFragmentManager
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Handle tap on final log entry - open annotation screen.
+     */
+    private fun handleFinalTap(pos: Int, row: SpeechLogRow) {
+        if (row.bron == "final") {
+            val intent = Intent(this, AnnotatieScherm::class.java).apply {
+                putExtra(AnnotatieScherm.EXTRA_TEXT, row.tekst)
+                putExtra(AnnotatieScherm.EXTRA_TS, row.ts)
+                putExtra("extra_row_pos", pos)
+            }
+            annotationLauncher.launch(intent)
+        }
+    }
+
+    /**
+     * Handle Afronden button with confirmation dialog.
+     */
+    private fun handleAfrondenWithConfirmation() {
+        val builder = AlertDialog.Builder(this)
+            .setTitle("Afronden bevestigen")
+            .setMessage("Weet je zeker dat je wilt afronden en de telling uploaden?")
+            .setPositiveButton("Ja") { _, _ ->
+                lifecycleScope.launch {
+                    val dialog = ProgressDialogHelper.show(this@TellingScherm, "Bezig met afronden upload...")
+                    try { 
+                        handleAfronden() 
+                    } finally { 
+                        dialog.dismiss() 
+                    }
+                }
+            }
+            .setNegativeButton("Nee", null)
+        
+        val dlg = builder.show()
+        dialogHelper.styleAlertDialogTextToWhite(dlg)
+    }
+
+    /**
+     * Handle Save/Close button - show current status screen.
+     */
+    private fun handleSaveClose(tiles: List<SoortRow>) {
+        val ids = ArrayList<String>(tiles.size)
+        val names = ArrayList<String>(tiles.size)
+        val counts = ArrayList<String>(tiles.size)
+        for (row in tiles) {
+            ids.add(row.soortId)
+            names.add(row.naam)
+            counts.add(row.count.toString())
+        }
+
+        val intent = Intent(this, HuidigeStandScherm::class.java).apply {
+            putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_IDS, ids)
+            putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_NAMEN, names)
+            putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_AANTALLEN, counts)
+        }
+        startActivity(intent)
     }
 
     override fun onDestroy() {
@@ -638,7 +777,7 @@ class TellingScherm : AppCompatActivity() {
                 .setNegativeButton("Nee", null)
 
             val dlg = builder.show()
-            styleAlertDialogTextToWhite(dlg)
+            dialogHelper.styleAlertDialogTextToWhite(dlg)
         }
 
         binding.btnSaveClose.setOnClickListener {
@@ -842,7 +981,7 @@ class TellingScherm : AppCompatActivity() {
                                                 }
                                                 .setNegativeButton("Nee", null)
                                                 .show()
-                                            styleAlertDialogTextToWhite(dlg)
+                                            dialogHelper.styleAlertDialogTextToWhite(dlg)
                                         }
                                     }
                                     is MatchResult.MultiMatch -> {
@@ -870,7 +1009,7 @@ class TellingScherm : AppCompatActivity() {
                                                     }
                                                     .setNegativeButton("Nee", null)
                                                     .show()
-                                                styleAlertDialogTextToWhite(dlg)
+                                                dialogHelper.styleAlertDialogTextToWhite(dlg)
                                             }
                                         }
                                     }
@@ -918,186 +1057,74 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
-    /* ---------- Helper log functions (routed to partials/finals adapters) ---------- */
+    /* ---------- Helper log functions (delegated to logManager) ---------- */
 
-    // Primary addLog implementation: append a row (used by callers)
+    // Primary addLog implementation: delegate to logManager then update UI
     private fun addLog(msgIn: String, bron: String) {
-        // Filter system messages: only include "Luisteren..." in partials. Other system messages are ignored here.
-        if (bron == "systeem" && !msgIn.contains("Luisteren", ignoreCase = true)) {
-            return
-        }
-
-        val now = System.currentTimeMillis() / 1000L
-        val cleaned = run {
-            var m = msgIn.replace(RE_ASR_PREFIX, "")
-            if (bron == "raw") {
-                m = m.replace(RE_TRIM_RAW_NUMBER, "")
-            }
-            m.trim()
-        }
-
-        val newRow = SpeechLogRow(ts = now, tekst = cleaned, bron = bron)
-
-        lifecycleScope.launch {
-            val newList = withContext(Dispatchers.Default) {
-                if (bron == "final") {
-                    val current = if (::viewModel.isInitialized) viewModel.finals.value.orEmpty() else finalsAdapter.currentList
-                    val list = ArrayList(current)
-                    list.add(newRow)
-                    if (list.size > MAX_LOG_ROWS) {
-                        repeat(list.size - MAX_LOG_ROWS) { list.removeAt(0) }
-                    }
-                    list
-                } else {
-                    val current = if (::viewModel.isInitialized) viewModel.partials.value.orEmpty() else partialsAdapter.currentList
-                    val list = ArrayList(current)
-                    list.add(newRow)
-                    if (list.size > MAX_LOG_ROWS) {
-                        repeat(list.size - MAX_LOG_ROWS) { list.removeAt(0) }
-                    }
-                    list
-                }
-            }
-
-            withContext(Dispatchers.Main) {
-                if (::viewModel.isInitialized) {
-                    // UPDATE VIEWMODEL ONLY — observers will update adapters once.
-                    if (bron == "final") {
-                        viewModel.setFinals(newList)
-                        // remove 'partial' rows from partials (keep non-partial logs)
-                        val preserved = viewModel.partials.value?.filter { it.bron != "partial" }.orEmpty()
-                        viewModel.setPartials(preserved)
-                    } else {
-                        viewModel.setPartials(newList)
-                    }
-                } else {
-                    // Fallback: no ViewModel — update adapter directly (legacy behavior)
-                    if (bron == "final") {
-                        finalsAdapter.submitList(newList) {
-                            binding.recyclerViewSpeechFinals.scrollToPosition(newList.size - 1)
-                        }
-                        // clear partials from UI
-                        val preserved = partialsAdapter.currentList.filter { it.bron != "partial" }
-                        partialsAdapter.submitList(preserved)
-                    } else {
-                        partialsAdapter.submitList(newList) {
-                            binding.recyclerViewSpeechPartials.scrollToPosition(newList.size - 1)
-                        }
-                    }
-                }
-            }
+        val newList = logManager.addLog(msgIn, bron)
+        if (newList != null) {
+            updateLogsUi(newList, bron)
         }
     }
 
-    // Parse a text that can be either:
-    // - raw hypothesis like "atalanta 3" or "atalanta"
-    // - formatted display like "Atalanta -> +3"
-    // Returns Pair(nameOnly, count)
+    // Parse a text using logManager
     private fun parseNameAndCountFromDisplay(text: String): Pair<String, Int> {
-        val t = text.trim()
-        if (t.isEmpty()) return "" to 0
+        return logManager.parseNameAndCountFromDisplay(text)
+    }
 
-        // Try formatted "Name -> +N"
-        val arrowIdx = t.indexOf("->")
-        if (arrowIdx >= 0) {
-            val left = t.substring(0, arrowIdx).trim()
-            val right = t.substring(arrowIdx + 2).trim()
-            val m = Regex("""\+?(\d+)""").find(right)
-            val cnt = m?.groups?.get(1)?.value?.toIntOrNull() ?: 0
-            return left to cnt
-        }
-
-        // Try trailing number pattern e.g. "Name 3" or "Name 3.0" etc.
-        val m = Regex("""^(.*?)(?:\s+(\d+)(?:[.,]\d+)?)?$""").find(t)
-        return if (m != null) {
-            val name = m.groups[1]?.value?.trim().orEmpty()
-            val cnt = m.groups[2]?.value?.toIntOrNull() ?: 0
-            name to cnt
-        } else {
-            t to 0
+    // Update logs UI after changes
+    private fun updateLogsUi(newList: List<SpeechLogRow>, bron: String) {
+        lifecycleScope.launch(Dispatchers.Main) {
+            if (::viewModel.isInitialized) {
+                // UPDATE VIEWMODEL ONLY — observers will update adapters once.
+                if (bron == "final" || bron == "raw") {
+                    viewModel.setFinals(newList)
+                    // remove 'partial' rows from partials (keep non-partial logs)
+                    val preserved = logManager.getPartials().filter { it.bron != "partial" }
+                    viewModel.setPartials(preserved)
+                } else {
+                    viewModel.setPartials(newList)
+                }
+            } else {
+                // Fallback: no ViewModel — update adapter via uiManager
+                if (bron == "final" || bron == "raw") {
+                    uiManager.updateFinals(newList)
+                    // clear partials from UI
+                    val preserved = logManager.getPartials().filter { it.bron != "partial" }
+                    uiManager.updatePartials(preserved)
+                } else {
+                    uiManager.updatePartials(newList)
+                }
+            }
         }
     }
 
     // Insert or replace the single partial log entry (bron = "partial")
     // Now ignores blanks and formats partial display to include count when present.
+    // Delegate to logManager for upsertPartialLog
     private fun upsertPartialLog(text: String) {
-        val cleanedRaw = text.trim()
-        // Ignore empty partials (common at start of capture)
-        if (cleanedRaw.isBlank()) return
-
-        // Parse name and count from raw hypothesis — use precompiled regex to avoid allocations
-        val (nameOnly, cnt) = run {
-            val m = RE_TRAILING_NUMBER.find(cleanedRaw)
-            if (m != null) {
-                val name = m.groups[1]?.value?.trim().orEmpty()
-                val c = m.groups[2]?.value?.toIntOrNull() ?: 0
-                name to c
+        val newList = logManager.upsertPartialLog(text)
+        lifecycleScope.launch(Dispatchers.Main) {
+            if (::viewModel.isInitialized) {
+                viewModel.setPartials(newList)
             } else {
-                cleanedRaw to 0
-            }
-        }
-
-        // Compose display text: if count present, format "Name -> +N", else plain name
-        val display = if (cnt > 0) "$nameOnly -> +$cnt" else nameOnly
-
-        lifecycleScope.launch {
-            val newList = withContext(Dispatchers.Default) {
-                val current = if (::viewModel.isInitialized) viewModel.partials.value.orEmpty() else partialsAdapter.currentList
-                val filtered = current.filter { it.bron != "partial" }.toMutableList()
-                val now = System.currentTimeMillis() / 1000L
-                filtered.add(SpeechLogRow(ts = now, tekst = display, bron = "partial"))
-                if (filtered.size > MAX_LOG_ROWS) {
-                    repeat(filtered.size - MAX_LOG_ROWS) { filtered.removeAt(0) }
-                }
-                filtered
-            }
-
-            withContext(Dispatchers.Main) {
-                if (::viewModel.isInitialized) {
-                    viewModel.setPartials(newList)
-                } else {
-                    partialsAdapter.submitList(newList) {
-                        binding.recyclerViewSpeechPartials.scrollToPosition(newList.size - 1)
-                    }
-                }
+                uiManager.updatePartials(newList)
             }
         }
     }
 
-    // Append a final log entry (bron = "final")
-    // Also remove any existing partials so final doesn't sit next to a stale partial.
-    // Vervang volledige addFinalLog(...) functie door onderstaande versie.
-// Ongeveer vervangt: functie die begon rond regel ~997
-
+    // Delegate to logManager for addFinalLog
     private fun addFinalLog(text: String) {
-        val now = System.currentTimeMillis() / 1000L
-        val newRow = SpeechLogRow(ts = now, tekst = text, bron = "final")
-
-        lifecycleScope.launch {
-            val updatedFinals = withContext(Dispatchers.Default) {
-                val cur = if (::viewModel.isInitialized) viewModel.finals.value.orEmpty() else finalsAdapter.currentList
-                val finalList = ArrayList(cur)
-                finalList.add(newRow)
-                if (finalList.size > MAX_LOG_ROWS) repeat(finalList.size - MAX_LOG_ROWS) { finalList.removeAt(0) }
-                finalList
-            }
-            val updatedPartials = withContext(Dispatchers.Default) {
-                val cur = if (::viewModel.isInitialized) viewModel.partials.value.orEmpty() else partialsAdapter.currentList
-                val filtered = cur.filter { it.bron != "partial" }.toMutableList()
-                if (filtered.size > MAX_LOG_ROWS) repeat(filtered.size - MAX_LOG_ROWS) { filtered.removeAt(0) }
-                filtered
-            }
-
-            withContext(Dispatchers.Main) {
-                if (::viewModel.isInitialized) {
-                    viewModel.setFinals(updatedFinals)
-                    viewModel.setPartials(updatedPartials)
-                } else {
-                    finalsAdapter.submitList(updatedFinals) {
-                        binding.recyclerViewSpeechFinals.scrollToPosition(updatedFinals.size - 1)
-                    }
-                    partialsAdapter.submitList(updatedPartials)
-                }
+        val updatedFinals = logManager.addFinalLog(text)
+        val updatedPartials = logManager.getPartials().filter { it.bron != "partial" }
+        
+        lifecycleScope.launch(Dispatchers.Main) {
+            if (::viewModel.isInitialized) {
+                viewModel.setFinals(updatedFinals)
+                viewModel.setPartials(updatedPartials)
+            } else {
+                uiManager.updateFinals(updatedFinals)
+                uiManager.updatePartials(updatedPartials)
             }
         }
     }
@@ -1126,7 +1153,7 @@ class TellingScherm : AppCompatActivity() {
                         }
                         .setNegativeButton("Nee", null)
                         .show()
-                    styleAlertDialogTextToWhite(dlg)
+                    dialogHelper.styleAlertDialogTextToWhite(dlg)
                 }
                 RecentSpeciesStore.recordUse(this, chosen.speciesId, maxEntries = 25)
             }
@@ -1279,13 +1306,13 @@ class TellingScherm : AppCompatActivity() {
                     if (::viewModel.isInitialized) viewModel.addPendingRecord(item)
                 }
 
-                // Try SAF backup, else internal fallback
+                // Try SAF backup, else internal fallback using backupManager
                 try {
-                    val doc = writeRecordBackupSaf(this@TellingScherm, tellingId, item)
+                    val doc = backupManager.writeRecordBackupSaf(tellingId, item)
                     if (doc != null) {
                         pendingBackupDocs.add(doc)
                     } else {
-                        val internal = writeRecordBackupInternal(this@TellingScherm, tellingId, item)
+                        val internal = backupManager.writeRecordBackupInternal(tellingId, item)
                         if (internal != null) pendingBackupInternalPaths.add(internal)
                     }
                 } catch (ex: Exception) {
@@ -1301,210 +1328,50 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
-    // Write a single record backup via SAF into Documents/VT5/exports
-    private fun writeRecordBackupSaf(context: Context, tellingId: String, item: ServerTellingDataItem): DocumentFile? {
-        try {
-            val saf = SaFStorageHelper(context)
-            var vt5Dir: DocumentFile? = saf.getVt5DirIfExists()
-            if (vt5Dir == null) {
-                try { saf.ensureFolders() } catch (_: Exception) {}
-                vt5Dir = saf.getVt5DirIfExists()
-            }
-            if (vt5Dir != null) {
-                val exportsDir = saf.findOrCreateDirectory(vt5Dir, "exports") ?: vt5Dir
-                val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                val safeName = "session_${tellingId}_${item.idLocal}_$nowStr.json"
-                val created = exportsDir.createFile("application/json", safeName) ?: return null
-                context.contentResolver.openOutputStream(created.uri)?.bufferedWriter(Charsets.UTF_8).use { w ->
-                    val payloadJson = VT5App.json.encodeToString(ListSerializer(ServerTellingDataItem.serializer()), listOf(item))
-                    w?.write(payloadJson)
-                    w?.flush()
-                }
-                return created
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "writeRecordBackupSaf failed: ${e.message}", e)
-        }
-        return null
-    }
 
-    // Fallback internal write
-    private fun writeRecordBackupInternal(context: Context, tellingId: String, item: ServerTellingDataItem): String? {
-        return try {
-            val root = java.io.File(context.filesDir, "VT5")
-            if (!root.exists()) root.mkdirs()
-            val exports = java.io.File(root, "exports"); if (!exports.exists()) exports.mkdirs()
-            val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            val filename = "session_${tellingId}_${item.idLocal}_$nowStr.json"
-            val f = java.io.File(exports, filename)
-            val payloadJson = VT5App.json.encodeToString(ListSerializer(ServerTellingDataItem.serializer()), listOf(item))
-            f.writeText(payloadJson, Charsets.UTF_8)
-            f.absolutePath
-        } catch (e: Exception) {
-            Log.w(TAG, "writeRecordBackupInternal failed: ${e.message}", e)
-            null
-        }
-    }
 
     // Afronden: build counts_save envelope with saved metadata + pendingRecords, POST and handle response
+    /**
+     * Handle Afronden (finalize and upload) using afrondHandler.
+     */
     private suspend fun handleAfronden() {
-        withContext(Dispatchers.IO) {
-            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val savedEnvelopeJson = prefs.getString(PREF_SAVED_ENVELOPE_JSON, null)
-            if (savedEnvelopeJson.isNullOrBlank()) {
-                withContext(Dispatchers.Main) {
+        val result = afrondHandler.handleAfronden(
+            pendingRecords = synchronized(pendingRecords) { ArrayList(pendingRecords) },
+            pendingBackupDocs = pendingBackupDocs,
+            pendingBackupInternalPaths = pendingBackupInternalPaths
+        )
+
+        withContext(Dispatchers.Main) {
+            when (result) {
+                is TellingAfrondHandler.AfrondResult.Success -> {
+                    // Cleanup local state
+                    synchronized(pendingRecords) { pendingRecords.clear() }
+                    pendingBackupDocs.clear()
+                    pendingBackupInternalPaths.clear()
+                    if (::viewModel.isInitialized) viewModel.clearPendingRecords()
+
+                    // Show success dialog
                     val dlg = AlertDialog.Builder(this@TellingScherm)
-                        .setTitle("Geen metadata")
-                        .setMessage("Er is geen opgeslagen metadata (counts_save header). Keer terug naar metadata en start een telling.")
-                        .setPositiveButton("OK", null)
-                        .show()
-                    styleAlertDialogTextToWhite(dlg)
-                }
-                return@withContext
-            }
-
-            val envelopeList = try {
-                VT5App.json.decodeFromString(ListSerializer(ServerTellingEnvelope.serializer()), savedEnvelopeJson)
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed decoding saved envelope JSON: ${e.message}", e)
-                null
-            }
-            if (envelopeList.isNullOrEmpty()) {
-                withContext(Dispatchers.Main) {
-                    val dlg = AlertDialog.Builder(this@TellingScherm)
-                        .setTitle("Ongeldige envelope")
-                        .setMessage("Opgeslagen envelope ongeldig.")
-                        .setPositiveButton("OK", null)
-                        .show()
-                    styleAlertDialogTextToWhite(dlg)
-                }
-                return@withContext
-            }
-
-            // Inject saved onlineId (if present) into the envelope BEFORE building finalEnv/POST.
-            val envelopeWithOnline = applySavedOnlineIdToEnvelope(envelopeList)
-            // Persist the saved envelope (now containing onlineId) so prefs remains consistent.
-            persistSavedEnvelopeJson(envelopeWithOnline)
-
-            val nowEpoch = (System.currentTimeMillis() / 1000L)
-            val nowEpochStr = nowEpoch.toString()
-            val nowFormatted = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
-
-            val baseEnv = envelopeWithOnline[0]
-            val envWithTimes = baseEnv.copy(eindtijd = nowEpochStr, uploadtijdstip = nowFormatted)
-
-            val recordsSnapshot = synchronized(pendingRecords) { ArrayList(pendingRecords) }
-            val nrec = recordsSnapshot.size
-            val nsoort = recordsSnapshot.map { it.soortid }.toSet().size
-
-            val finalEnv = envWithTimes.copy(nrec = nrec.toString(), nsoort = nsoort.toString(), data = recordsSnapshot)
-            val envelopeToSend = listOf(finalEnv)
-
-            // Pretty print and save to SAF (or fallback)
-            val onlineIdPref = prefs.getString(PREF_ONLINE_ID, "") ?: ""
-            val prettyJson = try { PRETTY_JSON.encodeToString(ListSerializer(ServerTellingEnvelope.serializer()), envelopeToSend) } catch (e: Exception) { Log.w(TAG, "pretty encode failed: ${e.message}", e); null }
-
-            var savedPrettyPath: String? = null
-            if (prettyJson != null) {
-                try {
-                    savedPrettyPath = writePrettyEnvelopeToSaf(this@TellingScherm, onlineIdPref.ifBlank { "unknown" }, prettyJson)
-                } catch (e: Exception) {
-                    Log.w(TAG, "writePrettyEnvelopeToSaf failed: ${e.message}", e)
-                    try {
-                        val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                        val fname = "${nowStr}_count_${onlineIdPref.ifBlank { "unknown" }}.json"
-                        val root = java.io.File(this@TellingScherm.filesDir, "VT5/exports"); if (!root.exists()) root.mkdirs()
-                        val f = java.io.File(root, fname); f.writeText(prettyJson, Charsets.UTF_8)
-                        savedPrettyPath = "internal:${f.absolutePath}"
-                    } catch (ex: Exception) { Log.w(TAG, "fallback pretty write failed: ${ex.message}", ex) }
-                }
-            }
-
-            // Credentials & POST
-            val creds = CredentialsStore(this@TellingScherm)
-            val user = creds.getUsername().orEmpty()
-            val pass = creds.getPassword().orEmpty()
-            if (user.isBlank() || pass.isBlank()) {
-                withContext(Dispatchers.Main) { Toast.makeText(this@TellingScherm, "Geen credentials beschikbaar voor upload.", Toast.LENGTH_LONG).show() }
-                return@withContext
-            }
-
-            val baseUrl = "https://trektellen.nl"
-            val language = "dutch"
-            val versie = "1845"
-
-            val (ok, resp) = try {
-                TrektellenApi.postCountsSave(baseUrl, language, versie, user, pass, envelopeToSend)
-            } catch (ex: Exception) {
-                Log.w(TAG, "postCountsSave exception: ${ex.message}", ex)
-                false to (ex.message ?: "exception")
-            }
-
-            val auditPath = writeEnvelopeResponseToSaf(this@TellingScherm, finalEnv.tellingid, prettyJson ?: "{}", resp)
-
-            if (!ok) {
-                withContext(Dispatchers.Main) {
-                    val dlg = AlertDialog.Builder(this@TellingScherm)
-                        .setTitle("Upload mislukt")
-                        .setMessage("Kon telling niet uploaden:\n$resp\n\nEnvelope opgeslagen: ${savedPrettyPath ?: "niet beschikbaar"}\nAuditbestand: ${auditPath ?: "niet beschikbaar"}")
-                        .setPositiveButton("OK", null)
-                        .show()
-                    styleAlertDialogTextToWhite(dlg)
-                }
-                return@withContext
-            }
-
-            // On success: try to parse the onlineId the server returned and persist it back to prefs.
-            try {
-                val returnedOnlineId = parseOnlineIdFromResponse(resp)
-                if (!returnedOnlineId.isNullOrBlank()) {
-                    prefs.edit { putString(PREF_ONLINE_ID, returnedOnlineId) }
-
-                    // Update saved envelope JSON (ensure saved envelope reflects server-confirmed onlineId)
-                    try {
-                        val updated = envelopeWithOnline.toMutableList()
-                        if (updated.isNotEmpty()) {
-                            val first = updated[0].copy(onlineid = returnedOnlineId)
-                            updated[0] = first
-                            persistSavedEnvelopeJson(updated)
+                        .setTitle("Afronden geslaagd")
+                        .setMessage("Afronden upload geslaagd. Envelope opgeslagen: ${result.savedPrettyPath ?: "n.v.t."}")
+                        .setPositiveButton("OK") { _, _ ->
+                            val intent = Intent(this@TellingScherm, MetadataScherm::class.java)
+                            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                            startActivity(intent)
+                            finish()
                         }
-                    } catch (ex: Exception) {
-                        Log.w(TAG, "Failed persisting envelope with returned onlineId: ${ex.message}", ex)
-                    }
+                        .show()
+                    dialogHelper.styleAlertDialogTextToWhite(dlg)
                 }
-            } catch (ex: Exception) {
-                Log.w(TAG, "Parsing/handling returned onlineId failed: ${ex.message}", ex)
-            }
-
-            // On success: cleanup and return to MetadataScherm
-            try {
-                pendingBackupDocs.forEach { doc -> try { doc.delete() } catch (_: Exception) {} }
-                pendingBackupDocs.clear()
-                pendingBackupInternalPaths.forEach { path -> try { java.io.File(path).delete() } catch (_: Exception) {} }
-                pendingBackupInternalPaths.clear()
-                synchronized(pendingRecords) { pendingRecords.clear() }
-                if (::viewModel.isInitialized) viewModel.clearPendingRecords()
-
-                // Remove keys (we completed the telling)
-                prefs.edit {
-                    remove(PREF_ONLINE_ID).remove(PREF_TELLING_ID).remove(PREF_SAVED_ENVELOPE_JSON)
+                is TellingAfrondHandler.AfrondResult.Failure -> {
+                    // Show failure dialog
+                    val dlg = AlertDialog.Builder(this@TellingScherm)
+                        .setTitle(result.title)
+                        .setMessage(result.message)
+                        .setPositiveButton("OK", null)
+                        .show()
+                    dialogHelper.styleAlertDialogTextToWhite(dlg)
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Cleanup after successful Afronden failed: ${e.message}", e)
-            }
-
-            withContext(Dispatchers.Main) {
-                val dlg = AlertDialog.Builder(this@TellingScherm)
-                    .setTitle("Afronden geslaagd")
-                    .setMessage("Afronden upload geslaagd. Envelope opgeslagen: ${savedPrettyPath ?: "n.v.t."}")
-                    .setPositiveButton("OK") { _, _ ->
-                        val it = Intent(this@TellingScherm, MetadataScherm::class.java)
-                        it.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                        startActivity(it)
-                        finish()
-                    }
-                    .show()
-                styleAlertDialogTextToWhite(dlg)
             }
         }
     }
