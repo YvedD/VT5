@@ -136,27 +136,48 @@ class MetadataScherm : AppCompatActivity() {
     }
 
     /**
-     * Eerste fase: laad alleen de noodzakelijke data voor het vullen van de dropdown menus
-     * Dit zorgt voor een veel snellere initiële lading
+     * Wacht op VT5App background preload voor instant MetadataScherm open
+     * 
+     * Strategie:
+     * 1. Check instant cache (0ms) - BESTE GEVAL
+     * 2. Wacht kort op VT5App preload (max 3 sec) - NORMALE GEVAL  
+     * 3. Fallback naar minimal load met progress - BACKUP
      */
     private fun loadEssentialData() {
         uiScope.launch {
             try {
-                // Check eerst of we al volledige data in cache hebben
+                // Stap 1: Instant cache check
                 val cachedData = ServerDataCache.getCachedOrNull()
                 if (cachedData != null) {
-                    Log.d(TAG, "Using fully cached data")
+                    Log.d(TAG, "✅ INSTANT: Using pre-cached data (0ms)")
                     snapshot = cachedData
                     initializeDropdowns()
-
-                    // Start het laden van de volledige data in de achtergrond
                     scheduleBackgroundLoading()
                     return@launch
                 }
 
-                // Toon de progress dialog
-                ProgressDialogHelper.withProgress(this@MetadataScherm, "Bezig met laden van gegevens...") {
-                    // Laad de minimale data
+                // Stap 2: Wacht op VT5App background preload (max 3 sec)
+                Log.d(TAG, "⏳ WAITING: for VT5App background preload (max 3s)...")
+                val preloadResult = withTimeoutOrNull(3000) {
+                    try {
+                        ServerDataCache.getOrLoad(this@MetadataScherm)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "⚠️ Background preload exception: ${e.message}")
+                        null
+                    }
+                }
+
+                if (preloadResult != null) {
+                    Log.d(TAG, "✅ FAST: Using VT5App preload data")
+                    snapshot = preloadResult
+                    initializeDropdowns()
+                    scheduleBackgroundLoading()
+                    return@launch
+                }
+
+                // Stap 3: Fallback - preload timeout, laad minimale data met progress
+                Log.d(TAG, "⚠️ FALLBACK: Preload timeout - loading minimal data with progress")
+                ProgressDialogHelper.withProgress(this@MetadataScherm, "Metadata laden...") {
                     val repo = ServerDataRepository(this@MetadataScherm)
                     val minimal = repo.loadMinimalData()
                     snapshot = minimal
@@ -165,11 +186,10 @@ class MetadataScherm : AppCompatActivity() {
                         initializeDropdowns()
                     }
 
-                    // Start het laden van de volledige data in de achtergrond
                     scheduleBackgroundLoading()
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error loading essential data: ${e.message}")
+                Log.e(TAG, "❌ ERROR: loading essential data: ${e.message}")
                 Toast.makeText(this@MetadataScherm, "Fout bij laden essentiële gegevens", Toast.LENGTH_SHORT).show()
             }
         }
