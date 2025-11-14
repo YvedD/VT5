@@ -499,190 +499,7 @@ class TellingScherm : AppCompatActivity() {
         super.onDestroy()
     }
 
-    /* ---------- UI setup ---------- */
-    private fun setupPartialsRecyclerView() {
-        val layoutManager = LinearLayoutManager(this)
-        layoutManager.stackFromEnd = true
-        binding.recyclerViewSpeechPartials.layoutManager = layoutManager
-        binding.recyclerViewSpeechPartials.setHasFixedSize(true)
-        partialsAdapter = SpeechLogAdapter()
-        partialsAdapter.showPartialsInRow = true
-        binding.recyclerViewSpeechPartials.adapter = partialsAdapter
-
-        val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onSingleTapUp(e: MotionEvent): Boolean {
-                val child = binding.recyclerViewSpeechPartials.findChildViewUnder(e.x, e.y)
-                if (child != null) {
-                    val pos = binding.recyclerViewSpeechPartials.getChildAdapterPosition(child)
-                    if (pos != RecyclerView.NO_POSITION) {
-                        val row = partialsAdapter.currentList.getOrNull(pos) ?: return true
-                        when (row.bron) {
-                            "partial" -> {
-                                val (nameOnly, cnt) = parseNameAndCountFromDisplay(row.tekst)
-                                ensureAvailableSpeciesFlat { flat ->
-                                    val dlg = AddAliasDialog.newInstance(listOf(nameOnly), flat)
-                                    dlg.listener = object : AddAliasDialog.AddAliasListener {
-                                        override fun onAliasAssigned(speciesId: String, aliasText: String) {
-                                            lifecycleScope.launch {
-                                                val snapshot = ServerDataCache.getOrLoad(this@TellingScherm)
-                                                val canonical = snapshot.speciesById[speciesId]?.soortnaam ?: aliasText
-                                                val tilename = snapshot.speciesById[speciesId]?.soortkey
-
-                                                val added = AliasManager.addAlias(
-                                                    context = this@TellingScherm,
-                                                    saf = safHelper,
-                                                    speciesId = speciesId,
-                                                    aliasText = aliasText.trim(),
-                                                    canonical = canonical,
-                                                    tilename = tilename
-                                                )
-
-                                                if (added) {
-                                                    addLog("Alias toegevoegd: '$aliasText' → $canonical", "alias")
-                                                    Toast.makeText(this@TellingScherm, "Alias opgeslagen (buffer).", Toast.LENGTH_SHORT).show()
-
-                                                    lifecycleScope.launch {
-                                                        Toast.makeText(this@TellingScherm, "Index wordt bijgewerkt...", Toast.LENGTH_SHORT).show()
-                                                        val ok = withContext(Dispatchers.IO) {
-                                                            try {
-                                                                AliasManager.forceRebuildCborNow(this@TellingScherm, safHelper)
-                                                                true
-                                                            } catch (ex: Exception) {
-                                                                Log.w(TAG, "forceRebuildCborNow failed: ${ex.message}", ex)
-                                                                false
-                                                            }
-                                                        }
-                                                        if (ok) {
-                                                            Toast.makeText(this@TellingScherm, "Alias opgeslagen en index bijgewerkt", Toast.LENGTH_SHORT).show()
-                                                            // Zorg dat runtime alias index en ASR herladen worden zodat de nieuwe alias meteen actief is
-                                                            refreshAliasesRuntimeAsync()
-                                                        } else {
-                                                            Toast.makeText(this@TellingScherm, "Alias opgeslagen (index update later)", Toast.LENGTH_LONG).show()
-                                                        }
-                                                    }
-
-                                                    if (cnt > 0) {
-                                                        addSpeciesToTilesIfNeeded(speciesId, canonical, cnt)
-                                                    }
-                                                } else {
-                                                    Toast.makeText(this@TellingScherm, "Alias niet toegevoegd (duplicaat of ongeldig)", Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
-                                        }
-                                    }
-                                    dlg.show(supportFragmentManager, "addAlias")
-                                }
-                            }
-                            else -> {
-                                if (row.bron == "raw") {
-                                    val (nameOnly, cnt) = parseNameAndCountFromDisplay(row.tekst)
-                                    ensureAvailableSpeciesFlat { flat ->
-                                        val dlg = AddAliasDialog.newInstance(listOf(nameOnly), flat)
-                                        dlg.listener = object : AddAliasDialog.AddAliasListener {
-                                            override fun onAliasAssigned(speciesId: String, aliasText: String) {
-                                                lifecycleScope.launch {
-                                                    val snapshot = ServerDataCache.getOrLoad(this@TellingScherm)
-                                                    val canonical = snapshot.speciesById[speciesId]?.soortnaam ?: aliasText
-                                                    val added = AliasManager.addAlias(
-                                                        context = this@TellingScherm,
-                                                        saf = safHelper,
-                                                        speciesId = speciesId,
-                                                        aliasText = aliasText.trim(),
-                                                        canonical = canonical,
-                                                        tilename = snapshot.speciesById[speciesId]?.soortkey
-                                                    )
-
-                                                    if (added) {
-                                                        addLog("Alias toegevoegd: '$aliasText' → $canonical", "alias")
-                                                        Toast.makeText(this@TellingScherm, "Alias opgeslagen (buffer).", Toast.LENGTH_SHORT).show()
-
-                                                        lifecycleScope.launch {
-                                                            Toast.makeText(this@TellingScherm, "Index wordt bijgewerkt...", Toast.LENGTH_SHORT).show()
-                                                            val ok = withContext(Dispatchers.IO) {
-                                                                try {
-                                                                    AliasManager.forceRebuildCborNow(this@TellingScherm, safHelper)
-                                                                    true
-                                                                } catch (ex: Exception) {
-                                                                    Log.w(TAG, "forceRebuildCborNow failed: ${ex.message}", ex)
-                                                                    false
-                                                                }
-                                                            }
-                                                            if (ok) {
-                                                                Toast.makeText(this@TellingScherm, "Alias opgeslagen en index bijgewerkt", Toast.LENGTH_SHORT).show()
-                                                                // Herlaad runtime index en ASR zodat alias direct gebruikt wordt
-                                                                refreshAliasesRuntimeAsync()
-                                                            } else {
-                                                                Toast.makeText(this@TellingScherm, "Alias opgeslagen (index update later)", Toast.LENGTH_LONG).show()
-                                                            }
-                                                        }
-
-                                                        if (cnt > 0) addSpeciesToTilesIfNeeded(speciesId, canonical, cnt)
-                                                    } else {
-                                                        Toast.makeText(this@TellingScherm, "Alias niet toegevoegd (duplicaat of ongeldig)", Toast.LENGTH_SHORT).show()
-                                                    }
-                                                }
-                                            }
-                                        }
-                                        dlg.show(supportFragmentManager, "addAlias")
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                return true
-            }
-        })
-
-        binding.recyclerViewSpeechPartials.addOnItemTouchListener(object : RecyclerView.OnItemTouchListener {
-            override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
-                return gestureDetector.onTouchEvent(e)
-            }
-            override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) {}
-            override fun onRequestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {}
-        })
-    }
-
-    private fun setupFinalsRecyclerView() {
-        val layoutManager = LinearLayoutManager(this)
-        layoutManager.stackFromEnd = true
-        binding.recyclerViewSpeechFinals.layoutManager = layoutManager
-        binding.recyclerViewSpeechFinals.setHasFixedSize(true)
-        finalsAdapter = SpeechLogAdapter()
-        finalsAdapter.showPartialsInRow = false
-        binding.recyclerViewSpeechFinals.adapter = finalsAdapter
-
-        // Gesture handling for finals: open AnnotatieScherm on tap (now for result)
-        val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onSingleTapUp(e: MotionEvent): Boolean {
-                val child = binding.recyclerViewSpeechFinals.findChildViewUnder(e.x, e.y)
-                if (child != null) {
-                    val pos = binding.recyclerViewSpeechFinals.getChildAdapterPosition(child)
-                    if (pos != RecyclerView.NO_POSITION) {
-                        val row = finalsAdapter.currentList.getOrNull(pos) ?: return true
-                        if (row.bron == "final") {
-                            // Start AnnotatieScherm for result. Pass row position so we can update correct row later.
-                            val intent = Intent(this@TellingScherm, AnnotatieScherm::class.java).apply {
-                                putExtra(AnnotatieScherm.EXTRA_TEXT, row.tekst) // legacy compatibility
-                                putExtra(AnnotatieScherm.EXTRA_TS, row.ts)
-                                putExtra("extra_row_pos", pos)
-                            }
-                            annotationLauncher.launch(intent)
-                        }
-                    }
-                }
-                return true
-            }
-        })
-
-        binding.recyclerViewSpeechFinals.addOnItemTouchListener(object : RecyclerView.OnItemTouchListener {
-            override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
-                return gestureDetector.onTouchEvent(e)
-            }
-            override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) {}
-            override fun onRequestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {}
-        })
-    }
+    /* ---------- UI setup (now delegated to UiManager) ---------- */
 
     // Ensure availableSpeciesFlat is loaded; onReady is invoked on Main with the flat list.
     private fun ensureAvailableSpeciesFlat(onReady: (List<String>) -> Unit) {
@@ -745,61 +562,7 @@ class TellingScherm : AppCompatActivity() {
             .show()
     }
 
-    private fun setupSpeciesTilesRecyclerView() {
-        val flm = FlexboxLayoutManager(this).apply {
-            flexDirection = FlexDirection.ROW
-            flexWrap = FlexWrap.WRAP
-            justifyContent = JustifyContent.FLEX_START
-            alignItems = AlignItems.FLEX_START
-        }
-        binding.recyclerViewSpecies.layoutManager = flm
-        binding.recyclerViewSpecies.setHasFixedSize(true)
-        binding.recyclerViewSpecies.itemAnimator?.changeDuration = 0
 
-        tilesAdapter = SpeciesTileAdapter(onTileClick = { pos -> showNumberInputDialog(pos) })
-        binding.recyclerViewSpecies.adapter = tilesAdapter
-    }
-
-    private fun setupButtons() {
-        binding.btnAddSoorten.setOnClickListener { openSoortSelectieForAdd() }
-
-        // Afronden: confirmation popup before proceeding
-        binding.btnAfronden.setOnClickListener {
-            val builder = AlertDialog.Builder(this@TellingScherm)
-                .setTitle("Afronden bevestigen")
-                .setMessage("Weet je zeker dat je wilt afronden en de telling uploaden?")
-                .setPositiveButton("Ja") { _, _ ->
-                    lifecycleScope.launch {
-                        val dialog = ProgressDialogHelper.show(this@TellingScherm, "Bezig met afronden upload...")
-                        try { handleAfronden() } finally { dialog.dismiss() }
-                    }
-                }
-                .setNegativeButton("Nee", null)
-
-            val dlg = builder.show()
-            dialogHelper.styleAlertDialogTextToWhite(dlg)
-        }
-
-        binding.btnSaveClose.setOnClickListener {
-            // Repurposed: show current status screen with current tile data (no popup)
-            val current = tilesAdapter.currentList
-            val ids = ArrayList<String>(current.size)
-            val names = ArrayList<String>(current.size)
-            val counts = ArrayList<String>(current.size)
-            for (row in current) {
-                ids.add(row.soortId)
-                names.add(row.naam)
-                counts.add(row.count.toString())
-            }
-
-            val intent = Intent(this@TellingScherm, HuidigeStandScherm::class.java).apply {
-                putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_IDS, ids)
-                putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_NAMEN, names)
-                putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_AANTALLEN, counts)
-            }
-            startActivity(intent)
-        }
-    }
 
     /* Preselection: load initial tiles (if app passed a preselection state) */
     private fun loadPreselection() {
@@ -1014,7 +777,7 @@ class TellingScherm : AppCompatActivity() {
                                         }
                                     }
                                     is MatchResult.SuggestionList -> {
-                                        val cnt = extractCountFromText(result.hypothesis)
+                                        val cnt = logManager.extractCountFromText(result.hypothesis)
                                         showSuggestionBottomSheet(result.candidates, cnt)
                                     }
                                     is MatchResult.NoMatch -> {
@@ -1377,81 +1140,9 @@ class TellingScherm : AppCompatActivity() {
     }
 
     // Write pretty envelope JSON to SAF as "<timestamp>_count_<onlineid>.json"
-    private fun writePrettyEnvelopeToSaf(context: Context, onlineId: String, prettyJson: String): String? {
-        try {
-            val saf = SaFStorageHelper(context)
-            var vt5Dir: DocumentFile? = saf.getVt5DirIfExists()
-            if (vt5Dir == null) {
-                try { saf.ensureFolders() } catch (_: Exception) {}
-                vt5Dir = saf.getVt5DirIfExists()
-            }
-            if (vt5Dir != null) {
-                val exportsDir = saf.findOrCreateDirectory(vt5Dir, "exports") ?: vt5Dir
-                val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                val safeName = "${nowStr}_count_${onlineId}.json"
-                val created = exportsDir.createFile("application/json", safeName) ?: return null
-                context.contentResolver.openOutputStream(created.uri)?.bufferedWriter(Charsets.UTF_8).use { w ->
-                    w?.write(prettyJson)
-                    w?.flush()
-                }
-                return "Documents/VT5/exports/$safeName"
-            } else {
-                // fallback internal
-                val root = java.io.File(context.filesDir, "VT5")
-                if (!root.exists()) root.mkdirs()
-                val exports = java.io.File(root, "exports")
-                if (!exports.exists()) exports.mkdirs()
-                val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                val filename = "${nowStr}_count_${onlineId}.json"
-                val f = java.io.File(exports, filename)
-                f.writeText(prettyJson, Charsets.UTF_8)
-                return "internal:${f.absolutePath}"
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "writePrettyEnvelopeToSaf failed: ${e.message}", e)
-            return null
-        }
-    }
 
-    /* ---------- Remaining helpers (unchanged) ---------- */
-    private fun applySavedOnlineIdToEnvelope(envelopeList: List<com.yvesds.vt5.net.ServerTellingEnvelope>): List<com.yvesds.vt5.net.ServerTellingEnvelope> {
-        try {
-            // read saved onlineId from the same prefs file used elsewhere in the activity
-            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val savedOnlineId = prefs.getString("pref_online_id", null) ?: prefs.getString("pref_onlineid", null) // tolerance for key variants
-            if (savedOnlineId.isNullOrBlank()) return envelopeList
 
-            // copy the list and replace the first envelope's onlineid field
-            val updated = envelopeList.toMutableList()
-            if (updated.isNotEmpty()) {
-                val first = updated[0]
-                // create a copy with the server online id filled in
-                val replaced = first.copy(onlineid = savedOnlineId)
-                updated[0] = replaced
-            }
-            return updated.toList()
-        } catch (ex: Exception) {
-            // on any error, fall back to original envelope (do not block the upload)
-            android.util.Log.w("TellingScherm", "applySavedOnlineIdToEnvelope failed: ${ex.message}", ex)
-            return envelopeList
-        }
-    }
 
-    private fun persistSavedEnvelopeJson(envelopeList: List<com.yvesds.vt5.net.ServerTellingEnvelope>) {
-        try {
-            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val jsonText = PRETTY_JSON.encodeToString(kotlinx.serialization.builtins.ListSerializer(com.yvesds.vt5.net.ServerTellingEnvelope.serializer()), envelopeList)
-            prefs.edit { putString(PREF_SAVED_ENVELOPE_JSON, jsonText) }
-        } catch (ex: Exception) {
-            Log.w("TellingScherm", "persistSavedEnvelopeJson failed: ${ex.message}", ex)
-        }
-    }
-
-    // Parse a numeric count from string fallback to 1
-    private fun extractCountFromText(text: String): Int {
-        val m = Regex("\\b(\\d+)\\b").find(text)
-        return m?.groups?.get(1)?.value?.toIntOrNull() ?: 1
-    }
 
     private fun initializeVolumeKeyHandler() {
         try {
@@ -1542,106 +1233,12 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
-    // Write envelope + response to SAF exports (Documents/VT5/exports) - audit file
-    private fun writeEnvelopeResponseToSaf(context: Context, tellingId: String, envelopeJson: String, responseText: String): String? {
-        try {
-            val saf = SaFStorageHelper(context)
-            var vt5Dir: DocumentFile? = saf.getVt5DirIfExists()
-            if (vt5Dir == null) {
-                try { saf.ensureFolders() } catch (_: Exception) {}
-                vt5Dir = saf.getVt5DirIfExists()
-            }
-            if (vt5Dir != null) {
-                val exportsDir = saf.findOrCreateDirectory(vt5Dir, "exports") ?: vt5Dir
-                val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                val safeName = "counts_save_response_${tellingId}_$nowStr.txt"
-                val created = exportsDir.createFile("text/plain", safeName) ?: return null
-                context.contentResolver.openOutputStream(created.uri)?.bufferedWriter(Charsets.UTF_8).use { w ->
-                    w?.write("=== Envelope ===\n")
-                    w?.write(envelopeJson)
-                    w?.write("\n\n=== Server response ===\n")
-                    w?.write(responseText)
-                    w?.flush()
-                }
-                return "Documents/VT5/exports/$safeName"
-            } else {
-                // fallback internal
-                val root = java.io.File(context.filesDir, "VT5")
-                if (!root.exists()) root.mkdirs()
-                val exports = java.io.File(root, "exports")
-                if (!exports.exists()) exports.mkdirs()
-                val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                val filename = "counts_save_response_${tellingId}_$nowStr.txt"
-                val f = java.io.File(exports, filename)
-                f.bufferedWriter(Charsets.UTF_8).use { w ->
-                    w.write("=== Envelope ===\n")
-                    w.write(envelopeJson)
-                    w.write("\n\n=== Server response ===\n")
-                    w.write(responseText)
-                    w.flush()
-                }
-                return "internal:${f.absolutePath}"
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "writeEnvelopeResponseToSaf failed: ${e.message}", e)
-            return null
-        }
-    }
-
     // Launch soort selectie
     private fun openSoortSelectieForAdd() {
         val telpostId = TellingSessionManager.preselectState.value.telpostId
         val intent = Intent(this, SoortSelectieScherm::class.java)
             .putExtra(SoortSelectieScherm.EXTRA_TELPOST_ID, telpostId)
         addSoortenLauncher.launch(intent)
-    }
-    private fun parseOnlineIdFromResponse(resp: String): String? {
-        try {
-            if (resp.isBlank()) return null
-
-            // 1) Try JSON object
-            try {
-                val trimmed = resp.trim()
-                if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-                    // Use org.json for flexible parsing of unknown shapes
-                    val jsonRoot = org.json.JSONTokener(trimmed).nextValue()
-                    when (jsonRoot) {
-                        is org.json.JSONObject -> {
-                            val jo = jsonRoot
-                            if (jo.has("onlineid")) return jo.get("onlineid").toString()
-                            if (jo.has("onlineId")) return jo.get("onlineId").toString()
-                            if (jo.has("online_id")) return jo.get("online_id").toString()
-                        }
-                        is org.json.JSONArray -> {
-                            val ja = jsonRoot
-                            if (ja.length() > 0) {
-                                val first = ja.optJSONObject(0)
-                                if (first != null) {
-                                    if (first.has("onlineid")) return first.get("onlineid").toString()
-                                    if (first.has("onlineId")) return first.get("onlineId").toString()
-                                    if (first.has("online_id")) return first.get("online_id").toString()
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch (_: Exception) {
-                // continue to regex fallback
-            }
-
-            // 2) Regex fallback: find digits following onlineid keyword
-            val re = Regex("""["']?(?:onlineid|onlineId|online_id)["']?\s*[:=]\s*["']?(\d+)["']?""", RegexOption.IGNORE_CASE)
-            val m = re.find(resp)
-            if (m != null) return m.groupValues[1]
-
-            // 3) Another fallback: any 5-10 digit number that looks like an id (risky; last resort)
-            val numRe = Regex("""\b(\d{4,12})\b""")
-            val m2 = numRe.find(resp)
-            if (m2 != null) return m2.groupValues[1]
-        } catch (ex: Exception) {
-            Log.w(TAG, "parseOnlineIdFromResponse failed: ${ex.message}", ex)
-        }
-        return null
     }
     // Helper: apply annotations JSON to the matching pending record in-memory (and write a single-record backup).
 // Paste this function into TellingScherm (near other helpers).
@@ -1735,22 +1332,4 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
-    private fun styleAlertDialogTextToWhite(dialog: AlertDialog) {
-        try {
-            // The AlertDialog title view id is provided by AppCompat, not android.R.
-            val title = dialog.findViewById<TextView?>(androidx.appcompat.R.id.alertTitle)
-            title?.setTextColor(Color.WHITE)
-
-            // The message id is platform-stable
-            val msg = dialog.findViewById<TextView?>(android.R.id.message)
-            msg?.setTextColor(Color.WHITE)
-
-            // Buttons are only available after show(); caller already calls this after .show()
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(Color.WHITE)
-            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(Color.WHITE)
-            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(Color.WHITE)
-        } catch (e: Exception) {
-            Log.w(TAG, "styleAlertDialogTextToWhite failed: ${e.message}", e)
-        }
-    }
 }
