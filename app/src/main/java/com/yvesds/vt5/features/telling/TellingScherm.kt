@@ -75,13 +75,13 @@ import androidx.core.content.edit
 /**
  * TellingScherm.kt
  *
- * Preserves existing functionality (ASR parsing, tiles, logs, aliases) and adds:
- * - Optional ViewModel mirroring so UI state survives rotation
- * - Confirmation before Afronden
- * - Dialog text styling helper to force white text for readability in sunlight
+ * Main Activity for collecting counts. Refactored to:
+ * - delegate tile list management to TegelBeheer
+ * - delegate pending-records & backups to RecordsBeheer
+ * - let TellingViewModel coordinate repository calls (collectFinal) and hold UI state
  *
- * I did not remove any original logic; I only added mirroring calls to the ViewModel
- * and the dialog styling/confirmation.
+ * This full file is the working, adjusted version where all direct repository collects
+ * were replaced by viewModel.collectFinal(...) and the viewModel is injected with RecordsBeheer.
  */
 class TellingScherm : AppCompatActivity() {
 
@@ -113,7 +113,11 @@ class TellingScherm : AppCompatActivity() {
     private lateinit var partialsAdapter: SpeechLogAdapter
     private lateinit var finalsAdapter: SpeechLogAdapter
 
-    // ViewModel (optional mirror for rotation persistence) - ensure TellingViewModel.kt is present
+    // Managers
+    private lateinit var tegelBeheer: TegelBeheer
+    private lateinit var recordsBeheer: RecordsBeheer
+
+    // ViewModel (UI state)
     private lateinit var viewModel: TellingViewModel
 
     // Speech components
@@ -149,13 +153,6 @@ class TellingScherm : AppCompatActivity() {
     // Cached MatchContext to avoid rebuilding on every parse
     @Volatile
     private var cachedMatchContext: MatchContext? = null
-
-    // Local pendingRecords (legacy) — we mirror to ViewModel for persistence but keep this for compatibility
-    private val pendingRecords = mutableListOf<ServerTellingDataItem>()
-
-    // Track backup files created per-record (DocumentFile or internal path strings)
-    private val pendingBackupDocs = mutableListOf<DocumentFile>()
-    private val pendingBackupInternalPaths = mutableListOf<String>()
 
     // BroadcastReceiver: listen for alias-reload events from AliasManager
     private val aliasReloadReceiver = object : BroadcastReceiver() {
@@ -214,9 +211,9 @@ class TellingScherm : AppCompatActivity() {
 
                         if (additions.isNotEmpty()) {
                             val merged = (existing + additions).sortedBy { it.naam.lowercase(Locale.getDefault()) }
-                            tilesAdapter.submitList(merged)
-                            // Mirror to ViewModel if present
-                            if (::viewModel.isInitialized) viewModel.setTiles(merged)
+                            // now delegate to tegelBeheer via conversion
+                            val tiles = merged.map { SoortTile(it.soortId, it.naam, it.count) }
+                            tegelBeheer.setTiles(tiles)
 
                             addLog("Soorten toegevoegd: ${additions.size}", "manueel")
                             Toast.makeText(this@TellingScherm, "Toegevoegd: ${additions.size}", Toast.LENGTH_SHORT).show()
@@ -233,9 +230,6 @@ class TellingScherm : AppCompatActivity() {
     }
 
     // ActivityResultLauncher for AnnotatieScherm results; prefer new JSON payload, fallback to legacy fields
-    // Full ActivityResult callback (replace the existing annotationLauncher registration body).
-    // This is the function that processes the result Intent from AnnotatieScherm and calls the helper above.
-    // Full ActivityResult callback (replace existing annotationLauncher body with this).
     private val annotationLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
         if (res.resultCode != Activity.RESULT_OK) return@registerForActivityResult
         val data = res.data ?: return@registerForActivityResult
@@ -277,7 +271,7 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
-    // Data models
+    // Data models (keep SoortRow for adapter compatibility)
     data class SoortRow(val soortId: String, val naam: String, val count: Int = 0)
     data class SpeechLogRow(val ts: Long, val tekst: String, val bron: String)
 
@@ -293,9 +287,33 @@ class TellingScherm : AppCompatActivity() {
         setupFinalsRecyclerView()
         setupSpeciesTilesRecyclerView()
 
+        // Initialize TegelBeheer and wire UI callbacks (safe to create before ViewModel; TegelUi checks viewModel initialization)
+        tegelBeheer = TegelBeheer(object : TegelUi {
+            override fun submitTiles(list: List<SoortTile>) {
+                runOnUiThread {
+                    val converted = list.map { SoortRow(it.soortId, it.naam, it.count) }
+                    tilesAdapter.submitList(converted)
+                    if (::viewModel.isInitialized) viewModel.setTiles(converted)
+                }
+            }
+
+            override fun onTileCountUpdated(soortId: String, newCount: Int) {
+                runOnUiThread {
+                    // placeholder: can animate specific tile or update counters
+                }
+            }
+        })
+
+        // Initialize RecordsBeheer (use applicationContext to avoid leaking the Activity)
+        recordsBeheer = RecordsBeheer(applicationContext)
+
         // Initialize ViewModel (if you have TellingViewModel in project)
         try {
             viewModel = ViewModelProvider(this).get(TellingViewModel::class.java)
+
+            // inject repository into ViewModel so it can coordinate collection & LiveData updates
+            viewModel.setRecordsBeheer(recordsBeheer)
+
             // Observe VM lists and keep adapters in sync (this ensures rotation preserves UI)
             viewModel.tiles.observe(this) { tiles ->
                 // update adapter (observer will call submitList callback if configured)
@@ -328,6 +346,16 @@ class TellingScherm : AppCompatActivity() {
                     }
                 }
             }
+
+            // Observe repository error messages to surface to user
+            viewModel.repoError.observe(this) { msg ->
+                msg?.let {
+                    if (it.isNotBlank()) {
+                        Toast.makeText(this@TellingScherm, "Opslagfout: $it", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+
         } catch (ex: Exception) {
             Log.w(TAG, "TellingViewModel not available or failed to init: ${ex.message}")
         }
@@ -423,7 +451,7 @@ class TellingScherm : AppCompatActivity() {
                                                     }
 
                                                     if (cnt > 0) {
-                                                        addSpeciesToTilesIfNeeded(speciesId, canonical, cnt)
+                                                        viewModel.collectFinal(speciesId, cnt)
                                                     }
                                                 } else {
                                                     Toast.makeText(this@TellingScherm, "Alias niet toegevoegd (duplicaat of ongeldig)", Toast.LENGTH_SHORT).show()
@@ -477,7 +505,7 @@ class TellingScherm : AppCompatActivity() {
                                                             }
                                                         }
 
-                                                        if (cnt > 0) addSpeciesToTilesIfNeeded(speciesId, canonical, cnt)
+                                                        if (cnt > 0) viewModel.collectFinal(speciesId, cnt)
                                                     } else {
                                                         Toast.makeText(this@TellingScherm, "Alias niet toegevoegd (duplicaat of ongeldig)", Toast.LENGTH_SHORT).show()
                                                     }
@@ -594,13 +622,15 @@ class TellingScherm : AppCompatActivity() {
                     return@setPositiveButton
                 }
                 lifecycleScope.launch {
-                    // Update tile count internally (no separate manual log)
-                    updateSoortCountInternal(row.soortId, delta)
+                    // Update tile count internally using TegelBeheer
+                    updateSoortCountInternal_delegate(row.soortId, delta)
 
                     // Behave exactly like an ASR final:
                     addFinalLog("${row.naam} -> +$delta")
                     RecentSpeciesStore.recordUse(this@TellingScherm, row.soortId, maxEntries = 25)
-                    collectFinalAsRecord(row.soortId, delta)
+
+                    // Collect via ViewModel (which calls RecordsBeheer)
+                    viewModel.collectFinal(row.soortId, delta)
                 }
             }
             .show()
@@ -689,8 +719,9 @@ class TellingScherm : AppCompatActivity() {
                         return@launch
                     }
 
-                    tilesAdapter.submitList(initial)
-                    if (::viewModel.isInitialized) viewModel.setTiles(initial)
+                    // Use TegelBeheer to set initial tiles
+                    val initialTiles = initial.map { SoortTile(it.soortId, it.naam, it.count) }
+                    tegelBeheer.setTiles(initialTiles)
 
                     addLog("Telling gestart met ${initial.size} soorten.", "systeem")
                     dialog.dismiss()
@@ -738,7 +769,8 @@ class TellingScherm : AppCompatActivity() {
     private suspend fun buildMatchContext(): MatchContext = withContext(Dispatchers.IO) {
         val snapshot = ServerDataCache.getOrLoad(this@TellingScherm)
 
-        val tiles = tilesAdapter.currentList.map { it.soortId }.toSet()
+        // Use tegelBeheer for current tiles
+        val tiles = tegelBeheer.getTiles().map { it.soortId }.toSet()
 
         val telpostId = TellingSessionManager.preselectState.value.telpostId
         val siteAllowed = telpostId?.let { id ->
@@ -809,11 +841,11 @@ class TellingScherm : AppCompatActivity() {
                                     is MatchResult.AutoAccept -> {
                                         val formatted = "${result.candidate.displayName} -> +${result.amount}"
                                         addFinalLog(formatted)
-                                        updateSoortCountInternal(result.candidate.speciesId, result.amount)
+                                        updateSoortCountInternal_delegate(result.candidate.speciesId, result.amount)
                                         RecentSpeciesStore.recordUse(this@TellingScherm, result.candidate.speciesId, maxEntries = 25)
 
-                                        // Collect record (do NOT auto-upload: we save pendingRecords for Afronden)
-                                        collectFinalAsRecord(result.candidate.speciesId, result.amount)
+                                        // Collect record via ViewModel (which uses RecordsBeheer)
+                                        viewModel.collectFinal(result.candidate.speciesId, result.amount)
                                     }
                                     is MatchResult.AutoAcceptAddPopup -> {
                                         val cnt = result.amount
@@ -821,14 +853,14 @@ class TellingScherm : AppCompatActivity() {
                                         val speciesId = result.candidate.speciesId
 
                                         // NEW: if species already present in tiles, bypass popup and directly count it
-                                        val presentInTiles = tilesAdapter.currentList.any { it.soortId == speciesId }
+                                        val presentInTiles = tegelBeheer.findIndexBySoortId(speciesId) != -1
                                         if (presentInTiles) {
                                             addFinalLog("$prettyName -> +$cnt")
-                                            updateSoortCountInternal(speciesId, cnt)
+                                            updateSoortCountInternal_delegate(speciesId, cnt)
                                             RecentSpeciesStore.recordUse(this@TellingScherm, speciesId, maxEntries = 25)
 
                                             // Collect record
-                                            collectFinalAsRecord(speciesId, cnt)
+                                            viewModel.collectFinal(speciesId, cnt)
                                         } else {
                                             val msg = "Soort \"$prettyName\" herkend met aantal $cnt.\n\nToevoegen?"
                                             val dlg = AlertDialog.Builder(this@TellingScherm)
@@ -837,8 +869,8 @@ class TellingScherm : AppCompatActivity() {
                                                 .setPositiveButton("Ja") { _, _ ->
                                                     addSpeciesToTiles(result.candidate.speciesId, result.candidate.displayName, cnt)
                                                     addFinalLog("${result.candidate.displayName} -> +$cnt")
-                                                    // record collected in addSpeciesToTiles? ensure collected as well:
-                                                    collectFinalAsRecord(result.candidate.speciesId, cnt)
+                                                    // collect with speciesId
+                                                    viewModel.collectFinal(result.candidate.speciesId, cnt)
                                                 }
                                                 .setNegativeButton("Nee", null)
                                                 .show()
@@ -849,14 +881,14 @@ class TellingScherm : AppCompatActivity() {
                                         result.matches.forEach { match ->
                                             val sid = match.candidate.speciesId
                                             val cnt = match.amount
-                                            val present = tilesAdapter.currentList.any { it.soortId == sid }
+                                            val present = tegelBeheer.findIndexBySoortId(sid) != -1
                                             if (present) {
                                                 addFinalLog("${match.candidate.displayName} -> +${cnt}")
-                                                updateSoortCountInternal(sid, cnt)
+                                                updateSoortCountInternal_delegate(sid, cnt)
                                                 RecentSpeciesStore.recordUse(this@TellingScherm, sid, maxEntries = 25)
 
                                                 // Collect each recognized match
-                                                collectFinalAsRecord(sid, cnt)
+                                                viewModel.collectFinal(sid, cnt)
                                             } else {
                                                 val prettyName = match.candidate.displayName
                                                 val msg = "Soort \"$prettyName\" (${cnt}x) herkend.\n\nToevoegen?"
@@ -866,7 +898,7 @@ class TellingScherm : AppCompatActivity() {
                                                     .setPositiveButton("Ja") { _, _ ->
                                                         addSpeciesToTiles(match.candidate.speciesId, prettyName, cnt)
                                                         addFinalLog("$prettyName -> +${cnt}")
-                                                        collectFinalAsRecord(match.candidate.speciesId, cnt)
+                                                        viewModel.collectFinal(match.candidate.speciesId, cnt)
                                                     }
                                                     .setNegativeButton("Nee", null)
                                                     .show()
@@ -1064,11 +1096,30 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
-    // Append a final log entry (bron = "final")
-    // Also remove any existing partials so final doesn't sit next to a stale partial.
-    // Vervang volledige addFinalLog(...) functie door onderstaande versie.
-// Ongeveer vervangt: functie die begon rond regel ~997
+    // Delegation wrapper that uses TegelBeheer to update tiles (safe migration step)
+    private fun updateSoortCountInternal_delegate(soortId: String, count: Int) {
+        // Try immediate synchronous update; if not found, fallback to adding
+        val ok = try {
+            tegelBeheer.verhoogSoortAantal(soortId, count)
+        } catch (ex: Exception) {
+            Log.w(TAG, "updateSoortCountInternal_delegate: tegelBeheer call failed: ${ex.message}", ex)
+            false
+        }
+        if (!ok) {
+            // fallback: try adding with canonical name lookup (best-effort)
+            lifecycleScope.launch {
+                val canonical = try {
+                    val snapshot = withContext(Dispatchers.IO) { ServerDataCache.getOrLoad(this@TellingScherm) }
+                    snapshot.speciesById[soortId]?.soortnaam ?: soortId
+                } catch (_: Exception) {
+                    soortId
+                }
+                tegelBeheer.verhoogSoortAantalOfVoegToe(soortId, canonical, count)
+            }
+        }
+    }
 
+    // Append a final log entry (bron = "final")
     private fun addFinalLog(text: String) {
         val now = System.currentTimeMillis() / 1000L
         val newRow = SpeechLogRow(ts = now, tekst = text, bron = "final")
@@ -1102,7 +1153,7 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
-    /* ---------- Suggestion / Add / Tiles helpers (unchanged flows) ---------- */
+    /* ---------- Suggestion / Add / Tiles helpers (unchanged flows, delegating to TegelBeheer) ---------- */
     private fun showSuggestionBottomSheet(candidates: List<Candidate>, count: Int) {
         val items = candidates.map { "${it.displayName} (score: ${"%.2f".format(it.score)})" }.toTypedArray()
 
@@ -1112,8 +1163,8 @@ class TellingScherm : AppCompatActivity() {
                 val chosen = candidates[which]
                 if (chosen.isInTiles) {
                     addFinalLog("${chosen.displayName} -> +$count")
-                    updateSoortCountInternal(chosen.speciesId, count)
-                    collectFinalAsRecord(chosen.speciesId, count)
+                    updateSoortCountInternal_delegate(chosen.speciesId, count)
+                    viewModel.collectFinal(chosen.speciesId, count)
                 } else {
                     val msg = "Soort \"${chosen.displayName}\" toevoegen en $count noteren?"
                     val dlg = AlertDialog.Builder(this@TellingScherm)
@@ -1122,7 +1173,7 @@ class TellingScherm : AppCompatActivity() {
                         .setPositiveButton("Ja") { _, _ ->
                             addSpeciesToTiles(chosen.speciesId, chosen.displayName, count)
                             addFinalLog("${chosen.displayName} -> +$count")
-                            collectFinalAsRecord(chosen.speciesId, count)
+                            viewModel.collectFinal(chosen.speciesId, count)
                         }
                         .setNegativeButton("Nee", null)
                         .show()
@@ -1160,7 +1211,9 @@ class TellingScherm : AppCompatActivity() {
                 updated.add(newRow)
 
                 withContext(Dispatchers.Main) {
-                    tilesAdapter.submitList(updated)
+                    // delegate to tegelBeheer
+                    val tiles = updated.map { SoortTile(it.soortId, it.naam, it.count) }
+                    tegelBeheer.setTiles(tiles)
                     if (::viewModel.isInitialized) viewModel.setTiles(updated)
                     updateSelectedSpeciesMap()
                     RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
@@ -1203,150 +1256,12 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
-    // Internal update used by parser flows, does NOT create a 'Bijgewerkt' log line.
-    private fun updateSoortCountInternal(soortId: String, count: Int) {
-        lifecycleScope.launch {
-            val currentList = tilesAdapter.currentList
-            val pos = currentList.indexOfFirst { it.soortId == soortId }
-            if (pos == -1) {
-                Log.e(TAG, "Species with ID $soortId not found in the list!")
-                return@launch
-            }
+    // (Old internal collectFinalAsRecord moved to RecordsBeheer)
+    // Wherever collectFinalAsRecord was called before, we now call viewModel.collectFinal(...) which orchestrates repository IO.
 
-            val item = currentList[pos]
-            val newCount = item.count + count
+    // writeRecordBackupSaf / writeRecordBackupInternal moved to RecordsBeheer - use recordsBeheer.writeRecordBackupSaf(...)
+    // handleAfronden uses recordsBeheer.getPendingRecordsSnapshot() and recordsBeheer.clearPendingRecordsAndBackups()
 
-            val updatedList = withContext(Dispatchers.Default) {
-                val tmp = ArrayList(currentList)
-                tmp[pos] = item.copy(count = newCount)
-                tmp
-            }
-
-            withContext(Dispatchers.Main) {
-                tilesAdapter.submitList(updatedList)
-                if (::viewModel.isInitialized) viewModel.updateTiles(updatedList)
-                RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
-                updateSelectedSpeciesMap()
-            }
-        }
-    }
-
-    // Collect a final into pendingRecords and write per-final backup to SAF exports
-    private fun collectFinalAsRecord(soortId: String, amount: Int) {
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                val tellingId = prefs.getString(PREF_TELLING_ID, null)
-                if (tellingId.isNullOrBlank()) {
-                    Log.w(TAG, "No PREF_TELLING_ID available - cannot collect final as record")
-                    return@launch
-                }
-
-                val idLocal = DataUploader.getAndIncrementRecordId(this@TellingScherm, tellingId)
-                val nowEpoch = (System.currentTimeMillis() / 1000L).toString()
-                val item = ServerTellingDataItem(
-                    idLocal = idLocal,
-                    tellingid = tellingId,
-                    soortid = soortId,
-                    aantal = amount.toString(),
-                    richting = "",
-                    aantalterug = "0",
-                    richtingterug = "",
-                    sightingdirection = "",
-                    lokaal = "0",
-                    aantal_plus = "0",
-                    aantalterug_plus = "0",
-                    lokaal_plus = "0",
-                    markeren = "0",
-                    markerenlokaal = "0",
-                    geslacht = "",
-                    leeftijd = "",
-                    kleed = "",
-                    opmerkingen = "",
-                    trektype = "",
-                    teltype = "",
-                    location = "",
-                    height = "",
-                    tijdstip = nowEpoch,
-                    groupid = idLocal,
-                    uploadtijdstip = "",
-                    totaalaantal = amount.toString()
-                )
-
-                // Add to in-memory list on main
-                withContext(Dispatchers.Main) {
-                    pendingRecords.add(item)
-                    if (::viewModel.isInitialized) viewModel.addPendingRecord(item)
-                }
-
-                // Try SAF backup, else internal fallback
-                try {
-                    val doc = writeRecordBackupSaf(this@TellingScherm, tellingId, item)
-                    if (doc != null) {
-                        pendingBackupDocs.add(doc)
-                    } else {
-                        val internal = writeRecordBackupInternal(this@TellingScherm, tellingId, item)
-                        if (internal != null) pendingBackupInternalPaths.add(internal)
-                    }
-                } catch (ex: Exception) {
-                    Log.w(TAG, "Record backup failed: ${ex.message}", ex)
-                }
-
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@TellingScherm, "Waarneming opgeslagen (buffer)", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "collectFinalAsRecord failed: ${e.message}", e)
-            }
-        }
-    }
-
-    // Write a single record backup via SAF into Documents/VT5/exports
-    private fun writeRecordBackupSaf(context: Context, tellingId: String, item: ServerTellingDataItem): DocumentFile? {
-        try {
-            val saf = SaFStorageHelper(context)
-            var vt5Dir: DocumentFile? = saf.getVt5DirIfExists()
-            if (vt5Dir == null) {
-                try { saf.ensureFolders() } catch (_: Exception) {}
-                vt5Dir = saf.getVt5DirIfExists()
-            }
-            if (vt5Dir != null) {
-                val exportsDir = saf.findOrCreateDirectory(vt5Dir, "exports") ?: vt5Dir
-                val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                val safeName = "session_${tellingId}_${item.idLocal}_$nowStr.json"
-                val created = exportsDir.createFile("application/json", safeName) ?: return null
-                context.contentResolver.openOutputStream(created.uri)?.bufferedWriter(Charsets.UTF_8).use { w ->
-                    val payloadJson = VT5App.json.encodeToString(ListSerializer(ServerTellingDataItem.serializer()), listOf(item))
-                    w?.write(payloadJson)
-                    w?.flush()
-                }
-                return created
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "writeRecordBackupSaf failed: ${e.message}", e)
-        }
-        return null
-    }
-
-    // Fallback internal write
-    private fun writeRecordBackupInternal(context: Context, tellingId: String, item: ServerTellingDataItem): String? {
-        return try {
-            val root = java.io.File(context.filesDir, "VT5")
-            if (!root.exists()) root.mkdirs()
-            val exports = java.io.File(root, "exports"); if (!exports.exists()) exports.mkdirs()
-            val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            val filename = "session_${tellingId}_${item.idLocal}_$nowStr.json"
-            val f = java.io.File(exports, filename)
-            val payloadJson = VT5App.json.encodeToString(ListSerializer(ServerTellingDataItem.serializer()), listOf(item))
-            f.writeText(payloadJson, Charsets.UTF_8)
-            f.absolutePath
-        } catch (e: Exception) {
-            Log.w(TAG, "writeRecordBackupInternal failed: ${e.message}", e)
-            null
-        }
-    }
-
-    // Afronden: build counts_save envelope with saved metadata + pendingRecords, POST and handle response
     private suspend fun handleAfronden() {
         withContext(Dispatchers.IO) {
             val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -1393,7 +1308,8 @@ class TellingScherm : AppCompatActivity() {
             val baseEnv = envelopeWithOnline[0]
             val envWithTimes = baseEnv.copy(eindtijd = nowEpochStr, uploadtijdstip = nowFormatted)
 
-            val recordsSnapshot = synchronized(pendingRecords) { ArrayList(pendingRecords) }
+            // Use RecordsBeheer to get pending records snapshot
+            val recordsSnapshot = recordsBeheer.getPendingRecordsSnapshot()
             val nrec = recordsSnapshot.size
             val nsoort = recordsSnapshot.map { it.soortid }.toSet().size
 
@@ -1478,33 +1394,24 @@ class TellingScherm : AppCompatActivity() {
 
             // On success: cleanup and return to MetadataScherm
             try {
-                pendingBackupDocs.forEach { doc -> try { doc.delete() } catch (_: Exception) {} }
-                pendingBackupDocs.clear()
-                pendingBackupInternalPaths.forEach { path -> try { java.io.File(path).delete() } catch (_: Exception) {} }
-                pendingBackupInternalPaths.clear()
-                synchronized(pendingRecords) { pendingRecords.clear() }
-                if (::viewModel.isInitialized) viewModel.clearPendingRecords()
+                // Ask RecordsBeheer to cleanup backups and pending records
+                recordsBeheer.clearPendingRecordsAndBackups()
 
-                // Remove keys (we completed the telling)
-                prefs.edit {
-                    remove(PREF_ONLINE_ID).remove(PREF_TELLING_ID).remove(PREF_SAVED_ENVELOPE_JSON)
+                withContext(Dispatchers.Main) {
+                    val dlg = AlertDialog.Builder(this@TellingScherm)
+                        .setTitle("Afronden geslaagd")
+                        .setMessage("Afronden upload geslaagd. Envelope opgeslagen: ${savedPrettyPath ?: "n.v.t."}")
+                        .setPositiveButton("OK") { _, _ ->
+                            val it = Intent(this@TellingScherm, MetadataScherm::class.java)
+                            it.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                            startActivity(it)
+                            finish()
+                        }
+                        .show()
+                    styleAlertDialogTextToWhite(dlg)
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Cleanup after successful Afronden failed: ${e.message}", e)
-            }
-
-            withContext(Dispatchers.Main) {
-                val dlg = AlertDialog.Builder(this@TellingScherm)
-                    .setTitle("Afronden geslaagd")
-                    .setMessage("Afronden upload geslaagd. Envelope opgeslagen: ${savedPrettyPath ?: "n.v.t."}")
-                    .setPositiveButton("OK") { _, _ ->
-                        val it = Intent(this@TellingScherm, MetadataScherm::class.java)
-                        it.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                        startActivity(it)
-                        finish()
-                    }
-                    .show()
-                styleAlertDialogTextToWhite(dlg)
             }
         }
     }
@@ -1619,7 +1526,7 @@ class TellingScherm : AppCompatActivity() {
     private fun updateSelectedSpeciesMap() {
         selectedSpeciesMap.clear()
 
-        val soorten = tilesAdapter.currentList
+        val soorten = tegelBeheer.getTiles().map { SoortRow(it.soortId, it.naam, it.count) }
         if (soorten.isEmpty()) {
             Log.w(TAG, "Species list is empty! Cannot update selectedSpeciesMap")
             return
@@ -1728,6 +1635,7 @@ class TellingScherm : AppCompatActivity() {
             .putExtra(SoortSelectieScherm.EXTRA_TELPOST_ID, telpostId)
         addSoortenLauncher.launch(intent)
     }
+
     private fun parseOnlineIdFromResponse(resp: String): String? {
         try {
             if (resp.isBlank()) return null
@@ -1776,8 +1684,7 @@ class TellingScherm : AppCompatActivity() {
         }
         return null
     }
-    // Helper: apply annotations JSON to the matching pending record in-memory (and write a single-record backup).
-// Paste this function into TellingScherm (near other helpers).
+
     // Helper: apply annotations JSON to the matching pending record in-memory (and write a single-record backup).
     private fun applyAnnotationsToPendingRecord(
         annotationsJson: String,
@@ -1796,73 +1703,72 @@ class TellingScherm : AppCompatActivity() {
                 return
             }
 
-            synchronized(pendingRecords) {
-                if (pendingRecords.isEmpty()) {
-                    Log.w(TAG, "applyAnnotationsToPendingRecord: no pendingRecords to apply annotations to")
-                    return
-                }
+            val recordsSnapshot = recordsBeheer.getPendingRecordsSnapshot()
+            if (recordsSnapshot.isEmpty()) {
+                Log.w(TAG, "applyAnnotationsToPendingRecord: no pendingRecords to apply annotations to")
+                return
+            }
 
-                // Try to find matching pending record by rowPos -> finals timestamp -> pending.tijdstip
-                var idx = -1
-                if (rowPos >= 0) {
-                    val finalsList = if (::viewModel.isInitialized) viewModel.finals.value.orEmpty() else finalsAdapter.currentList
-                    val finalRowTs = finalsList.getOrNull(rowPos)?.ts
-                    if (finalRowTs != null) {
-                        idx = pendingRecords.indexOfFirst { it.tijdstip == finalRowTs.toString() }
-                    }
-                }
-
-                // fallback: try by explicit rowTs if provided
-                if (idx == -1 && rowTs > 0L) {
-                    idx = pendingRecords.indexOfFirst { it.tijdstip == rowTs.toString() }
-                }
-
-                if (idx == -1) {
-                    Log.w(TAG, "applyAnnotationsToPendingRecord: no matching pending record found (rowPos=$rowPos, rowTs=$rowTs)")
-                    return
-                }
-
-                if (idx < 0 || idx >= pendingRecords.size) {
-                    Log.w(TAG, "applyAnnotationsToPendingRecord: computed index out of bounds: $idx")
-                    return
-                }
-
-                val old = pendingRecords[idx]
-
-                // Create updated copy: only overwrite fields present in the annotations map,
-                // otherwise retain existing values. Adjust field names if your ServerTellingDataItem differs.
-                val updated = old.copy(
-                    leeftijd = map["leeftijd"] ?: old.leeftijd,
-                    geslacht = map["geslacht"] ?: old.geslacht,
-                    kleed = map["kleed"] ?: old.kleed,
-                    location = map["location"] ?: old.location,
-                    height = map["height"] ?: old.height,
-                    lokaal = map["lokaal"] ?: old.lokaal,
-                    markeren = map["markeren"] ?: old.markeren,
-                    opmerkingen = map["opmerkingen"] ?: map["remarks"] ?: old.opmerkingen
-                )
-
-                // Replace in-memory pending record
-                pendingRecords[idx] = updated
-
-                // Mirror to ViewModel if present
-                if (::viewModel.isInitialized) {
-                    viewModel.setPendingRecords(pendingRecords.toList())
-                }
-
-                Log.d(TAG, "Applied annotations to pendingRecords[$idx]: $map")
-
-                // Attempt to write single-record backup so change is persisted to SAF (best-effort)
-                try {
-                    val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    val tellingId = prefs.getString(PREF_TELLING_ID, null)
-                    if (!tellingId.isNullOrBlank()) {
-                        writeRecordBackupSaf(this@TellingScherm, tellingId, updated)
-                    }
-                } catch (ex: Exception) {
-                    Log.w(TAG, "applyAnnotationsToPendingRecord: backup write failed: ${ex.message}", ex)
+            // Try to find matching pending record by rowPos -> finals timestamp -> pending.tijdstip
+            var idx = -1
+            if (rowPos >= 0) {
+                val finalsList = if (::viewModel.isInitialized) viewModel.finals.value.orEmpty() else finalsAdapter.currentList
+                val finalRowTs = finalsList.getOrNull(rowPos)?.ts
+                if (finalRowTs != null) {
+                    idx = recordsSnapshot.indexOfFirst { it.tijdstip == finalRowTs.toString() }
                 }
             }
+
+            // fallback: try by explicit rowTs if provided
+            if (idx == -1 && rowTs > 0L) {
+                idx = recordsSnapshot.indexOfFirst { it.tijdstip == rowTs.toString() }
+            }
+
+            if (idx == -1) {
+                Log.w(TAG, "applyAnnotationsToPendingRecord: no matching pending record found (rowPos=$rowPos, rowTs=$rowTs)")
+                return
+            }
+
+            if (idx < 0 || idx >= recordsSnapshot.size) {
+                Log.w(TAG, "applyAnnotationsToPendingRecord: computed index out of bounds: $idx")
+                return
+            }
+
+            val old = recordsSnapshot[idx]
+
+            // Create updated copy: only overwrite fields present in the annotations map,
+            // otherwise retain existing values. Adjust field names if your ServerTellingDataItem differs.
+            val updated = old.copy(
+                leeftijd = map["leeftijd"] ?: old.leeftijd,
+                geslacht = map["geslacht"] ?: old.geslacht,
+                kleed = map["kleed"] ?: old.kleed,
+                location = map["location"] ?: old.location,
+                height = map["height"] ?: old.height,
+                lokaal = map["lokaal"] ?: old.lokaal,
+                markeren = map["markeren"] ?: old.markeren,
+                opmerkingen = map["opmerkingen"] ?: map["remarks"] ?: old.opmerkingen
+            )
+
+            // Replace in repository
+            lifecycleScope.launch(Dispatchers.IO) {
+                val ok = recordsBeheer.updatePendingRecord(idx, updated)
+                if (!ok) {
+                    Log.w(TAG, "applyAnnotationsToPendingRecord: failed updating record at index $idx")
+                } else {
+                    // Attempt to write single-record backup so change is persisted to SAF (best-effort)
+                    try {
+                        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        val tellingId = prefs.getString(PREF_TELLING_ID, null)
+                        if (!tellingId.isNullOrBlank()) {
+                            recordsBeheer.writeRecordBackupSaf(tellingId, updated)
+                        }
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "applyAnnotationsToPendingRecord: backup write failed: ${ex.message}", ex)
+                    }
+                }
+            }
+
+            Log.d(TAG, "Applied annotations to pendingRecords[$idx]: $map")
         } catch (ex: Exception) {
             Log.w(TAG, "applyAnnotationsToPendingRecord failed: ${ex.message}", ex)
         }
