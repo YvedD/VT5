@@ -105,6 +105,7 @@ data class CodeItem(
  * - text: display text (was "tekst" in JSON)
  * - value: code value (was "waarde" in JSON)
  */
+@Serializable
 data class CodeItemSlim(
     val category: String,  // veld - for grouping/categorization
     val text: String,      // tekst - display text shown to user
