@@ -1321,7 +1321,7 @@ class TellingScherm : AppCompatActivity() {
                     val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                     val tellingId = prefs.getString(PREF_TELLING_ID, null)
                     if (!tellingId.isNullOrBlank()) {
-                        writeRecordBackupSaf(this@TellingScherm, tellingId, updated)
+                        backupManager.writeRecordBackupSaf(tellingId, updated)
                     }
                 } catch (ex: Exception) {
                     Log.w(TAG, "applyAnnotationsToPendingRecord: backup write failed: ${ex.message}", ex)

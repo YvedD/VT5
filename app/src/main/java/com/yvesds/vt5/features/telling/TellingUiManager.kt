@@ -131,12 +131,12 @@ class TellingUiManager(
             justifyContent = JustifyContent.FLEX_START
             alignItems = AlignItems.STRETCH
         }
-        binding.recyclerViewSpeciesTiles.layoutManager = flexboxLayoutManager
+        binding.recyclerViewSpecies.layoutManager = flexboxLayoutManager
 
         tilesAdapter = SpeciesTileAdapter { position ->
             onTileTapCallback?.invoke(position)
         }
-        binding.recyclerViewSpeciesTiles.adapter = tilesAdapter
+        binding.recyclerViewSpecies.adapter = tilesAdapter
     }
 
     /**
