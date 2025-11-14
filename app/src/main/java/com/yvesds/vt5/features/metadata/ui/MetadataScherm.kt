@@ -28,7 +28,7 @@ import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.core.ui.ProgressDialogHelper
 import com.yvesds.vt5.databinding.SchermMetadataBinding
 import com.yvesds.vt5.features.opstart.usecases.TrektellenAuth
-import com.yvesds.vt5.features.serverdata.model.CodeItem
+import com.yvesds.vt5.features.serverdata.model.CodeItemSlim
 import com.yvesds.vt5.features.serverdata.model.DataSnapshot
 import com.yvesds.vt5.features.serverdata.model.ServerDataCache
 import com.yvesds.vt5.features.serverdata.model.ServerDataRepository
@@ -476,15 +476,13 @@ class MetadataScherm : AppCompatActivity() {
         }
     }
 
-    /** Haal codes per veld uit snapshot en sorteer op sortering (numeriek) + tekst. */
-    private fun getCodesForField(field: String): List<CodeItem> {
+    /** 
+     * Haal codes per veld uit snapshot en sorteer op tekst (alfabetisch).
+     * Note: CodeItemSlim has no sortering field, so we sort by text only.
+     */
+    private fun getCodesForField(field: String): List<CodeItemSlim> {
         val items = snapshot.codesByCategory[field].orEmpty()
-        return items.sortedWith(
-            compareBy(
-                { it.sortering?.toIntOrNull() ?: Int.MAX_VALUE },
-                { it.tekst?.lowercase(Locale.getDefault()) ?: "" }
-            )
-        )
+        return items.sortedBy { it.text.lowercase(Locale.getDefault()) }
     }
 
     /* ---------------- Verder → counts_save (header) → SoortSelectieScherm ---------------- */
