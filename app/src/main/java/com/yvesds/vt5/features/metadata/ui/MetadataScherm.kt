@@ -454,19 +454,11 @@ class MetadataScherm : AppCompatActivity() {
             }
         }
 
-        // TYPE TELLING (veld == "typetelling_trek") met filters op tekstkey
+        // TYPE TELLING (veld == "typetelling_trek")
         runCatching {
-            val all = getCodesForField("typetelling_trek")
-            val filtered = all.filterNot { c ->
-                val key = c.key ?: ""
-                key.contains("_sound") ||
-                        key.contains("_ringen") ||
-                        key.startsWith("samplingrate_") ||
-                        key.startsWith("gain_") ||
-                        key.startsWith("verstoring_")
-            }
-            val labels = filtered.map { it.text }
-            val values = filtered.map { it.value }
+            val typeCodes = getCodesForField("typetelling_trek")
+            val labels = typeCodes.map { it.text }
+            val values = typeCodes.map { it.value }
             binding.acTypeTelling.setAdapter(
                 ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
             )

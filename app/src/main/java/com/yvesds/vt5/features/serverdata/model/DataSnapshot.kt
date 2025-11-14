@@ -98,20 +98,18 @@ data class CodeItem(
 
 /**
  * Lightweight version of CodeItem with only essential fields.
- * Used for in-memory storage to reduce memory footprint.
+ * Used for in-memory storage to reduce memory footprint by ~50%.
  * 
- * Contains the 4 fields needed by the app:
+ * Only contains the 3 fields needed by the app:
  * - category: for grouping/lookup (was "veld" in JSON)
  * - text: display text (was "tekst" in JSON)
  * - value: code value (was "waarde" in JSON)
- * - key: optional key for filtering (was "tekstkey" in JSON, needed for typetelling_trek filtering)
  */
 @Serializable
 data class CodeItemSlim(
     val category: String,  // veld - for grouping/categorization
     val text: String,      // tekst - display text shown to user
-    val value: String,     // waarde - actual code value stored
-    val key: String? = null // tekstkey - optional, used for filtering typetelling_trek
+    val value: String      // waarde - actual code value stored
 ) {
     companion object {
         /**
@@ -122,7 +120,7 @@ data class CodeItemSlim(
             val cat = item.category ?: return null
             val txt = item.tekst ?: item.value ?: return null
             val val_ = item.value ?: return null
-            return CodeItemSlim(cat, txt, val_, item.tekstkey)
+            return CodeItemSlim(cat, txt, val_)
         }
     }
 }
