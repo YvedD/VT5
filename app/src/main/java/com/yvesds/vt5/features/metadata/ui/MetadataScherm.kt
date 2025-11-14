@@ -46,6 +46,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -138,6 +139,9 @@ class MetadataScherm : AppCompatActivity() {
     /**
      * Eerste fase: laad alleen de noodzakelijke data voor het vullen van de dropdown menus
      * Dit zorgt voor een veel snellere initiële lading
+     * 
+     * Optimalisatie: Probeer eerst kort te wachten op de background preload uit VT5App
+     * voordat we loadMinimalData() aanroepen. Dit voorkomt dubbel laden.
      */
     private fun loadEssentialData() {
         uiScope.launch {
@@ -145,18 +149,38 @@ class MetadataScherm : AppCompatActivity() {
                 // Check eerst of we al volledige data in cache hebben
                 val cachedData = ServerDataCache.getCachedOrNull()
                 if (cachedData != null) {
-                    Log.d(TAG, "Using fully cached data")
+                    Log.d(TAG, "Using fully cached data (instant)")
                     snapshot = cachedData
                     initializeDropdowns()
-
-                    // Start het laden van de volledige data in de achtergrond
                     scheduleBackgroundLoading()
                     return@launch
                 }
 
-                // Toon de progress dialog
+                // Probeer kort te wachten op de background preload (max 2 sec)
+                // Dit is de preload die VT5App.onCreate() al gestart heeft
+                Log.d(TAG, "Waiting briefly for background preload...")
+                val preloadResult = withTimeoutOrNull(2000) {
+                    try {
+                        ServerDataCache.getOrLoad(this@MetadataScherm)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Background preload failed: ${e.message}")
+                        null
+                    }
+                }
+
+                if (preloadResult != null) {
+                    // Background preload was succesvol binnen timeout
+                    Log.d(TAG, "Using data from background preload (fast path)")
+                    snapshot = preloadResult
+                    initializeDropdowns()
+                    scheduleBackgroundLoading()
+                    return@launch
+                }
+
+                // Fallback: background preload was te traag of gefaald
+                // Laad minimale data met progress indicator
+                Log.d(TAG, "Background preload timeout - loading minimal data")
                 ProgressDialogHelper.withProgress(this@MetadataScherm, "Bezig met laden van gegevens...") {
-                    // Laad de minimale data
                     val repo = ServerDataRepository(this@MetadataScherm)
                     val minimal = repo.loadMinimalData()
                     snapshot = minimal
@@ -165,7 +189,6 @@ class MetadataScherm : AppCompatActivity() {
                         initializeDropdowns()
                     }
 
-                    // Start het laden van de volledige data in de achtergrond
                     scheduleBackgroundLoading()
                 }
             } catch (e: Exception) {
