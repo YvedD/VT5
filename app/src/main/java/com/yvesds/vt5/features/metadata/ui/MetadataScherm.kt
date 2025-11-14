@@ -255,8 +255,8 @@ class MetadataScherm : AppCompatActivity() {
                 val windLabel = WeatherManager.degTo16WindLabel(cur.windDirection10m)
                 val windCodes = snapshot.codesByCategory["wind"].orEmpty()
                 val valueByLabel = windCodes.associateBy(
-                    { (it.tekst ?: "").uppercase(Locale.getDefault()) },
-                    { it.value ?: "" }
+                    { it.text.uppercase(Locale.getDefault()) },
+                    { it.value }
                 )
                 val foundWindCode = valueByLabel[windLabel] ?: valueByLabel["N"] ?: "n"
                 gekozenWindrichtingCode = foundWindCode
@@ -275,8 +275,8 @@ class MetadataScherm : AppCompatActivity() {
                 gekozenNeerslagCode = rainCode
                 val rainCodes = snapshot.codesByCategory["neerslag"].orEmpty()
                 val rainLabelByValue = rainCodes.associateBy(
-                    { it.value ?: "" },
-                    { it.tekst ?: (it.value ?: "") }
+                    { it.value },
+                    { it.text }
                 )
                 val rainLabel = rainLabelByValue[rainCode] ?: rainCode
                 binding.acNeerslag.setText(rainLabel, false)
@@ -411,8 +411,8 @@ class MetadataScherm : AppCompatActivity() {
         // WINDRICHTING (veld == "wind")
         runCatching {
             val windCodes = getCodesForField("wind")
-            val labels = windCodes.mapNotNull { it.tekst }
-            val values = windCodes.map { it.value ?: "" }
+            val labels = windCodes.map { it.text }
+            val values = windCodes.map { it.value }
             binding.acWindrichting.setAdapter(
                 ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
             )
@@ -444,8 +444,8 @@ class MetadataScherm : AppCompatActivity() {
         // NEERSLAG (veld == "neerslag")
         runCatching {
             val rainCodes = getCodesForField("neerslag")
-            val labels = rainCodes.mapNotNull { it.tekst }
-            val values = rainCodes.map { it.value ?: "" }
+            val labels = rainCodes.map { it.text }
+            val values = rainCodes.map { it.value }
             binding.acNeerslag.setAdapter(
                 ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
             )
