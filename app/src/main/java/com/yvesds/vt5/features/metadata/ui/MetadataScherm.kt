@@ -156,19 +156,23 @@ class MetadataScherm : AppCompatActivity() {
                     return@launch
                 }
 
-                // Stap 2: Wacht op VT5App background preload (max 3 sec)
+                // Stap 2: Wacht kort op VT5App background preload (max 3 sec)
                 Log.d(TAG, "⏳ WAITING: for VT5App background preload (max 3s)...")
-                val preloadResult = withTimeoutOrNull(3000) {
-                    try {
-                        ServerDataCache.getOrLoad(this@MetadataScherm)
-                    } catch (e: Exception) {
-                        Log.w(TAG, "⚠️ Background preload exception: ${e.message}")
-                        null
+                var preloadResult: DataSnapshot? = null
+                val startTime = System.currentTimeMillis()
+                val maxWaitMs = 3000L
+                
+                // Poll elke 100ms tot cache klaar is of timeout
+                while (System.currentTimeMillis() - startTime < maxWaitMs) {
+                    preloadResult = ServerDataCache.getCachedOrNull()
+                    if (preloadResult != null) {
+                        Log.d(TAG, "✅ FAST: VT5App preload ready after ${System.currentTimeMillis() - startTime}ms")
+                        break
                     }
+                    Thread.sleep(100)
                 }
 
                 if (preloadResult != null) {
-                    Log.d(TAG, "✅ FAST: Using VT5App preload data")
                     snapshot = preloadResult
                     initializeDropdowns()
                     scheduleBackgroundLoading()
