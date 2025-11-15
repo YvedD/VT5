@@ -22,6 +22,7 @@ import com.yvesds.vt5.features.opstart.usecases.TrektellenAuth
 import com.yvesds.vt5.features.serverdata.model.ServerDataCache
 import com.yvesds.vt5.hoofd.HoofdActiviteit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -346,63 +347,72 @@ class InstallatieScherm : AppCompatActivity() {
                     )
                 }
 
-                // Ensure our hardcoded annotations.json is present in Documents/VT5/assets.
-                // If the file does not exist, create it from the hardcoded string below.
-                withContext(Dispatchers.IO) {
-                    try {
-                        val created = writeAnnotationsJsonToSaf(vt5Dir)
-                        if (created != null) {
-                            Log.i(TAG, "annotations.json ensured in SAF: ${created.name}")
-                            // After creating/ensuring the file, also populate the in-memory cache for immediate use.
+                // OPTIMIZATION 2: Parallel I/O operations for better performance
+                // Execute annotations, cache invalidation, and checksum computation in parallel
+                val (annotationsResult, _, checksumData) = withContext(Dispatchers.IO) {
+                    kotlinx.coroutines.coroutineScope {
+                        val annotationsJob = async {
                             try {
-                                AnnotationsManager.loadCache(this@InstallatieScherm)
-                                Log.i(TAG, "Annotations cache loaded")
+                                val created = writeAnnotationsJsonToSaf(vt5Dir)
+                                if (created != null) {
+                                    Log.i(TAG, "annotations.json ensured in SAF: ${created.name}")
+                                    try {
+                                        AnnotationsManager.loadCache(this@InstallatieScherm)
+                                        Log.i(TAG, "Annotations cache loaded")
+                                    } catch (ex: Exception) {
+                                        Log.w(TAG, "Failed loading annotations cache: ${ex.message}", ex)
+                                    }
+                                } else {
+                                    Log.w(TAG, "annotations.json not created (already present or error).")
+                                }
+                                true
                             } catch (ex: Exception) {
-                                Log.w(TAG, "Failed loading annotations cache: ${ex.message}", ex)
-                                showErrorDialog("Waarschuwing", "Kon annotations cache niet laden: ${ex.message}")
+                                Log.w(TAG, "Failed ensuring annotations.json in SAF: ${ex.message}", ex)
+                                false
                             }
-                        } else {
-                            Log.w(TAG, "annotations.json not created (already present or error).")
                         }
-                    } catch (ex: Exception) {
-                        Log.w(TAG, "Failed ensuring annotations.json in SAF: ${ex.message}", ex)
-                        showErrorDialog("Waarschuwing", "Kon annotations.json niet aanmaken: ${ex.message}")
+                        
+                        val cacheJob = async {
+                            ServerDataCache.invalidate()
+                        }
+                        
+                        // OPTIMIZATION 1: Cache checksum calculation to avoid duplicate computation
+                        val checksumJob = async {
+                            val newChecksum = computeServerFilesChecksum(vt5Dir)
+                            val oldMeta = readAliasMeta(vt5Dir)
+                            val oldChecksum = oldMeta?.sourceChecksum
+                            val needsRegen = (oldChecksum == null) || (oldChecksum != newChecksum) || !isAliasIndexPresent()
+                            Triple(newChecksum, needsRegen, oldMeta)
+                        }
+                        
+                        Triple(annotationsJob.await(), cacheJob.await(), checksumJob.await())
                     }
                 }
-
-                // Invalidate cache
-                withContext(Dispatchers.IO) {
-                    ServerDataCache.invalidate()
-                }
+                
                 dataPreloaded = false
+                val (cachedChecksum, needRegen, _) = checksumData
 
-                // Compute checksum and metadata on IO to determine if regeneration needed
-                val needRegen = withContext(Dispatchers.IO) {
-                    val newChecksumLocal = computeServerFilesChecksum(vt5Dir)
-                    val oldMetaLocal = readAliasMeta(vt5Dir)
-                    val oldChecksumLocal = oldMetaLocal?.sourceChecksum
-                    (oldChecksumLocal == null) || (oldChecksumLocal != newChecksumLocal) || !isAliasIndexPresent()
+                // Show annotation warnings to user if needed
+                if (!annotationsResult) {
+                    showErrorDialog("Waarschuwing", "Kon annotations.json niet aanmaken")
                 }
 
                 if (needRegen) {
-                    activeProgressDialog?.dismiss()
-                    activeProgressDialog = ProgressDialogHelper.show(this@InstallatieScherm, "Alias index bijwerken...")
+                    // OPTIMIZATION 4: Update progress message instead of creating new dialog
+                    ProgressDialogHelper.updateMessage(activeProgressDialog!!, "Alias index bijwerken...")
                     try {
                         withContext(Dispatchers.IO) {
                             // Ensure existing files removed so AliasManager.initialize will regenerate seed
                             removeExistingAliasFiles(vt5Dir)
                             AliasManager.initialize(this@InstallatieScherm, saf)
-                            // compute new checksum and write meta on IO
-                            val computed = computeServerFilesChecksum(vt5Dir)
-                            writeAliasMeta(vt5Dir, AliasMasterMeta(sourceChecksum = computed, sourceFiles = requiredServerFiles, timestamp = isoNow()))
+                            // OPTIMIZATION 1: Reuse cached checksum instead of recomputing
+                            writeAliasMeta(vt5Dir, AliasMasterMeta(sourceChecksum = cachedChecksum, sourceFiles = requiredServerFiles, timestamp = isoNow()))
                         }
                         Log.i(TAG, "Alias index regenerated (checksum changed or missing)")
                     } catch (ex: Exception) {
                         Log.e(TAG, "Alias reindex failed: ${ex.message}", ex)
                         showErrorDialog("Fout bij alias reindex", ex.message ?: "Onbekende fout")
                     } finally {
-                        activeProgressDialog?.dismiss()
-                        activeProgressDialog = null
                         updatePrecomputeButtonState()
                     }
                 } else {
@@ -410,11 +420,18 @@ class InstallatieScherm : AppCompatActivity() {
                     updatePrecomputeButtonState()
                 }
 
-                preloadDataIfExists()
+                // OPTIMIZATION 3: Start preload in parallel while showing results
+                val preloadJob = lifecycleScope.launch {
+                    preloadDataIfExists()
+                }
+                
                 activeProgressDialog?.dismiss()
                 activeProgressDialog = null
                 // show results dialog with downloaded file list (no toast)
                 showInfoDialog(getString(R.string.dlg_titel_result), msgs.joinToString("\n"))
+                
+                // Ensure preload completes
+                preloadJob.join()
             } catch (e: Exception) {
                 Log.e(TAG, "Error during download: ${e.message}", e)
                 showErrorDialog("Fout bij downloaden", e.message ?: "Onbekende fout")
