@@ -668,6 +668,7 @@ class MetadataScherm : AppCompatActivity() {
                     TellingSessionManager.setPreselectedSoorten(speciesForTelpost)
 
                     // Success — open SoortSelectieScherm
+                    // Note: snapshot is already loaded and cached, so SoortSelectieScherm will use fast-path
                     withContext(Dispatchers.Main) {
                         Toast.makeText(this@MetadataScherm, "Telling gestart (onlineId: $onlineId)", Toast.LENGTH_SHORT).show()
                         val intent = Intent(this@MetadataScherm, SoortSelectieScherm::class.java)

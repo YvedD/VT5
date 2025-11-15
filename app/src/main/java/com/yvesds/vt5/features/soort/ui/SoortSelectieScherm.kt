@@ -44,7 +44,8 @@ class SoortSelectieScherm : AppCompatActivity() {
 
     // Datamodels
     data class Row(val soortId: String, val naam: String) {
-        // Cache voor genormaliseerde naam (voor sneller zoeken)
+        // Performance: Lazy cache voor genormaliseerde naam - alleen berekend bij eerste gebruik
+        // Vermijdt onnodige string normalisatie voor items die nooit gezocht worden
         val normalizedName: String by lazy { normalizeString(naam) }
     }
 
@@ -195,46 +196,64 @@ class SoortSelectieScherm : AppCompatActivity() {
     }
 
     private fun loadData() {
-        // Eerst proberen data uit cache te laden
         uiScope.launch {
             try {
                 val startTime = System.currentTimeMillis()
+                
+                // Fast-path: check cache first without showing dialog
+                val cachedData = ServerDataCache.getCachedOrNull()
+                if (cachedData != null) {
+                    // Cache hit - process immediately without dialog
+                    Log.d(TAG, "Using cached data (fast-path)")
+                    snapshot = cachedData
+                    
+                    // Process data synchronously (it's fast with cached data)
+                    baseAlphaRows = buildAlphaRowsForTelpost()
+                    
+                    // Build ID cache for O(1) lookups
+                    rowsByIdCache.clear()
+                    baseAlphaRows.forEach { row -> rowsByIdCache[row.soortId] = row }
+                    
+                    recentRows = computeRecents(baseAlphaRows)
+                    submitGrid(recents = recentRows, restAlpha = baseAlphaRows.filterNot { it.soortId in recentIds })
+                    updateCounter()
+                    
+                    val elapsed = System.currentTimeMillis() - startTime
+                    Log.d(TAG, "Data processed from cache in ${elapsed}ms")
+                    return@launch
+                }
+
+                // Slow-path: need to load from storage
                 val dialog = ProgressDialogHelper.show(this@SoortSelectieScherm, "Soorten laden...")
 
-                // Data laden met cache
-                val cachedData = ServerDataCache.getCachedOrNull()
-                snapshot = if (cachedData != null) {
-                    Log.d(TAG, "Using cached data")
-                    cachedData
-                } else {
-                    Log.d(TAG, "Loading data from storage")
-                    withContext(Dispatchers.IO) {
+                try {
+                    Log.d(TAG, "Loading data from storage (cache miss)")
+                    snapshot = withContext(Dispatchers.IO) {
                         ServerDataCache.getOrLoad(this@SoortSelectieScherm)
                     }
-                }
 
-                // Basislijst opbouwen en sorteren
-                baseAlphaRows = buildAlphaRowsForTelpost()
+                    // Basislijst opbouwen en sorteren
+                    baseAlphaRows = buildAlphaRowsForTelpost()
 
-                // ID cache opbouwen voor snelle lookup
-                rowsByIdCache = ConcurrentHashMap<String, Row>().apply {
-                    baseAlphaRows.forEach { row -> put(row.soortId, row) }
-                }
+                    // ID cache opbouwen voor snelle lookup (reuse existing map)
+                    rowsByIdCache.clear()
+                    baseAlphaRows.forEach { row -> rowsByIdCache[row.soortId] = row }
 
-                // Recents berekenen
-                recentRows = computeRecents(baseAlphaRows)
+                    // Recents berekenen
+                    recentRows = computeRecents(baseAlphaRows)
 
-                // Submit naar grid
-                submitGrid(recents = recentRows, restAlpha = baseAlphaRows.filterNot { it.soortId in recentIds })
-                updateCounter()
+                    // Submit naar grid
+                    submitGrid(recents = recentRows, restAlpha = baseAlphaRows.filterNot { it.soortId in recentIds })
+                    updateCounter()
 
-                dialog.dismiss()
+                    val elapsed = System.currentTimeMillis() - startTime
+                    Log.d(TAG, "Data loaded and processed in ${elapsed}ms")
 
-                val elapsed = System.currentTimeMillis() - startTime
-                Log.d(TAG, "Data loaded and processed in ${elapsed}ms")
-
-                if (baseAlphaRows.isEmpty()) {
-                    Toast.makeText(this@SoortSelectieScherm, "Geen soorten gevonden. Download eerst serverdata.", Toast.LENGTH_LONG).show()
+                    if (baseAlphaRows.isEmpty()) {
+                        Toast.makeText(this@SoortSelectieScherm, "Geen soorten gevonden. Download eerst serverdata.", Toast.LENGTH_LONG).show()
+                    }
+                } finally {
+                    dialog.dismiss()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading data", e)
@@ -246,42 +265,74 @@ class SoortSelectieScherm : AppCompatActivity() {
     private fun buildAlphaRowsForTelpost(): List<Row> {
         val speciesById = snapshot.speciesById
         val siteMap = snapshot.siteSpeciesBySite
-        val allowed = telpostId?.let { id -> siteMap[id]?.map { it.soortid }?.toSet().orEmpty() } ?: emptySet()
+        val allowed = telpostId?.let { id -> siteMap[id]?.mapTo(HashSet()) { it.soortid } } ?: emptySet()
 
         val base = if (allowed.isNotEmpty()) {
-            allowed.mapNotNull { sid -> speciesById[sid]?.let { Row(sid, it.soortnaam) } }
+            // Pre-allocate with known size for better performance
+            ArrayList<Row>(allowed.size).apply {
+                allowed.forEach { sid -> 
+                    speciesById[sid]?.let { add(Row(sid, it.soortnaam)) }
+                }
+            }
         } else {
-            speciesById.values.map { Row(it.soortid, it.soortnaam) }
+            // Pre-allocate with known size
+            ArrayList<Row>(speciesById.size).apply {
+                speciesById.values.forEach { add(Row(it.soortid, it.soortnaam)) }
+            }
         }
 
+        // Sort by pre-computed lowercase to avoid repeated lowercase() calls
         return base.sortedBy { it.naam.lowercase() }
     }
 
     private fun computeRecents(baseAlpha: List<Row>): List<Row> {
-        // Optimize by building ID map first
-        val byId = baseAlpha.associateBy { it.soortId }
+        // Use cached lookup map instead of rebuilding
         val recentsOrderedIds = RecentSpeciesStore.getRecents(this).map { it.first }
-        return recentsOrderedIds.mapNotNull { byId[it] }
+        
+        // Pre-allocate result list with expected size
+        val result = ArrayList<Row>(recentsOrderedIds.size.coerceAtMost(baseAlpha.size))
+        
+        // Use the cached rowsByIdCache for O(1) lookups if available, otherwise build temporary map
+        if (rowsByIdCache.isNotEmpty()) {
+            recentsOrderedIds.forEach { id ->
+                rowsByIdCache[id]?.let { result.add(it) }
+            }
+        } else {
+            // Fallback: build temporary map (should rarely happen)
+            val byId = baseAlpha.associateBy { it.soortId }
+            recentsOrderedIds.forEach { id ->
+                byId[id]?.let { result.add(it) }
+            }
+        }
+        
+        return result
     }
 
     private fun submitGrid(recents: List<Row>, restAlpha: List<Row>) {
-        val items = mutableListOf<SoortSelectieSectionedAdapter.RowUi>()
+        // Pre-allocate list with known capacity to avoid resizing
+        val estimatedSize = if (recents.isNotEmpty()) {
+            recents.size + restAlpha.size + 2 // +2 for header and footer
+        } else {
+            restAlpha.size
+        }
+        val items = ArrayList<SoortSelectieSectionedAdapter.RowUi>(estimatedSize)
 
         if (recents.isNotEmpty()) {
-            val allSel = recents.all { selectedIds.contains(it.soortId) }
+            // Check if all recents are selected (optimized with any { } short-circuit)
+            val allSel = recents.isNotEmpty() && !recents.any { !selectedIds.contains(it.soortId) }
 
             // Header voor recente items
-            items += SoortSelectieSectionedAdapter.RowUi.RecentsHeader(recentsCount = recents.size, allSelected = allSel)
+            items.add(SoortSelectieSectionedAdapter.RowUi.RecentsHeader(recentsCount = recents.size, allSelected = allSel))
 
-            // Recente items als speciale visuele groep
-            items += recents.map { SoortSelectieSectionedAdapter.RowUi.RecenteSpecies(it) }
+            // Recente items als speciale visuele groep (direct add to avoid intermediate list)
+            recents.forEach { items.add(SoortSelectieSectionedAdapter.RowUi.RecenteSpecies(it)) }
 
             // Footer divider voor afsluiting van recente groep
-            items += SoortSelectieSectionedAdapter.RowUi.RecentsFooter
+            items.add(SoortSelectieSectionedAdapter.RowUi.RecentsFooter)
         }
 
-        // Rest van de items zoals gewoonlijk
-        items += restAlpha.map { SoortSelectieSectionedAdapter.RowUi.Species(it) }
+        // Rest van de items zoals gewoonlijk (direct add to avoid intermediate list)
+        restAlpha.forEach { items.add(SoortSelectieSectionedAdapter.RowUi.Species(it)) }
 
         gridAdapter.submitList(items)
     }
@@ -297,7 +348,13 @@ class SoortSelectieScherm : AppCompatActivity() {
             suggestAdapter.submitList(emptyList())
             showSuggestions(false)
             // rebuild grid (recents + rest) zodat header-state klopt
-            submitGrid(recentRows, baseAlphaRows.filterNot { it.soortId in recentIds })
+            // Optimize: avoid creating intermediate filtered list
+            val restAlpha = if (recentIds.isEmpty()) {
+                baseAlphaRows
+            } else {
+                baseAlphaRows.filterNot { it.soortId in recentIds }
+            }
+            submitGrid(recentRows, restAlpha)
             updateCounter()
             return
         }
@@ -306,13 +363,15 @@ class SoortSelectieScherm : AppCompatActivity() {
         val normalizedQuery = normalizeString(text)
 
         val max = 12
-        val filtered = baseAlphaRows.asSequence()
-            .filter { row ->
-                row.normalizedName.contains(normalizedQuery) ||
-                        row.soortId.lowercase().contains(normalizedQuery)
+        // Pre-allocate result list to avoid resizing
+        val filtered = ArrayList<Row>(max)
+        for (row in baseAlphaRows) {
+            if (row.normalizedName.contains(normalizedQuery) || 
+                row.soortId.lowercase().contains(normalizedQuery)) {
+                filtered.add(row)
+                if (filtered.size >= max) break
             }
-            .take(max)
-            .toList()
+        }
 
         suggestAdapter.submitList(filtered)
         showSuggestions(filtered.isNotEmpty())
