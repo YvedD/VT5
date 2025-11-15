@@ -772,11 +772,7 @@ class TellingScherm : AppCompatActivity() {
     }
 
     private fun handleAutoAcceptMatch(result: MatchResult.AutoAccept) {
-        val formatted = "${result.candidate.displayName} -> +${result.amount}"
-        addFinalLog(formatted)
-        updateSoortCountInternal(result.candidate.speciesId, result.amount)
-        RecentSpeciesStore.recordUse(this, result.candidate.speciesId, maxEntries = 25)
-        collectFinalAsRecord(result.candidate.speciesId, result.amount)
+        recordSpeciesCount(result.candidate.speciesId, result.candidate.displayName, result.amount)
     }
 
     private fun handleAutoAcceptAddPopup(result: MatchResult.AutoAcceptAddPopup) {
@@ -787,24 +783,38 @@ class TellingScherm : AppCompatActivity() {
         // Check if species is already in tiles using tegelBeheer
         val presentInTiles = tegelBeheer.findIndexBySoortId(speciesId) >= 0
         if (presentInTiles) {
-            addFinalLog("$prettyName -> +$cnt")
-            updateSoortCountInternal(speciesId, cnt)
-            RecentSpeciesStore.recordUse(this, speciesId, maxEntries = 25)
-            collectFinalAsRecord(speciesId, cnt)
+            recordSpeciesCount(speciesId, prettyName, cnt)
         } else {
-            val msg = "Soort \"$prettyName\" herkend met aantal $cnt.\n\nToevoegen?"
-            val dlg = AlertDialog.Builder(this)
-                .setTitle("Soort toevoegen?")
-                .setMessage(msg)
-                .setPositiveButton("Ja") { _, _ ->
-                    addSpeciesToTiles(speciesId, prettyName, cnt)
-                    addFinalLog("$prettyName -> +$cnt")
-                    collectFinalAsRecord(speciesId, cnt)
-                }
-                .setNegativeButton("Nee", null)
-                .show()
-            dialogHelper.styleAlertDialogTextToWhite(dlg)
+            showAddSpeciesConfirmationDialog(speciesId, prettyName, cnt)
         }
+    }
+
+    /**
+     * Record a species count (add final log, update count, collect record).
+     */
+    private fun recordSpeciesCount(speciesId: String, displayName: String, count: Int) {
+        addFinalLog("$displayName -> +$count")
+        updateSoortCountInternal(speciesId, count)
+        RecentSpeciesStore.recordUse(this, speciesId, maxEntries = 25)
+        collectFinalAsRecord(speciesId, count)
+    }
+
+    /**
+     * Show confirmation dialog for adding a new species to tiles.
+     */
+    private fun showAddSpeciesConfirmationDialog(speciesId: String, displayName: String, count: Int) {
+        val msg = "Soort \"$displayName\" herkend met aantal $count.\n\nToevoegen?"
+        val dlg = AlertDialog.Builder(this)
+            .setTitle("Soort toevoegen?")
+            .setMessage(msg)
+            .setPositiveButton("Ja") { _, _ ->
+                addSpeciesToTiles(speciesId, displayName, count)
+                addFinalLog("$displayName -> +$count")
+                collectFinalAsRecord(speciesId, count)
+            }
+            .setNegativeButton("Nee", null)
+            .show()
+        dialogHelper.styleAlertDialogTextToWhite(dlg)
     }
 
     private fun handleMultiMatch(result: MatchResult.MultiMatch) {
@@ -813,24 +823,9 @@ class TellingScherm : AppCompatActivity() {
             val cnt = match.amount
             val present = tegelBeheer.findIndexBySoortId(sid) >= 0
             if (present) {
-                addFinalLog("${match.candidate.displayName} -> +${cnt}")
-                updateSoortCountInternal(sid, cnt)
-                RecentSpeciesStore.recordUse(this, sid, maxEntries = 25)
-                collectFinalAsRecord(sid, cnt)
+                recordSpeciesCount(sid, match.candidate.displayName, cnt)
             } else {
-                val prettyName = match.candidate.displayName
-                val msg = "Soort \"$prettyName\" (${cnt}x) herkend.\n\nToevoegen?"
-                val dlg = AlertDialog.Builder(this)
-                    .setTitle("Soort toevoegen?")
-                    .setMessage(msg)
-                    .setPositiveButton("Ja") { _, _ ->
-                        addSpeciesToTiles(match.candidate.speciesId, prettyName, cnt)
-                        addFinalLog("$prettyName -> +${cnt}")
-                        collectFinalAsRecord(match.candidate.speciesId, cnt)
-                    }
-                    .setNegativeButton("Nee", null)
-                    .show()
-                dialogHelper.styleAlertDialogTextToWhite(dlg)
+                showAddSpeciesConfirmationDialog(sid, match.candidate.displayName, cnt)
             }
         }
     }
