@@ -599,7 +599,7 @@ class TellingScherm : AppCompatActivity() {
 
                     // Behave exactly like an ASR final:
                     addFinalLog("${row.naam} -> +$delta")
-                    RecentSpeciesStore.recordUse(this@TellingScherm, row.soortId, maxEntries = 25)
+                    RecentSpeciesStore.recordUse(this@TellingScherm, row.soortId, maxEntries = 30)
                     collectFinalAsRecord(row.soortId, delta)
                 }
             }
@@ -810,7 +810,7 @@ class TellingScherm : AppCompatActivity() {
                                         val formatted = "${result.candidate.displayName} -> +${result.amount}"
                                         addFinalLog(formatted)
                                         updateSoortCountInternal(result.candidate.speciesId, result.amount)
-                                        RecentSpeciesStore.recordUse(this@TellingScherm, result.candidate.speciesId, maxEntries = 25)
+                                        RecentSpeciesStore.recordUse(this@TellingScherm, result.candidate.speciesId, maxEntries = 30)
 
                                         // Collect record (do NOT auto-upload: we save pendingRecords for Afronden)
                                         collectFinalAsRecord(result.candidate.speciesId, result.amount)
@@ -825,7 +825,7 @@ class TellingScherm : AppCompatActivity() {
                                         if (presentInTiles) {
                                             addFinalLog("$prettyName -> +$cnt")
                                             updateSoortCountInternal(speciesId, cnt)
-                                            RecentSpeciesStore.recordUse(this@TellingScherm, speciesId, maxEntries = 25)
+                                            RecentSpeciesStore.recordUse(this@TellingScherm, speciesId, maxEntries = 30)
 
                                             // Collect record
                                             collectFinalAsRecord(speciesId, cnt)
@@ -853,7 +853,7 @@ class TellingScherm : AppCompatActivity() {
                                             if (present) {
                                                 addFinalLog("${match.candidate.displayName} -> +${cnt}")
                                                 updateSoortCountInternal(sid, cnt)
-                                                RecentSpeciesStore.recordUse(this@TellingScherm, sid, maxEntries = 25)
+                                                RecentSpeciesStore.recordUse(this@TellingScherm, sid, maxEntries = 30)
 
                                                 // Collect each recognized match
                                                 collectFinalAsRecord(sid, cnt)
@@ -1128,7 +1128,7 @@ class TellingScherm : AppCompatActivity() {
                         .show()
                     styleAlertDialogTextToWhite(dlg)
                 }
-                RecentSpeciesStore.recordUse(this, chosen.speciesId, maxEntries = 25)
+                RecentSpeciesStore.recordUse(this, chosen.speciesId, maxEntries = 30)
             }
             .setNegativeButton("Annuleer", null)
             .show()
@@ -1163,7 +1163,7 @@ class TellingScherm : AppCompatActivity() {
                     tilesAdapter.submitList(updated)
                     if (::viewModel.isInitialized) viewModel.setTiles(updated)
                     updateSelectedSpeciesMap()
-                    RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
+                    RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 30)
                     addLog("Soort toegevoegd: $canonical ($initialCount)", "systeem")
                 }
             } catch (ex: Exception) {
@@ -1197,7 +1197,7 @@ class TellingScherm : AppCompatActivity() {
                 tilesAdapter.submitList(updatedList)
                 if (::viewModel.isInitialized) viewModel.updateTiles(updatedList)
                 addLog("${item.naam} -> +$count", "manueel")
-                RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
+                RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 30)
                 updateSelectedSpeciesMap()
             }
         }
@@ -1225,7 +1225,7 @@ class TellingScherm : AppCompatActivity() {
             withContext(Dispatchers.Main) {
                 tilesAdapter.submitList(updatedList)
                 if (::viewModel.isInitialized) viewModel.updateTiles(updatedList)
-                RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
+                RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 30)
                 updateSelectedSpeciesMap()
             }
         }
