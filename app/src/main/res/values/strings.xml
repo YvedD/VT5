@@ -53,4 +53,8 @@
     <string name="annotatie_opmerkingen_hint">Vrije tekst (optioneel)</string>
 
     <string name="btn_klaar">Klaar</string>
+    
+    <!-- InstallatieScherm status messages -->
+    <string name="status_alias_rebuild_complete">Alias index rebuild voltooid</string>
+    <string name="status_alias_rebuild_error">Fout bij rebuild: %1$s</string>
 </resources>

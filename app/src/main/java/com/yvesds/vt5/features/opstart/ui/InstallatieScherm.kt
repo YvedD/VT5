@@ -376,13 +376,12 @@ class InstallatieScherm : AppCompatActivity() {
                 }
                 dataPreloaded = false
 
-                // Compute checksum and metadata on IO
-                val (newChecksum, oldMeta, needRegen) = withContext(Dispatchers.IO) {
+                // Compute checksum and metadata on IO to determine if regeneration needed
+                val needRegen = withContext(Dispatchers.IO) {
                     val newChecksumLocal = computeServerFilesChecksum(vt5Dir)
                     val oldMetaLocal = readAliasMeta(vt5Dir)
                     val oldChecksumLocal = oldMetaLocal?.sourceChecksum
-                    val need = (oldChecksumLocal == null) || (oldChecksumLocal != newChecksumLocal) || !isAliasIndexPresent()
-                    Triple(newChecksumLocal, oldMetaLocal, need)
+                    (oldChecksumLocal == null) || (oldChecksumLocal != newChecksumLocal) || !isAliasIndexPresent()
                 }
 
                 if (needRegen) {
@@ -448,10 +447,10 @@ class InstallatieScherm : AppCompatActivity() {
                     val newChecksum = computeServerFilesChecksum(vt5)
                     writeAliasMeta(vt5, AliasMasterMeta(sourceChecksum = newChecksum, sourceFiles = requiredServerFiles, timestamp = isoNow()))
                 }
-                binding.tvStatus.text = "Alias index rebuild voltooid"
+                binding.tvStatus.text = getString(R.string.status_alias_rebuild_complete)
             } catch (ex: Exception) {
                 Log.e(TAG, "forceRebuildAliasIndex failed: ${ex.message}", ex)
-                binding.tvStatus.text = "Fout bij rebuild: ${ex.message}"
+                binding.tvStatus.text = getString(R.string.status_alias_rebuild_error, ex.message ?: "Onbekend")
                 showErrorDialog("Fout bij forceer rebuild", ex.message ?: "Onbekende fout")
             } finally {
                 activeProgressDialog?.dismiss()
