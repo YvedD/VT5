@@ -5,11 +5,15 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
 import com.yvesds.vt5.R
 import com.yvesds.vt5.core.app.AppShutdown
 import com.yvesds.vt5.features.metadata.ui.MetadataScherm
 import com.yvesds.vt5.features.opstart.ui.InstallatieScherm
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * HoofdActiviteit - Hoofdscherm van VT5 app
@@ -38,8 +42,22 @@ class HoofdActiviteit : AppCompatActivity() {
 
         btnVerder.setOnClickListener {
             it.isEnabled = false
-            // Toon meteen de toast vóór de navigatie
+            // OPTIMIZATION: Trigger preload during toast display for faster MetadataScherm startup
             Toast.makeText(this, "Metadata laden…", Toast.LENGTH_SHORT).show()
+            
+            // Start preloading minimal data in background
+            lifecycleScope.launch {
+                try {
+                    val repo = com.yvesds.vt5.features.serverdata.model.ServerDataRepository(this@HoofdActiviteit)
+                    withContext(Dispatchers.IO) {
+                        // Trigger background preload (non-blocking)
+                        repo.loadMinimalData()
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Background preload failed (non-critical): ${e.message}")
+                }
+            }
+            
             startActivity(Intent(this, MetadataScherm::class.java))
             it.isEnabled = true
         }

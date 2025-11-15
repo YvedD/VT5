@@ -138,6 +138,8 @@ class MetadataScherm : AppCompatActivity() {
     /**
      * Eerste fase: laad alleen de noodzakelijke data voor het vullen van de dropdown menus
      * Dit zorgt voor een veel snellere initiële lading
+     * 
+     * OPTIMIZATION: Added progress feedback during minimal load
      */
     private fun loadEssentialData() {
         uiScope.launch {
@@ -154,19 +156,30 @@ class MetadataScherm : AppCompatActivity() {
                     return@launch
                 }
 
-                // Toon de progress dialog
-                ProgressDialogHelper.withProgress(this@MetadataScherm, "Bezig met laden van gegevens...") {
+                // OPTIMIZATION: Detailed progress feedback during load
+                val progressDialog = ProgressDialogHelper.show(this@MetadataScherm, "Codes laden...")
+                try {
                     // Laad de minimale data
                     val repo = ServerDataRepository(this@MetadataScherm)
+                    
+                    // Update progress: loading codes
+                    withContext(Dispatchers.Main) {
+                        ProgressDialogHelper.updateMessage(progressDialog, "Telposten laden...")
+                    }
+                    
                     val minimal = repo.loadMinimalData()
                     snapshot = minimal
 
+                    // Update progress: initializing UI
                     withContext(Dispatchers.Main) {
+                        ProgressDialogHelper.updateMessage(progressDialog, "Interface voorbereiden...")
                         initializeDropdowns()
                     }
 
                     // Start het laden van de volledige data in de achtergrond
                     scheduleBackgroundLoading()
+                } finally {
+                    progressDialog.dismiss()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading essential data: ${e.message}")
