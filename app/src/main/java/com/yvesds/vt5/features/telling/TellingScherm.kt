@@ -683,120 +683,7 @@ class TellingScherm : AppCompatActivity() {
 
             // heavy parsing on Default; reuse aliasParser instance
             speechRecognitionManager.setOnHypothesesListener { hypotheses, partials ->
-                val receivedAt = System.currentTimeMillis()
-                lifecycleScope.launch(Dispatchers.Default) {
-                    val parseStartAt = System.currentTimeMillis()
-                    Log.d(TAG, "Hypotheses received at $receivedAt, starting parse at $parseStartAt (hypotheses=${hypotheses.size}, partials=${partials.size})")
-                    try {
-                        val matchContext = cachedMatchContext ?: run {
-                            val t0 = System.currentTimeMillis()
-                            val mc = buildMatchContext()
-                            cachedMatchContext = mc
-                            Log.d(TAG, "buildMatchContext (on-the-fly) ms=${System.currentTimeMillis() - t0}")
-                            mc
-                        }
-
-                        val result = aliasParser.parseSpokenWithHypotheses(hypotheses, matchContext, partials, asrWeight = 0.4)
-                        val parseEndAt = System.currentTimeMillis()
-                        Log.d(TAG, "Parse finished at $parseEndAt (parseDuration=${parseEndAt - parseStartAt} ms)")
-
-                        withContext(Dispatchers.Main) {
-                            val uiStartAt = System.currentTimeMillis()
-                            try {
-                                when (result) {
-                                    is MatchResult.AutoAccept -> {
-                                        val formatted = "${result.candidate.displayName} -> +${result.amount}"
-                                        addFinalLog(formatted)
-                                        updateSoortCountInternal(result.candidate.speciesId, result.amount)
-                                        RecentSpeciesStore.recordUse(this@TellingScherm, result.candidate.speciesId, maxEntries = 25)
-
-                                        // Collect record (do NOT auto-upload: we save pendingRecords for Afronden)
-                                        collectFinalAsRecord(result.candidate.speciesId, result.amount)
-                                    }
-                                    is MatchResult.AutoAcceptAddPopup -> {
-                                        val cnt = result.amount
-                                        val prettyName = result.candidate.displayName
-                                        val speciesId = result.candidate.speciesId
-
-                                        // NEW: if species already present in tiles, bypass popup and directly count it
-                                        val presentInTiles = tilesAdapter.currentList.any { it.soortId == speciesId }
-                                        if (presentInTiles) {
-                                            addFinalLog("$prettyName -> +$cnt")
-                                            updateSoortCountInternal(speciesId, cnt)
-                                            RecentSpeciesStore.recordUse(this@TellingScherm, speciesId, maxEntries = 25)
-
-                                            // Collect record
-                                            collectFinalAsRecord(speciesId, cnt)
-                                        } else {
-                                            val msg = "Soort \"$prettyName\" herkend met aantal $cnt.\n\nToevoegen?"
-                                            val dlg = AlertDialog.Builder(this@TellingScherm)
-                                                .setTitle("Soort toevoegen?")
-                                                .setMessage(msg)
-                                                .setPositiveButton("Ja") { _, _ ->
-                                                    addSpeciesToTiles(result.candidate.speciesId, result.candidate.displayName, cnt)
-                                                    addFinalLog("${result.candidate.displayName} -> +$cnt")
-                                                    // record collected in addSpeciesToTiles? ensure collected as well:
-                                                    collectFinalAsRecord(result.candidate.speciesId, cnt)
-                                                }
-                                                .setNegativeButton("Nee", null)
-                                                .show()
-                                            dialogHelper.styleAlertDialogTextToWhite(dlg)
-                                        }
-                                    }
-                                    is MatchResult.MultiMatch -> {
-                                        result.matches.forEach { match ->
-                                            val sid = match.candidate.speciesId
-                                            val cnt = match.amount
-                                            val present = tilesAdapter.currentList.any { it.soortId == sid }
-                                            if (present) {
-                                                addFinalLog("${match.candidate.displayName} -> +${cnt}")
-                                                updateSoortCountInternal(sid, cnt)
-                                                RecentSpeciesStore.recordUse(this@TellingScherm, sid, maxEntries = 25)
-
-                                                // Collect each recognized match
-                                                collectFinalAsRecord(sid, cnt)
-                                            } else {
-                                                val prettyName = match.candidate.displayName
-                                                val msg = "Soort \"$prettyName\" (${cnt}x) herkend.\n\nToevoegen?"
-                                                val dlg = AlertDialog.Builder(this@TellingScherm)
-                                                    .setTitle("Soort toevoegen?")
-                                                    .setMessage(msg)
-                                                    .setPositiveButton("Ja") { _, _ ->
-                                                        addSpeciesToTiles(match.candidate.speciesId, prettyName, cnt)
-                                                        addFinalLog("$prettyName -> +${cnt}")
-                                                        collectFinalAsRecord(match.candidate.speciesId, cnt)
-                                                    }
-                                                    .setNegativeButton("Nee", null)
-                                                    .show()
-                                                dialogHelper.styleAlertDialogTextToWhite(dlg)
-                                            }
-                                        }
-                                    }
-                                    is MatchResult.SuggestionList -> {
-                                        val cnt = logManager.extractCountFromText(result.hypothesis)
-                                        showSuggestionBottomSheet(result.candidates, cnt)
-                                    }
-                                    is MatchResult.NoMatch -> {
-                                        val now = System.currentTimeMillis()
-                                        if (now - lastPartialUiUpdateMs >= PARTIAL_UI_DEBOUNCE_MS) {
-                                            upsertPartialLog(result.hypothesis)
-                                            lastPartialUiUpdateMs = now
-                                        } else {
-                                            upsertPartialLog(result.hypothesis)
-                                        }
-                                    }
-                                }
-                            } catch (ex: Exception) {
-                                Log.w(TAG, "Hypotheses handling (UI) failed: ${ex.message}", ex)
-                            } finally {
-                                val uiEndAt = System.currentTimeMillis()
-                                Log.d(TAG, "UI handling finished at $uiEndAt (uiDuration=${uiEndAt - uiStartAt} ms)")
-                            }
-                        }
-                    } catch (ex: Exception) {
-                        Log.w(TAG, "Hypotheses handling (background) failed: ${ex.message}", ex)
-                    }
-                }
+                handleSpeechHypotheses(hypotheses, partials)
             }
 
             speechRecognitionManager.setOnRawResultListener { rawText ->
@@ -813,6 +700,138 @@ class TellingScherm : AppCompatActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing speech recognition", e)
             Toast.makeText(this, "Kon spraakherkenning niet initialiseren: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /**
+     * Handle speech recognition hypotheses and process match results.
+     */
+    private fun handleSpeechHypotheses(hypotheses: List<String>, partials: List<String>) {
+        val receivedAt = System.currentTimeMillis()
+        lifecycleScope.launch(Dispatchers.Default) {
+            val parseStartAt = System.currentTimeMillis()
+            Log.d(TAG, "Hypotheses received at $receivedAt, starting parse at $parseStartAt (hypotheses=${hypotheses.size}, partials=${partials.size})")
+            try {
+                val matchContext = cachedMatchContext ?: run {
+                    val t0 = System.currentTimeMillis()
+                    val mc = buildMatchContext()
+                    cachedMatchContext = mc
+                    Log.d(TAG, "buildMatchContext (on-the-fly) ms=${System.currentTimeMillis() - t0}")
+                    mc
+                }
+
+                val result = aliasParser.parseSpokenWithHypotheses(hypotheses, matchContext, partials, asrWeight = 0.4)
+                val parseEndAt = System.currentTimeMillis()
+                Log.d(TAG, "Parse finished at $parseEndAt (parseDuration=${parseEndAt - parseStartAt} ms)")
+
+                withContext(Dispatchers.Main) {
+                    val uiStartAt = System.currentTimeMillis()
+                    try {
+                        handleMatchResult(result)
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "Hypotheses handling (UI) failed: ${ex.message}", ex)
+                    } finally {
+                        val uiEndAt = System.currentTimeMillis()
+                        Log.d(TAG, "UI handling finished at $uiEndAt (uiDuration=${uiEndAt - uiStartAt} ms)")
+                    }
+                }
+            } catch (ex: Exception) {
+                Log.w(TAG, "Hypotheses handling (background) failed: ${ex.message}", ex)
+            }
+        }
+    }
+
+    /**
+     * Handle different types of match results from speech parsing.
+     */
+    private fun handleMatchResult(result: MatchResult) {
+        when (result) {
+            is MatchResult.AutoAccept -> {
+                handleAutoAcceptMatch(result)
+            }
+            is MatchResult.AutoAcceptAddPopup -> {
+                handleAutoAcceptAddPopup(result)
+            }
+            is MatchResult.MultiMatch -> {
+                handleMultiMatch(result)
+            }
+            is MatchResult.SuggestionList -> {
+                val cnt = logManager.extractCountFromText(result.hypothesis)
+                showSuggestionBottomSheet(result.candidates, cnt)
+            }
+            is MatchResult.NoMatch -> {
+                val now = System.currentTimeMillis()
+                if (now - lastPartialUiUpdateMs >= PARTIAL_UI_DEBOUNCE_MS) {
+                    upsertPartialLog(result.hypothesis)
+                    lastPartialUiUpdateMs = now
+                } else {
+                    upsertPartialLog(result.hypothesis)
+                }
+            }
+        }
+    }
+
+    private fun handleAutoAcceptMatch(result: MatchResult.AutoAccept) {
+        val formatted = "${result.candidate.displayName} -> +${result.amount}"
+        addFinalLog(formatted)
+        updateSoortCountInternal(result.candidate.speciesId, result.amount)
+        RecentSpeciesStore.recordUse(this, result.candidate.speciesId, maxEntries = 25)
+        collectFinalAsRecord(result.candidate.speciesId, result.amount)
+    }
+
+    private fun handleAutoAcceptAddPopup(result: MatchResult.AutoAcceptAddPopup) {
+        val cnt = result.amount
+        val prettyName = result.candidate.displayName
+        val speciesId = result.candidate.speciesId
+
+        // Check if species is already in tiles using tegelBeheer
+        val presentInTiles = tegelBeheer.findIndexBySoortId(speciesId) >= 0
+        if (presentInTiles) {
+            addFinalLog("$prettyName -> +$cnt")
+            updateSoortCountInternal(speciesId, cnt)
+            RecentSpeciesStore.recordUse(this, speciesId, maxEntries = 25)
+            collectFinalAsRecord(speciesId, cnt)
+        } else {
+            val msg = "Soort \"$prettyName\" herkend met aantal $cnt.\n\nToevoegen?"
+            val dlg = AlertDialog.Builder(this)
+                .setTitle("Soort toevoegen?")
+                .setMessage(msg)
+                .setPositiveButton("Ja") { _, _ ->
+                    addSpeciesToTiles(speciesId, prettyName, cnt)
+                    addFinalLog("$prettyName -> +$cnt")
+                    collectFinalAsRecord(speciesId, cnt)
+                }
+                .setNegativeButton("Nee", null)
+                .show()
+            dialogHelper.styleAlertDialogTextToWhite(dlg)
+        }
+    }
+
+    private fun handleMultiMatch(result: MatchResult.MultiMatch) {
+        result.matches.forEach { match ->
+            val sid = match.candidate.speciesId
+            val cnt = match.amount
+            val present = tegelBeheer.findIndexBySoortId(sid) >= 0
+            if (present) {
+                addFinalLog("${match.candidate.displayName} -> +${cnt}")
+                updateSoortCountInternal(sid, cnt)
+                RecentSpeciesStore.recordUse(this, sid, maxEntries = 25)
+                collectFinalAsRecord(sid, cnt)
+            } else {
+                val prettyName = match.candidate.displayName
+                val msg = "Soort \"$prettyName\" (${cnt}x) herkend.\n\nToevoegen?"
+                val dlg = AlertDialog.Builder(this)
+                    .setTitle("Soort toevoegen?")
+                    .setMessage(msg)
+                    .setPositiveButton("Ja") { _, _ ->
+                        addSpeciesToTiles(match.candidate.speciesId, prettyName, cnt)
+                        addFinalLog("$prettyName -> +${cnt}")
+                        collectFinalAsRecord(match.candidate.speciesId, cnt)
+                    }
+                    .setNegativeButton("Nee", null)
+                    .show()
+                dialogHelper.styleAlertDialogTextToWhite(dlg)
+            }
         }
     }
 
