@@ -14,6 +14,7 @@ import com.yvesds.vt5.features.opstart.ui.InstallatieScherm
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.ExperimentalSerializationApi
 
 /**
  * HoofdActiviteit - Hoofdscherm van VT5 app
@@ -26,6 +27,7 @@ import kotlinx.coroutines.withContext
 class HoofdActiviteit : AppCompatActivity() {
     private val TAG = "HoofdActiviteit"
 
+    @OptIn(ExperimentalSerializationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.scherm_hoofd)
