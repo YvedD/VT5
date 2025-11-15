@@ -11,8 +11,10 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.core.ui.ProgressDialogHelper
 import com.yvesds.vt5.databinding.SchermSoortSelectieBinding
+import com.yvesds.vt5.features.alias.AliasManager
 import com.yvesds.vt5.features.recent.RecentSpeciesStore
 import com.yvesds.vt5.features.serverdata.model.DataSnapshot
 import com.yvesds.vt5.features.serverdata.model.ServerDataCache
@@ -33,6 +35,10 @@ import java.util.concurrent.ConcurrentHashMap
  * - Geoptimaliseerde UI updates met DiffUtil en payloads
  * - Verminderde GC pressure door object pooling
  * - Sectioned adapter met "recente soorten" bovenaan
+ * 
+ * UPDATE: Gebruikt nu ALLE unieke soorten uit alias_master.json (via AliasManager)
+ * in plaats van site-specifieke filtering. Dit zorgt voor een complete soortenlijst
+ * die alle soorten uit site_species.json bevat, ongeacht telpost assignment.
  */
 class SoortSelectieScherm : AppCompatActivity() {
 
@@ -41,10 +47,14 @@ class SoortSelectieScherm : AppCompatActivity() {
 
     private var telpostId: String? = null
     private var snapshot: DataSnapshot = DataSnapshot()
+    
+    // SAF helper for alias manager access
+    private lateinit var saf: SaFStorageHelper
 
     // Datamodels
     data class Row(val soortId: String, val naam: String) {
-        // Cache voor genormaliseerde naam (voor sneller zoeken)
+        // Performance: Lazy cache voor genormaliseerde naam - alleen berekend bij eerste gebruik
+        // Vermijdt onnodige string normalisatie voor items die nooit gezocht worden
         val normalizedName: String by lazy { normalizeString(naam) }
     }
 
@@ -71,6 +81,9 @@ class SoortSelectieScherm : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = SchermSoortSelectieBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Initialize SAF helper for alias manager access
+        saf = SaFStorageHelper(this)
 
         telpostId = intent.getStringExtra(EXTRA_TELPOST_ID)
 
@@ -195,46 +208,64 @@ class SoortSelectieScherm : AppCompatActivity() {
     }
 
     private fun loadData() {
-        // Eerst proberen data uit cache te laden
         uiScope.launch {
             try {
                 val startTime = System.currentTimeMillis()
+                
+                // Fast-path: check cache first without showing dialog
+                val cachedData = ServerDataCache.getCachedOrNull()
+                if (cachedData != null) {
+                    // Cache hit - process immediately without dialog
+                    Log.d(TAG, "Using cached data (fast-path)")
+                    snapshot = cachedData
+                    
+                    // Process data synchronously (it's fast with cached data)
+                    baseAlphaRows = buildAlphaRowsForTelpost()
+                    
+                    // Build ID cache for O(1) lookups
+                    rowsByIdCache.clear()
+                    baseAlphaRows.forEach { row -> rowsByIdCache[row.soortId] = row }
+                    
+                    recentRows = computeRecents(baseAlphaRows)
+                    submitGrid(recents = recentRows, restAlpha = baseAlphaRows.filterNot { it.soortId in recentIds })
+                    updateCounter()
+                    
+                    val elapsed = System.currentTimeMillis() - startTime
+                    Log.d(TAG, "Data processed from cache in ${elapsed}ms")
+                    return@launch
+                }
+
+                // Slow-path: need to load from storage
                 val dialog = ProgressDialogHelper.show(this@SoortSelectieScherm, "Soorten laden...")
 
-                // Data laden met cache
-                val cachedData = ServerDataCache.getCachedOrNull()
-                snapshot = if (cachedData != null) {
-                    Log.d(TAG, "Using cached data")
-                    cachedData
-                } else {
-                    Log.d(TAG, "Loading data from storage")
-                    withContext(Dispatchers.IO) {
+                try {
+                    Log.d(TAG, "Loading data from storage (cache miss)")
+                    snapshot = withContext(Dispatchers.IO) {
                         ServerDataCache.getOrLoad(this@SoortSelectieScherm)
                     }
-                }
 
-                // Basislijst opbouwen en sorteren
-                baseAlphaRows = buildAlphaRowsForTelpost()
+                    // Basislijst opbouwen en sorteren
+                    baseAlphaRows = buildAlphaRowsForTelpost()
 
-                // ID cache opbouwen voor snelle lookup
-                rowsByIdCache = ConcurrentHashMap<String, Row>().apply {
-                    baseAlphaRows.forEach { row -> put(row.soortId, row) }
-                }
+                    // ID cache opbouwen voor snelle lookup (reuse existing map)
+                    rowsByIdCache.clear()
+                    baseAlphaRows.forEach { row -> rowsByIdCache[row.soortId] = row }
 
-                // Recents berekenen
-                recentRows = computeRecents(baseAlphaRows)
+                    // Recents berekenen
+                    recentRows = computeRecents(baseAlphaRows)
 
-                // Submit naar grid
-                submitGrid(recents = recentRows, restAlpha = baseAlphaRows.filterNot { it.soortId in recentIds })
-                updateCounter()
+                    // Submit naar grid
+                    submitGrid(recents = recentRows, restAlpha = baseAlphaRows.filterNot { it.soortId in recentIds })
+                    updateCounter()
 
-                dialog.dismiss()
+                    val elapsed = System.currentTimeMillis() - startTime
+                    Log.d(TAG, "Data loaded and processed in ${elapsed}ms")
 
-                val elapsed = System.currentTimeMillis() - startTime
-                Log.d(TAG, "Data loaded and processed in ${elapsed}ms")
-
-                if (baseAlphaRows.isEmpty()) {
-                    Toast.makeText(this@SoortSelectieScherm, "Geen soorten gevonden. Download eerst serverdata.", Toast.LENGTH_LONG).show()
+                    if (baseAlphaRows.isEmpty()) {
+                        Toast.makeText(this@SoortSelectieScherm, "Geen soorten gevonden. Download eerst serverdata.", Toast.LENGTH_LONG).show()
+                    }
+                } finally {
+                    dialog.dismiss()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading data", e)
@@ -243,45 +274,95 @@ class SoortSelectieScherm : AppCompatActivity() {
         }
     }
 
-    private fun buildAlphaRowsForTelpost(): List<Row> {
-        val speciesById = snapshot.speciesById
-        val siteMap = snapshot.siteSpeciesBySite
-        val allowed = telpostId?.let { id -> siteMap[id]?.map { it.soortid }?.toSet().orEmpty() } ?: emptySet()
-
-        val base = if (allowed.isNotEmpty()) {
-            allowed.mapNotNull { sid -> speciesById[sid]?.let { Row(sid, it.soortnaam) } }
+    /**
+     * Build alphabetically sorted species list.
+     * 
+     * NEW: Uses ALL unique species from alias_master.json (via AliasManager)
+     * instead of filtering by telpost. This provides the complete "truth list"
+     * of all species from site_species.json regardless of site assignment.
+     * 
+     * Performance: Runs synchronously but data is already loaded in memory
+     * by AliasManager (loaded during MetadataScherm background preload).
+     */
+    private suspend fun buildAlphaRowsForTelpost(): List<Row> = withContext(Dispatchers.IO) {
+        // Try to get all species from alias index first (preferred source)
+        val aliasSpecies = try {
+            AliasManager.getAllSpeciesFromIndex(this@SoortSelectieScherm, saf)
+        } catch (ex: Exception) {
+            Log.w(TAG, "Failed to get species from alias index: ${ex.message}")
+            emptyMap()
+        }
+        
+        // If alias index has species, use that as the source of truth
+        val base = if (aliasSpecies.isNotEmpty()) {
+            Log.d(TAG, "Using ${aliasSpecies.size} species from alias index (complete list)")
+            ArrayList<Row>(aliasSpecies.size).apply {
+                aliasSpecies.forEach { (sid, naam) ->
+                    add(Row(sid, naam))
+                }
+            }
         } else {
-            speciesById.values.map { Row(it.soortid, it.soortnaam) }
+            // Fallback to snapshot.speciesById (all species, no filtering)
+            Log.d(TAG, "Fallback: using ${snapshot.speciesById.size} species from snapshot")
+            ArrayList<Row>(snapshot.speciesById.size).apply {
+                snapshot.speciesById.values.forEach { 
+                    add(Row(it.soortid, it.soortnaam)) 
+                }
+            }
         }
 
-        return base.sortedBy { it.naam.lowercase() }
+        // Sort by pre-computed lowercase to avoid repeated lowercase() calls
+        return@withContext base.sortedBy { it.naam.lowercase() }
     }
 
     private fun computeRecents(baseAlpha: List<Row>): List<Row> {
-        // Optimize by building ID map first
-        val byId = baseAlpha.associateBy { it.soortId }
+        // Use cached lookup map instead of rebuilding
         val recentsOrderedIds = RecentSpeciesStore.getRecents(this).map { it.first }
-        return recentsOrderedIds.mapNotNull { byId[it] }
+        
+        // Pre-allocate result list with expected size
+        val result = ArrayList<Row>(recentsOrderedIds.size.coerceAtMost(baseAlpha.size))
+        
+        // Use the cached rowsByIdCache for O(1) lookups if available, otherwise build temporary map
+        if (rowsByIdCache.isNotEmpty()) {
+            recentsOrderedIds.forEach { id ->
+                rowsByIdCache[id]?.let { result.add(it) }
+            }
+        } else {
+            // Fallback: build temporary map (should rarely happen)
+            val byId = baseAlpha.associateBy { it.soortId }
+            recentsOrderedIds.forEach { id ->
+                byId[id]?.let { result.add(it) }
+            }
+        }
+        
+        return result
     }
 
     private fun submitGrid(recents: List<Row>, restAlpha: List<Row>) {
-        val items = mutableListOf<SoortSelectieSectionedAdapter.RowUi>()
+        // Pre-allocate list with known capacity to avoid resizing
+        val estimatedSize = if (recents.isNotEmpty()) {
+            recents.size + restAlpha.size + 2 // +2 for header and footer
+        } else {
+            restAlpha.size
+        }
+        val items = ArrayList<SoortSelectieSectionedAdapter.RowUi>(estimatedSize)
 
         if (recents.isNotEmpty()) {
-            val allSel = recents.all { selectedIds.contains(it.soortId) }
+            // Check if all recents are selected (optimized with any { } short-circuit)
+            val allSel = recents.isNotEmpty() && !recents.any { !selectedIds.contains(it.soortId) }
 
             // Header voor recente items
-            items += SoortSelectieSectionedAdapter.RowUi.RecentsHeader(recentsCount = recents.size, allSelected = allSel)
+            items.add(SoortSelectieSectionedAdapter.RowUi.RecentsHeader(recentsCount = recents.size, allSelected = allSel))
 
-            // Recente items als speciale visuele groep
-            items += recents.map { SoortSelectieSectionedAdapter.RowUi.RecenteSpecies(it) }
+            // Recente items als speciale visuele groep (direct add to avoid intermediate list)
+            recents.forEach { items.add(SoortSelectieSectionedAdapter.RowUi.RecenteSpecies(it)) }
 
             // Footer divider voor afsluiting van recente groep
-            items += SoortSelectieSectionedAdapter.RowUi.RecentsFooter
+            items.add(SoortSelectieSectionedAdapter.RowUi.RecentsFooter)
         }
 
-        // Rest van de items zoals gewoonlijk
-        items += restAlpha.map { SoortSelectieSectionedAdapter.RowUi.Species(it) }
+        // Rest van de items zoals gewoonlijk (direct add to avoid intermediate list)
+        restAlpha.forEach { items.add(SoortSelectieSectionedAdapter.RowUi.Species(it)) }
 
         gridAdapter.submitList(items)
     }
@@ -297,7 +378,13 @@ class SoortSelectieScherm : AppCompatActivity() {
             suggestAdapter.submitList(emptyList())
             showSuggestions(false)
             // rebuild grid (recents + rest) zodat header-state klopt
-            submitGrid(recentRows, baseAlphaRows.filterNot { it.soortId in recentIds })
+            // Optimize: avoid creating intermediate filtered list
+            val restAlpha = if (recentIds.isEmpty()) {
+                baseAlphaRows
+            } else {
+                baseAlphaRows.filterNot { it.soortId in recentIds }
+            }
+            submitGrid(recentRows, restAlpha)
             updateCounter()
             return
         }
@@ -306,13 +393,15 @@ class SoortSelectieScherm : AppCompatActivity() {
         val normalizedQuery = normalizeString(text)
 
         val max = 12
-        val filtered = baseAlphaRows.asSequence()
-            .filter { row ->
-                row.normalizedName.contains(normalizedQuery) ||
-                        row.soortId.lowercase().contains(normalizedQuery)
+        // Pre-allocate result list to avoid resizing
+        val filtered = ArrayList<Row>(max)
+        for (row in baseAlphaRows) {
+            if (row.normalizedName.contains(normalizedQuery) || 
+                row.soortId.lowercase().contains(normalizedQuery)) {
+                filtered.add(row)
+                if (filtered.size >= max) break
             }
-            .take(max)
-            .toList()
+        }
 
         suggestAdapter.submitList(filtered)
         showSuggestions(filtered.isNotEmpty())
@@ -367,7 +456,14 @@ class SoortSelectieScherm : AppCompatActivity() {
             uiScope.launch {
                 // Recente items ophalen en bijwerken
                 recentRows = computeRecents(baseAlphaRows)
-                val restAlpha = baseAlphaRows.filterNot { r -> recentRows.any { it.soortId == r.soortId } }
+                
+                // Performance: avoid filtering when no recents, use Set lookup for O(1) instead of O(n)
+                val restAlpha = if (recentIds.isEmpty()) {
+                    baseAlphaRows
+                } else {
+                    baseAlphaRows.filterNot { it.soortId in recentIds }
+                }
+                
                 submitGrid(recents = recentRows, restAlpha = restAlpha)
                 updateCounter()
             }

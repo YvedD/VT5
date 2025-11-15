@@ -20,7 +20,7 @@ object RecentSpeciesStore {
     private const val TAG = "RecentSpeciesStore"
     private const val PREFS = "recent_species_prefs"
     private const val KEY = "recent_species_list"
-    private const val DEFAULT_MAX_RECENTS = 40 // verander dit naar bv. 50
+    private const val DEFAULT_MAX_RECENTS = 30 // maximum aantal recente soorten
 
     // In-memory cache van recente soorten
     private var cachedRecents: List<Pair<String, Long>>? = null
@@ -28,7 +28,7 @@ object RecentSpeciesStore {
     private var cachedRecentIdsSet = ConcurrentHashMap<String, Boolean>()
 
     /**
-     * Registreer het gebruik van een soort-id. Standaard max 25 entries.
+     * Registreer het gebruik van een soort-id. Standaard max 30 entries.
      * Promoot bestaande soort naar boven of voegt nieuwe toe.
      */
     fun recordUse(context: Context, soortId: String, maxEntries: Int = DEFAULT_MAX_RECENTS) {
