@@ -1,9 +1,69 @@
 {
   "json": [
     {
+      "telpostid": "5177",
+      "soortid": "1084",
+      "sortering": "742",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "421",
+      "sortering": "100880",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "3949",
+      "soortid": "438",
+      "sortering": "103640",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "4310",
+      "soortid": "29",
+      "sortering": "26970",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "3949",
+      "soortid": "45",
+      "sortering": "840",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "4310",
+      "soortid": "983",
+      "sortering": "80410",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "3949",
+      "soortid": "203",
+      "sortering": "23000",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "180",
+      "sortering": "21530",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "79",
+      "soortid": "976",
+      "sortering": "100660",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "4310",
       "soortid": "446",
       "sortering": "77322",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "419",
+      "sortering": "100980",
       "shortlist": "1"
     },
     {
@@ -73,6 +133,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "152",
+      "sortering": "21740",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "79",
       "soortid": "197",
       "sortering": "22540",
@@ -82,6 +148,12 @@
       "telpostid": "5177",
       "soortid": "112",
       "sortering": "40500",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "245",
+      "sortering": "31530",
       "shortlist": "1"
     },
     {
@@ -133,6 +205,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "763",
+      "sortering": "76332",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "79",
       "soortid": "359",
       "sortering": "77320",
@@ -148,6 +226,12 @@
       "telpostid": "3745",
       "soortid": "289",
       "sortering": "100130",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "410",
+      "sortering": "102392",
       "shortlist": "1"
     },
     {
@@ -187,6 +271,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "443",
+      "sortering": "100490",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "4310",
       "soortid": "290",
       "sortering": "100140",
@@ -214,6 +304,12 @@
       "telpostid": "79",
       "soortid": "426",
       "sortering": "103180",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "388",
+      "sortering": "70030",
       "shortlist": "1"
     },
     {
@@ -259,9 +355,27 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "393",
+      "sortering": "70390",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "4806",
+      "sortering": "40770",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "79",
       "soortid": "80",
       "sortering": "2130",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "325",
+      "sortering": "90230",
       "shortlist": "1"
     },
     {
@@ -292,6 +406,12 @@
       "telpostid": "4310",
       "soortid": "171",
       "sortering": "20980",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "426",
+      "sortering": "103180",
       "shortlist": "1"
     },
     {
@@ -332,20 +452,26 @@
     },
     {
       "telpostid": "5177",
-      "soortid": "237",
-      "sortering": "13560",
+      "soortid": "20",
+      "sortering": "25750",
       "shortlist": "1"
     },
     {
       "telpostid": "5177",
-      "soortid": "20",
-      "sortering": "25750",
+      "soortid": "237",
+      "sortering": "13560",
       "shortlist": "1"
     },
     {
       "telpostid": "79",
       "soortid": "133",
       "sortering": "19840",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "933",
+      "sortering": "100000",
       "shortlist": "1"
     },
     {
@@ -358,6 +484,18 @@
       "telpostid": "79",
       "soortid": "415",
       "sortering": "102420",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "33",
+      "sortering": "26220",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "256",
+      "sortering": "32890",
       "shortlist": "1"
     },
     {
@@ -410,6 +548,12 @@
     },
     {
       "telpostid": "5177",
+      "soortid": "283",
+      "sortering": "100051",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
       "soortid": "271",
       "sortering": "76040",
       "shortlist": "1"
@@ -424,6 +568,12 @@
       "telpostid": "113",
       "soortid": "294",
       "sortering": "100010",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "254",
+      "sortering": "35480",
       "shortlist": "1"
     },
     {
@@ -475,6 +625,24 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "87",
+      "sortering": "27260",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "879",
+      "sortering": "100812",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "592",
+      "sortering": "28120",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "113",
       "soortid": "145",
       "sortering": "20020",
@@ -517,6 +685,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "66",
+      "sortering": "1500",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "3949",
       "soortid": "325",
       "sortering": "90230",
@@ -532,6 +706,18 @@
       "telpostid": "4310",
       "soortid": "50",
       "sortering": "740",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "89",
+      "sortering": "29050",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "171",
+      "sortering": "20980",
       "shortlist": "1"
     },
     {
@@ -562,6 +748,12 @@
       "telpostid": "79",
       "soortid": "284",
       "sortering": "100051",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "3",
+      "sortering": "23460",
       "shortlist": "1"
     },
     {
@@ -598,6 +790,12 @@
       "telpostid": "113",
       "soortid": "96",
       "sortering": "28990",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "4614",
+      "sortering": "90370",
       "shortlist": "1"
     },
     {
@@ -643,6 +841,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "140",
+      "sortering": "20180",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "79",
       "soortid": "61",
       "sortering": "1760",
@@ -667,6 +871,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "370",
+      "sortering": "76970",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "3949",
       "soortid": "101",
       "sortering": "29750",
@@ -685,6 +895,24 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "375",
+      "sortering": "72050",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "376",
+      "sortering": "72370",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "453",
+      "sortering": "23282",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "4310",
       "soortid": "145",
       "sortering": "20020",
@@ -700,6 +928,12 @@
       "telpostid": "113",
       "soortid": "546",
       "sortering": "842",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "296",
+      "sortering": "92190",
       "shortlist": "1"
     },
     {
@@ -733,6 +967,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "400",
+      "sortering": "96940",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "4310",
       "soortid": "113",
       "sortering": "40530",
@@ -740,8 +980,8 @@
     },
     {
       "telpostid": "5177",
-      "soortid": "382",
-      "sortering": "66980",
+      "soortid": "914",
+      "sortering": "23072",
       "shortlist": "1"
     },
     {
@@ -757,6 +997,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "59",
+      "sortering": "1510",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "3745",
       "soortid": "327",
       "sortering": "76790",
@@ -766,6 +1012,12 @@
       "telpostid": "113",
       "soortid": "203",
       "sortering": "23000",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "280",
+      "sortering": "100480",
       "shortlist": "1"
     },
     {
@@ -811,6 +1063,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "447",
+      "sortering": "22352",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "79",
       "soortid": "281",
       "sortering": "100052",
@@ -823,6 +1081,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "1127",
+      "sortering": "100812",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "3949",
       "soortid": "150",
       "sortering": "20210",
@@ -832,6 +1096,12 @@
       "telpostid": "79",
       "soortid": "100",
       "sortering": "28740",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "425",
+      "sortering": "103150",
       "shortlist": "1"
     },
     {
@@ -865,6 +1135,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "395",
+      "sortering": "70510",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "3949",
       "soortid": "546",
       "sortering": "842",
@@ -886,6 +1162,12 @@
       "telpostid": "79",
       "soortid": "192",
       "sortering": "23070",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "1098",
+      "sortering": "80200",
       "shortlist": "1"
     },
     {
@@ -967,6 +1249,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "438",
+      "sortering": "103640",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "3949",
       "soortid": "278",
       "sortering": "100410",
@@ -976,6 +1264,18 @@
       "telpostid": "79",
       "soortid": "984",
       "sortering": "1762",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "147",
+      "sortering": "20010",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "37",
+      "sortering": "960",
       "shortlist": "1"
     },
     {
@@ -991,9 +1291,27 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "737",
+      "sortering": "7912",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "4310",
       "soortid": "1150",
       "sortering": "29752",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "68",
+      "sortering": "1960",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "995",
+      "sortering": "108062",
       "shortlist": "1"
     },
     {
@@ -1003,15 +1321,39 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "984",
+      "sortering": "1762",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "113",
       "soortid": "200",
       "sortering": "22670",
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "399",
+      "sortering": "97010",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "42",
+      "sortering": "870",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "3949",
       "soortid": "405",
       "sortering": "101840",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "14",
+      "sortering": "24880",
       "shortlist": "1"
     },
     {
@@ -1033,6 +1375,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "172",
+      "sortering": "20970",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "4310",
       "soortid": "233",
       "sortering": "13850",
@@ -1051,9 +1399,21 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "215",
+      "sortering": "22450",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "4310",
       "soortid": "159",
       "sortering": "21680",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "444",
+      "sortering": "22920",
       "shortlist": "1"
     },
     {
@@ -1106,6 +1466,24 @@
     },
     {
       "telpostid": "5177",
+      "soortid": "761",
+      "sortering": "75920",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "61",
+      "sortering": "1760",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "9",
+      "sortering": "19340",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
       "soortid": "185",
       "sortering": "21400",
       "shortlist": "1"
@@ -1132,6 +1510,12 @@
       "telpostid": "3949",
       "soortid": "43",
       "sortering": "890",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "4606",
+      "sortering": "90006",
       "shortlist": "1"
     },
     {
@@ -1171,9 +1555,27 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "4868",
+      "sortering": "26732",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "3745",
       "soortid": "113",
       "sortering": "40530",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "177",
+      "sortering": "21480",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "217",
+      "sortering": "22390",
       "shortlist": "1"
     },
     {
@@ -1198,6 +1600,12 @@
       "telpostid": "5177",
       "soortid": "54",
       "sortering": "1190",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "1",
+      "sortering": "23430",
       "shortlist": "1"
     },
     {
@@ -1231,6 +1639,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "50",
+      "sortering": "740",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "4310",
       "soortid": "185",
       "sortering": "21400",
@@ -1258,12 +1672,6 @@
       "telpostid": "113",
       "soortid": "268",
       "sortering": "73490",
-      "shortlist": "1"
-    },
-    {
-      "telpostid": "5177",
-      "soortid": "585",
-      "sortering": "28862",
       "shortlist": "1"
     },
     {
@@ -1315,6 +1723,18 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "1074",
+      "sortering": "80350",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "8",
+      "sortering": "19330",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "79",
       "soortid": "95",
       "sortering": "28890",
@@ -1339,9 +1759,27 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "49",
+      "sortering": "780",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "113",
       "soortid": "879",
       "sortering": "100812",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "884",
+      "sortering": "102422",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "277",
+      "sortering": "100420",
       "shortlist": "1"
     },
     {
@@ -1393,6 +1831,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "364",
+      "sortering": "85940",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "113",
       "soortid": "110",
       "sortering": "40300",
@@ -1411,6 +1855,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "176",
+      "sortering": "21520",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "4310",
       "soortid": "990",
       "sortering": "23002",
@@ -1426,6 +1876,12 @@
       "telpostid": "4310",
       "soortid": "365",
       "sortering": "91570",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "218",
+      "sortering": "22350",
       "shortlist": "1"
     },
     {
@@ -1466,6 +1922,12 @@
     },
     {
       "telpostid": "5177",
+      "soortid": "63",
+      "sortering": "1750",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
       "soortid": "408",
       "sortering": "102340",
       "shortlist": "1"
@@ -1502,8 +1964,8 @@
     },
     {
       "telpostid": "5177",
-      "soortid": "1061",
-      "sortering": "100132",
+      "soortid": "363",
+      "sortering": "85980",
       "shortlist": "1"
     },
     {
@@ -1516,6 +1978,12 @@
       "telpostid": "3949",
       "soortid": "326",
       "sortering": "90090",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "226",
+      "sortering": "23280",
       "shortlist": "1"
     },
     {
@@ -1540,6 +2008,12 @@
       "telpostid": "79",
       "soortid": "269",
       "sortering": "73570",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "981",
+      "sortering": "13992",
       "shortlist": "1"
     },
     {
@@ -1591,6 +2065,18 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "192",
+      "sortering": "23070",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "445",
+      "sortering": "22960",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "113",
       "soortid": "280",
       "sortering": "100480",
@@ -1600,6 +2086,12 @@
       "telpostid": "4310",
       "soortid": "172",
       "sortering": "20970",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "916",
+      "sortering": "23442",
       "shortlist": "1"
     },
     {
@@ -1663,6 +2155,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "197",
+      "sortering": "22540",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "113",
       "soortid": "267",
       "sortering": "73380",
@@ -1693,6 +2191,24 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "705",
+      "sortering": "22442",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "135",
+      "sortering": "19970",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "129",
+      "sortering": "19140",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "3949",
       "soortid": "180",
       "sortering": "21530",
@@ -1711,9 +2227,21 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "187",
+      "sortering": "21590",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "3745",
       "soortid": "112",
       "sortering": "40500",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "170",
+      "sortering": "21060",
       "shortlist": "1"
     },
     {
@@ -1777,6 +2305,24 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "222",
+      "sortering": "22300",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "381",
+      "sortering": "72640",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "194",
+      "sortering": "23090",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "113",
       "soortid": "182",
       "sortering": "21420",
@@ -1801,6 +2347,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "88",
+      "sortering": "29060",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "79",
       "soortid": "290",
       "sortering": "100140",
@@ -1819,9 +2371,21 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "907",
+      "sortering": "103642",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "3745",
       "soortid": "45",
       "sortering": "840",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "284",
+      "sortering": "100051",
       "shortlist": "1"
     },
     {
@@ -1885,6 +2449,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "4617",
+      "sortering": "90400",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "113",
       "soortid": "39",
       "sortering": "882",
@@ -1927,9 +2497,21 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "263",
+      "sortering": "38710",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "3949",
       "soortid": "234",
       "sortering": "14380",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "97",
+      "sortering": "29020",
       "shortlist": "1"
     },
     {
@@ -1975,6 +2557,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "945",
+      "sortering": "842",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "3949",
       "soortid": "393",
       "sortering": "70390",
@@ -1984,6 +2572,12 @@
       "telpostid": "5177",
       "soortid": "98",
       "sortering": "29040",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "24",
+      "sortering": "26550",
       "shortlist": "1"
     },
     {
@@ -2017,6 +2611,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "591",
+      "sortering": "28242",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "4310",
       "soortid": "277",
       "sortering": "100420",
@@ -2032,6 +2632,12 @@
       "telpostid": "79",
       "soortid": "175",
       "sortering": "20960",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "1099",
+      "sortering": "40532",
       "shortlist": "1"
     },
     {
@@ -2054,8 +2660,14 @@
     },
     {
       "telpostid": "5177",
-      "soortid": "334",
-      "sortering": "78280",
+      "soortid": "369",
+      "sortering": "72780",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "526",
+      "sortering": "26952",
       "shortlist": "1"
     },
     {
@@ -2071,21 +2683,33 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "78",
+      "sortering": "2160",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "224",
+      "sortering": "23320",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "4310",
       "soortid": "272",
       "sortering": "76170",
       "shortlist": "1"
     },
     {
-      "telpostid": "113",
-      "soortid": "407",
-      "sortering": "102630",
+      "telpostid": "5177",
+      "soortid": "2314",
+      "sortering": "21652",
       "shortlist": "1"
     },
     {
-      "telpostid": "5177",
-      "soortid": "586",
-      "sortering": "29752",
+      "telpostid": "113",
+      "soortid": "407",
+      "sortering": "102630",
       "shortlist": "1"
     },
     {
@@ -2098,6 +2722,18 @@
       "telpostid": "4310",
       "soortid": "59",
       "sortering": "1510",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "990",
+      "sortering": "23002",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "183",
+      "sortering": "21470",
       "shortlist": "1"
     },
     {
@@ -2125,6 +2761,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "19",
+      "sortering": "25410",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "4310",
       "soortid": "406",
       "sortering": "102480",
@@ -2149,9 +2791,21 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "159",
+      "sortering": "21680",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "4310",
       "soortid": "447",
       "sortering": "22352",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "4612",
+      "sortering": "90350",
       "shortlist": "1"
     },
     {
@@ -2216,6 +2870,12 @@
     },
     {
       "telpostid": "5177",
+      "soortid": "191",
+      "sortering": "23080",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
       "soortid": "206",
       "sortering": "22940",
       "shortlist": "1"
@@ -2239,6 +2899,18 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "457",
+      "sortering": "23472",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "482",
+      "sortering": "19402",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "3949",
       "soortid": "280",
       "sortering": "100480",
@@ -2254,6 +2926,12 @@
       "telpostid": "79",
       "soortid": "1074",
       "sortering": "80350",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "246",
+      "sortering": "31570",
       "shortlist": "1"
     },
     {
@@ -2278,6 +2956,12 @@
       "telpostid": "4310",
       "soortid": "407",
       "sortering": "102630",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "7",
+      "sortering": "19310",
       "shortlist": "1"
     },
     {
@@ -2360,14 +3044,20 @@
     },
     {
       "telpostid": "5177",
-      "soortid": "259",
-      "sortering": "39650",
+      "soortid": "361",
+      "sortering": "77290",
       "shortlist": "1"
     },
     {
       "telpostid": "3949",
       "soortid": "32",
       "sortering": "25330",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "133",
+      "sortering": "19840",
       "shortlist": "1"
     },
     {
@@ -2380,6 +3070,12 @@
       "telpostid": "3949",
       "soortid": "315",
       "sortering": "90240",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "214",
+      "sortering": "22260",
       "shortlist": "1"
     },
     {
@@ -2407,6 +3103,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "272",
+      "sortering": "76170",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "3949",
       "soortid": "289",
       "sortering": "100130",
@@ -2416,6 +3118,12 @@
       "telpostid": "4310",
       "soortid": "54",
       "sortering": "1190",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "4623",
+      "sortering": "90460",
       "shortlist": "1"
     },
     {
@@ -2440,6 +3148,12 @@
       "telpostid": "3949",
       "soortid": "277",
       "sortering": "100420",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "290",
+      "sortering": "100140",
       "shortlist": "1"
     },
     {
@@ -2473,6 +3187,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "294",
+      "sortering": "100010",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "3745",
       "soortid": "397",
       "sortering": "88620",
@@ -2497,6 +3217,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "209",
+      "sortering": "22980",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "113",
       "soortid": "429",
       "sortering": "103240",
@@ -2506,6 +3232,12 @@
       "telpostid": "3745",
       "soortid": "100",
       "sortering": "28740",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "665",
+      "sortering": "20962",
       "shortlist": "1"
     },
     {
@@ -2524,6 +3256,12 @@
       "telpostid": "5177",
       "soortid": "173",
       "sortering": "20890",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "232",
+      "sortering": "13820",
       "shortlist": "1"
     },
     {
@@ -2635,9 +3373,27 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "279",
+      "sortering": "100460",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "113",
       "soortid": "391",
       "sortering": "70210",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "448",
+      "sortering": "920",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "472",
+      "sortering": "80260",
       "shortlist": "1"
     },
     {
@@ -2719,6 +3475,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "454",
+      "sortering": "24900",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "4310",
       "soortid": "325",
       "sortering": "90230",
@@ -2728,6 +3490,12 @@
       "telpostid": "4310",
       "soortid": "52",
       "sortering": "1090",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "315",
+      "sortering": "90240",
       "shortlist": "1"
     },
     {
@@ -2755,15 +3523,39 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "80",
+      "sortering": "2130",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "79",
       "soortid": "83",
       "sortering": "2270",
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "1478",
+      "sortering": "20012",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "3745",
       "soortid": "278",
       "sortering": "100410",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "328",
+      "sortering": "79730",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "415",
+      "sortering": "102420",
       "shortlist": "1"
     },
     {
@@ -2863,6 +3655,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "56",
+      "sortering": "1530",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "4310",
       "soortid": "984",
       "sortering": "1762",
@@ -2899,15 +3697,33 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "404",
+      "sortering": "102520",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "3949",
       "soortid": "268",
       "sortering": "73490",
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "165",
+      "sortering": "21640",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "79",
       "soortid": "29",
       "sortering": "26970",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "912",
+      "sortering": "29042",
       "shortlist": "1"
     },
     {
@@ -2926,6 +3742,12 @@
       "telpostid": "5177",
       "soortid": "202",
       "sortering": "22870",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "151",
+      "sortering": "21620",
       "shortlist": "1"
     },
     {
@@ -3007,6 +3829,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "142",
+      "sortering": "20680",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "3745",
       "soortid": "585",
       "sortering": "28862",
@@ -3043,6 +3871,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "141",
+      "sortering": "20100",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "3745",
       "soortid": "29",
       "sortering": "26970",
@@ -3073,6 +3907,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "314",
+      "sortering": "90420",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "79",
       "soortid": "147",
       "sortering": "20010",
@@ -3082,6 +3922,24 @@
       "telpostid": "5177",
       "soortid": "27",
       "sortering": "26730",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "440",
+      "sortering": "103230",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "166",
+      "sortering": "21040",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "307",
+      "sortering": "94110",
       "shortlist": "1"
     },
     {
@@ -3103,6 +3961,18 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "267",
+      "sortering": "73380",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "2313",
+      "sortering": "21652",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "79",
       "soortid": "443",
       "sortering": "100490",
@@ -3115,9 +3985,21 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "303",
+      "sortering": "93610",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "113",
       "soortid": "101",
       "sortering": "29750",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "350",
+      "sortering": "80960",
       "shortlist": "1"
     },
     {
@@ -3181,6 +4063,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "1924",
+      "sortering": "80090",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "113",
       "soortid": "112",
       "sortering": "40500",
@@ -3205,6 +4093,12 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "220",
+      "sortering": "22160",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "4310",
       "soortid": "419",
       "sortering": "100980",
@@ -3224,14 +4118,38 @@
     },
     {
       "telpostid": "5177",
-      "soortid": "305",
-      "sortering": "93830",
+      "soortid": "235",
+      "sortering": "14320",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "64",
+      "sortering": "1410",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "144",
+      "sortering": "20080",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "213",
+      "sortering": "22240",
       "shortlist": "1"
     },
     {
       "telpostid": "79",
       "soortid": "36",
       "sortering": "940",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "276",
+      "sortering": "100430",
       "shortlist": "1"
     },
     {
@@ -3250,6 +4168,18 @@
       "telpostid": "5177",
       "soortid": "672",
       "sortering": "21652",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "38",
+      "sortering": "970",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "348",
+      "sortering": "81230",
       "shortlist": "1"
     },
     {
@@ -3290,6 +4220,12 @@
     },
     {
       "telpostid": "5177",
+      "soortid": "211",
+      "sortering": "22560",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
       "soortid": "182",
       "sortering": "21420",
       "shortlist": "1"
@@ -3319,9 +4255,27 @@
       "shortlist": "1"
     },
     {
+      "telpostid": "5177",
+      "soortid": "13",
+      "sortering": "24820",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "1062",
+      "sortering": "100492",
+      "shortlist": "1"
+    },
+    {
       "telpostid": "4310",
       "soortid": "976",
       "sortering": "100660",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "1119",
+      "sortering": "71500",
       "shortlist": "1"
     },
     {
@@ -3376,12 +4330,6 @@
       "telpostid": "4310",
       "soortid": "100",
       "sortering": "28740",
-      "shortlist": "1"
-    },
-    {
-      "telpostid": "5177",
-      "soortid": "327",
-      "sortering": "76790",
       "shortlist": "1"
     },
     {
@@ -3446,6 +4394,18 @@
     },
     {
       "telpostid": "5177",
+      "soortid": "368",
+      "sortering": "93300",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "2",
+      "sortering": "23440",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
       "soortid": "109",
       "sortering": "27250",
       "shortlist": "1"
@@ -3460,6 +4420,18 @@
       "telpostid": "79",
       "soortid": "202",
       "sortering": "22870",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "446",
+      "sortering": "77322",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
+      "soortid": "758",
+      "sortering": "73762",
       "shortlist": "1"
     },
     {
@@ -3482,14 +4454,14 @@
     },
     {
       "telpostid": "5177",
-      "soortid": "96",
-      "sortering": "28990",
+      "soortid": "1072",
+      "sortering": "80150",
       "shortlist": "1"
     },
     {
       "telpostid": "5177",
-      "soortid": "1072",
-      "sortering": "80150",
+      "soortid": "96",
+      "sortering": "28990",
       "shortlist": "1"
     },
     {
@@ -3518,6 +4490,12 @@
     },
     {
       "telpostid": "5177",
+      "soortid": "326",
+      "sortering": "90090",
+      "shortlist": "1"
+    },
+    {
+      "telpostid": "5177",
       "soortid": "28",
       "sortering": "26930",
       "shortlist": "1"
@@ -3538,48 +4516,6 @@
       "telpostid": "4310",
       "soortid": "995",
       "sortering": "108062",
-      "shortlist": "1"
-    },
-    {
-      "telpostid": "3949",
-      "soortid": "438",
-      "sortering": "103640",
-      "shortlist": "1"
-    },
-    {
-      "telpostid": "4310",
-      "soortid": "29",
-      "sortering": "26970",
-      "shortlist": "1"
-    },
-    {
-      "telpostid": "3949",
-      "soortid": "45",
-      "sortering": "840",
-      "shortlist": "1"
-    },
-    {
-      "telpostid": "4310",
-      "soortid": "983",
-      "sortering": "80410",
-      "shortlist": "1"
-    },
-    {
-      "telpostid": "3949",
-      "soortid": "203",
-      "sortering": "23000",
-      "shortlist": "1"
-    },
-    {
-      "telpostid": "5177",
-      "soortid": "180",
-      "sortering": "21530",
-      "shortlist": "1"
-    },
-    {
-      "telpostid": "79",
-      "soortid": "976",
-      "sortering": "100660",
       "shortlist": "1"
     }
   ]
