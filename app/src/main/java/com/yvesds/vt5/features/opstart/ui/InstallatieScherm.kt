@@ -52,6 +52,9 @@ class InstallatieScherm : AppCompatActivity() {
     private lateinit var creds: CredentialsStore
 
     private var dataPreloaded = false
+    
+    // Track active progress dialogs to prevent leaks
+    private var activeProgressDialog: AlertDialog? = null
 
     // JSON helper for metadata
     private val jsonPretty = Json { prettyPrint = true; encodeDefaults = true; ignoreUnknownKeys = true }
@@ -106,6 +109,17 @@ class InstallatieScherm : AppCompatActivity() {
         updatePrecomputeButtonState()
     }
 
+    override fun onDestroy() {
+        try {
+            // Dismiss any active progress dialog to prevent window leaks
+            activeProgressDialog?.dismiss()
+            activeProgressDialog = null
+        } catch (e: Exception) {
+            Log.w(TAG, "Error dismissing progress dialog in onDestroy: ${e.message}")
+        }
+        super.onDestroy()
+    }
+
     private fun initUi() {
         binding.etUitleg.setText(getString(R.string.install_uitleg))
         restoreCreds()
@@ -117,28 +131,52 @@ class InstallatieScherm : AppCompatActivity() {
         btnKiesDocuments.setOnClickListener { treePicker.launch(null) }
 
         btnCheckFolders.setOnClickListener {
-            val ok = saf.foldersExist() || saf.ensureFolders()
-            tvStatus.text = if (ok) {
-                preloadDataIfExists()
-                getString(R.string.status_saf_ok)
-            } else {
-                getString(R.string.status_saf_missing)
+            it.isEnabled = false
+            try {
+                val ok = saf.foldersExist() || saf.ensureFolders()
+                tvStatus.text = if (ok) {
+                    preloadDataIfExists()
+                    getString(R.string.status_saf_ok)
+                } else {
+                    getString(R.string.status_saf_missing)
+                }
+                updatePrecomputeButtonState()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error checking folders: ${e.message}", e)
+                showErrorDialog("Fout bij controleren folders", e.message ?: "Onbekende fout")
+            } finally {
+                it.isEnabled = true
             }
-            updatePrecomputeButtonState()
         }
 
         btnWis.setOnClickListener {
-            creds.clear()
-            etLogin.setText("")
-            etPass.setText("")
-            Toast.makeText(this@InstallatieScherm, getString(R.string.msg_credentials_gewist), Toast.LENGTH_SHORT).show()
+            it.isEnabled = false
+            try {
+                creds.clear()
+                etLogin.setText("")
+                etPass.setText("")
+                Toast.makeText(this@InstallatieScherm, getString(R.string.msg_credentials_gewist), Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error clearing credentials: ${e.message}", e)
+                showErrorDialog("Fout bij wissen credentials", e.message ?: "Onbekende fout")
+            } finally {
+                it.isEnabled = true
+            }
         }
 
         btnBewaar.setOnClickListener {
-            val u = etLogin.text?.toString().orEmpty().trim()
-            val p = etPass.text?.toString().orEmpty()
-            creds.save(u, p)
-            Toast.makeText(this@InstallatieScherm, getString(R.string.msg_credentials_opgeslagen), Toast.LENGTH_SHORT).show()
+            it.isEnabled = false
+            try {
+                val u = etLogin.text?.toString().orEmpty().trim()
+                val p = etPass.text?.toString().orEmpty()
+                creds.save(u, p)
+                Toast.makeText(this@InstallatieScherm, getString(R.string.msg_credentials_opgeslagen), Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error saving credentials: ${e.message}", e)
+                showErrorDialog("Fout bij opslaan credentials", e.message ?: "Onbekende fout")
+            } finally {
+                it.isEnabled = true
+            }
         }
 
         btnLoginTest.setOnClickListener {
@@ -148,7 +186,15 @@ class InstallatieScherm : AppCompatActivity() {
                 Toast.makeText(this@InstallatieScherm, getString(R.string.msg_vul_login_eerst), Toast.LENGTH_LONG).show()
                 return@setOnClickListener
             }
-            doLoginTestAndPersist(u, p)
+            it.isEnabled = false
+            try {
+                doLoginTestAndPersist(u, p)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error initiating login test: ${e.message}", e)
+                showErrorDialog("Fout bij login test", e.message ?: "Onbekende fout")
+                it.isEnabled = true
+            }
+            // Note: button will be re-enabled in doLoginTestAndPersist after async completion
         }
 
         btnDownloadJsons.setOnClickListener {
@@ -158,7 +204,15 @@ class InstallatieScherm : AppCompatActivity() {
                 Toast.makeText(this@InstallatieScherm, getString(R.string.msg_vul_login_eerst), Toast.LENGTH_LONG).show()
                 return@setOnClickListener
             }
-            doDownloadServerData(u, p)
+            it.isEnabled = false
+            try {
+                doDownloadServerData(u, p)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error initiating download: ${e.message}", e)
+                showErrorDialog("Fout bij starten download", e.message ?: "Onbekende fout")
+                it.isEnabled = true
+            }
+            // Note: button will be re-enabled in doDownloadServerData after async completion
         }
 
         // Précompute button repurposed: Forceer reindex (unconditional rebuild) but disabled when index already present
@@ -218,25 +272,42 @@ class InstallatieScherm : AppCompatActivity() {
     }
 
     private fun doLoginTestAndPersist(username: String, password: String) {
-        val dlg = ProgressDialogHelper.show(this, "Login testen...")
+        activeProgressDialog = ProgressDialogHelper.show(this, "Login testen...")
         lifecycleScope.launch {
-            val res = withContext(Dispatchers.IO) {
-                TrektellenAuth.checkUser(
-                    username = username,
-                    password = password,
-                    language = "dutch",
-                    versie = "1845"
-                )
-            }
-            dlg.dismiss()
-            res.onSuccess { pretty ->
-                showInfoDialog(getString(R.string.dlg_titel_result), pretty)
-                // persist checkuser.json on IO
-                lifecycleScope.launch {
-                    withContext(Dispatchers.IO) { saveCheckUserJson(pretty) }
+            try {
+                val res = withContext(Dispatchers.IO) {
+                    TrektellenAuth.checkUser(
+                        username = username,
+                        password = password,
+                        language = "dutch",
+                        versie = "1845"
+                    )
                 }
-            }.onFailure { e ->
-                showInfoDialog("checkuser — fout", e.message ?: e.toString())
+                activeProgressDialog?.dismiss()
+                activeProgressDialog = null
+                
+                res.onSuccess { pretty ->
+                    showInfoDialog(getString(R.string.dlg_titel_result), pretty)
+                    // persist checkuser.json on IO
+                    lifecycleScope.launch {
+                        try {
+                            withContext(Dispatchers.IO) { saveCheckUserJson(pretty) }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Error saving checkuser.json: ${e.message}", e)
+                            showErrorDialog("Waarschuwing", "Kon checkuser.json niet opslaan: ${e.message}")
+                        }
+                    }
+                }.onFailure { e ->
+                    Log.e(TAG, "Login test failed: ${e.message}", e)
+                    showErrorDialog("Login mislukt", e.message ?: e.toString())
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Exception in doLoginTestAndPersist: ${e.message}", e)
+                showErrorDialog("Fout bij login test", e.message ?: "Onbekende fout")
+            } finally {
+                activeProgressDialog?.dismiss()
+                activeProgressDialog = null
+                binding.btnLoginTest.isEnabled = true
             }
         }
     }
@@ -254,89 +325,105 @@ class InstallatieScherm : AppCompatActivity() {
         val vt5Dir: DFile? = saf.getVt5DirIfExists()
         if (vt5Dir == null) {
             Toast.makeText(this, getString(R.string.msg_kies_documents_eerst), Toast.LENGTH_LONG).show()
+            binding.btnDownloadJsons.isEnabled = true
             return
         }
         val serverdata = vt5Dir.findFile("serverdata")?.takeIf { it.isDirectory } ?: vt5Dir.createDirectory("serverdata")
         val binaries = vt5Dir.findFile("binaries")?.takeIf { it.isDirectory } ?: vt5Dir.createDirectory("binaries")
 
-        val dlg = ProgressDialogHelper.show(this, "JSONs downloaden...")
+        activeProgressDialog = ProgressDialogHelper.show(this, "JSONs downloaden...")
         lifecycleScope.launch {
-            val msgs = withContext(Dispatchers.IO) {
-                ServerJsonDownloader.downloadAll(
-                    context = this@InstallatieScherm,
-                    serverdataDir = serverdata,
-                    binariesDir = binaries,
-                    username = username,
-                    password = password,
-                    language = "dutch",
-                    versie = "1845"
-                )
-            }
-
-            // Ensure our hardcoded annotations.json is present in Documents/VT5/assets.
-            // If the file does not exist, create it from the hardcoded string below.
-            withContext(Dispatchers.IO) {
-                try {
-                    val created = writeAnnotationsJsonToSaf(vt5Dir)
-                    if (created != null) {
-                        Log.i(TAG, "annotations.json ensured in SAF: ${created.name}")
-                        // After creating/ensuring the file, also populate the in-memory cache for immediate use.
-                        try {
-                            AnnotationsManager.loadCache(this@InstallatieScherm)
-                            Log.i(TAG, "Annotations cache loaded")
-                        } catch (ex: Exception) {
-                            Log.w(TAG, "Failed loading annotations cache: ${ex.message}", ex)
-                        }
-                    } else {
-                        Log.w(TAG, "annotations.json not created (already present or error).")
-                    }
-                } catch (ex: Exception) {
-                    Log.w(TAG, "Failed ensuring annotations.json in SAF: ${ex.message}", ex)
+            try {
+                val msgs = withContext(Dispatchers.IO) {
+                    ServerJsonDownloader.downloadAll(
+                        context = this@InstallatieScherm,
+                        serverdataDir = serverdata,
+                        binariesDir = binaries,
+                        username = username,
+                        password = password,
+                        language = "dutch",
+                        versie = "1845"
+                    )
                 }
-            }
 
-            // Invalidate cache
-            withContext(Dispatchers.IO) {
-                ServerDataCache.invalidate()
-            }
-            dataPreloaded = false
-
-            // Compute checksum and metadata on IO
-            val (newChecksum, oldMeta, needRegen) = withContext(Dispatchers.IO) {
-                val newChecksumLocal = computeServerFilesChecksum(vt5Dir)
-                val oldMetaLocal = readAliasMeta(vt5Dir)
-                val oldChecksumLocal = oldMetaLocal?.sourceChecksum
-                val need = (oldChecksumLocal == null) || (oldChecksumLocal != newChecksumLocal) || !isAliasIndexPresent()
-                Triple(newChecksumLocal, oldMetaLocal, need)
-            }
-
-            if (needRegen) {
-                val reindexDialog = ProgressDialogHelper.show(this@InstallatieScherm, "Alias index bijwerken...")
-                try {
-                    withContext(Dispatchers.IO) {
-                        // Ensure existing files removed so AliasManager.initialize will regenerate seed
-                        removeExistingAliasFiles(vt5Dir)
-                        AliasManager.initialize(this@InstallatieScherm, saf)
-                        // compute new checksum and write meta on IO
-                        val computed = computeServerFilesChecksum(vt5Dir)
-                        writeAliasMeta(vt5Dir, AliasMasterMeta(sourceChecksum = computed, sourceFiles = requiredServerFiles, timestamp = isoNow()))
+                // Ensure our hardcoded annotations.json is present in Documents/VT5/assets.
+                // If the file does not exist, create it from the hardcoded string below.
+                withContext(Dispatchers.IO) {
+                    try {
+                        val created = writeAnnotationsJsonToSaf(vt5Dir)
+                        if (created != null) {
+                            Log.i(TAG, "annotations.json ensured in SAF: ${created.name}")
+                            // After creating/ensuring the file, also populate the in-memory cache for immediate use.
+                            try {
+                                AnnotationsManager.loadCache(this@InstallatieScherm)
+                                Log.i(TAG, "Annotations cache loaded")
+                            } catch (ex: Exception) {
+                                Log.w(TAG, "Failed loading annotations cache: ${ex.message}", ex)
+                                showErrorDialog("Waarschuwing", "Kon annotations cache niet laden: ${ex.message}")
+                            }
+                        } else {
+                            Log.w(TAG, "annotations.json not created (already present or error).")
+                        }
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "Failed ensuring annotations.json in SAF: ${ex.message}", ex)
+                        showErrorDialog("Waarschuwing", "Kon annotations.json niet aanmaken: ${ex.message}")
                     }
-                    Log.i(TAG, "Alias index regenerated (checksum changed or missing)")
-                } catch (ex: Exception) {
-                    Log.w(TAG, "Alias reindex failed: ${ex.message}", ex)
-                } finally {
-                    reindexDialog.dismiss()
+                }
+
+                // Invalidate cache
+                withContext(Dispatchers.IO) {
+                    ServerDataCache.invalidate()
+                }
+                dataPreloaded = false
+
+                // Compute checksum and metadata on IO
+                val (newChecksum, oldMeta, needRegen) = withContext(Dispatchers.IO) {
+                    val newChecksumLocal = computeServerFilesChecksum(vt5Dir)
+                    val oldMetaLocal = readAliasMeta(vt5Dir)
+                    val oldChecksumLocal = oldMetaLocal?.sourceChecksum
+                    val need = (oldChecksumLocal == null) || (oldChecksumLocal != newChecksumLocal) || !isAliasIndexPresent()
+                    Triple(newChecksumLocal, oldMetaLocal, need)
+                }
+
+                if (needRegen) {
+                    activeProgressDialog?.dismiss()
+                    activeProgressDialog = ProgressDialogHelper.show(this@InstallatieScherm, "Alias index bijwerken...")
+                    try {
+                        withContext(Dispatchers.IO) {
+                            // Ensure existing files removed so AliasManager.initialize will regenerate seed
+                            removeExistingAliasFiles(vt5Dir)
+                            AliasManager.initialize(this@InstallatieScherm, saf)
+                            // compute new checksum and write meta on IO
+                            val computed = computeServerFilesChecksum(vt5Dir)
+                            writeAliasMeta(vt5Dir, AliasMasterMeta(sourceChecksum = computed, sourceFiles = requiredServerFiles, timestamp = isoNow()))
+                        }
+                        Log.i(TAG, "Alias index regenerated (checksum changed or missing)")
+                    } catch (ex: Exception) {
+                        Log.e(TAG, "Alias reindex failed: ${ex.message}", ex)
+                        showErrorDialog("Fout bij alias reindex", ex.message ?: "Onbekende fout")
+                    } finally {
+                        activeProgressDialog?.dismiss()
+                        activeProgressDialog = null
+                        updatePrecomputeButtonState()
+                    }
+                } else {
+                    Log.i(TAG, "No alias regeneration needed (checksum unchanged)")
                     updatePrecomputeButtonState()
                 }
-            } else {
-                Log.i(TAG, "No alias regeneration needed (checksum unchanged)")
-                updatePrecomputeButtonState()
-            }
 
-            preloadDataIfExists()
-            dlg.dismiss()
-            // show results dialog with downloaded file list (no toast)
-            showInfoDialog(getString(R.string.dlg_titel_result), msgs.joinToString("\n"))
+                preloadDataIfExists()
+                activeProgressDialog?.dismiss()
+                activeProgressDialog = null
+                // show results dialog with downloaded file list (no toast)
+                showInfoDialog(getString(R.string.dlg_titel_result), msgs.joinToString("\n"))
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during download: ${e.message}", e)
+                showErrorDialog("Fout bij downloaden", e.message ?: "Onbekende fout")
+            } finally {
+                activeProgressDialog?.dismiss()
+                activeProgressDialog = null
+                binding.btnDownloadJsons.isEnabled = true
+            }
         }
     }
 
@@ -351,7 +438,7 @@ class InstallatieScherm : AppCompatActivity() {
         binding.btnAliasPrecompute.alpha = 0.5f
 
         lifecycleScope.launch {
-            val dlg = ProgressDialogHelper.show(this@InstallatieScherm, "Forceer heropbouw alias index...")
+            activeProgressDialog = ProgressDialogHelper.show(this@InstallatieScherm, "Forceer heropbouw alias index...")
             try {
                 withContext(Dispatchers.IO) {
                     val vt5 = saf.getVt5DirIfExists() ?: throw IllegalStateException("SAF root niet ingesteld")
@@ -365,8 +452,10 @@ class InstallatieScherm : AppCompatActivity() {
             } catch (ex: Exception) {
                 Log.e(TAG, "forceRebuildAliasIndex failed: ${ex.message}", ex)
                 binding.tvStatus.text = "Fout bij rebuild: ${ex.message}"
+                showErrorDialog("Fout bij forceer rebuild", ex.message ?: "Onbekende fout")
             } finally {
-                dlg.dismiss()
+                activeProgressDialog?.dismiss()
+                activeProgressDialog = null
                 updatePrecomputeButtonState()
             }
         }
@@ -400,6 +489,15 @@ class InstallatieScherm : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle(title)
             .setMessage(msg)
+            .setPositiveButton(getString(R.string.dlg_ok)) { d, _ -> d.dismiss() }
+            .show()
+    }
+
+    private fun showErrorDialog(title: String, msg: String) {
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(msg)
+            .setIcon(android.R.drawable.ic_dialog_alert)
             .setPositiveButton(getString(R.string.dlg_ok)) { d, _ -> d.dismiss() }
             .show()
     }
