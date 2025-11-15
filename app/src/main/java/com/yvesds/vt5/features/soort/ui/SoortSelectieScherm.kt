@@ -426,7 +426,14 @@ class SoortSelectieScherm : AppCompatActivity() {
             uiScope.launch {
                 // Recente items ophalen en bijwerken
                 recentRows = computeRecents(baseAlphaRows)
-                val restAlpha = baseAlphaRows.filterNot { r -> recentRows.any { it.soortId == r.soortId } }
+                
+                // Performance: avoid filtering when no recents, use Set lookup for O(1) instead of O(n)
+                val restAlpha = if (recentIds.isEmpty()) {
+                    baseAlphaRows
+                } else {
+                    baseAlphaRows.filterNot { it.soortId in recentIds }
+                }
+                
                 submitGrid(recents = recentRows, restAlpha = restAlpha)
                 updateCounter()
             }

@@ -178,6 +178,8 @@ class MetadataScherm : AppCompatActivity() {
     /**
      * Plant het laden van de volledige data in de achtergrond
      * terwijl de gebruiker bezig is met het formulier in te vullen
+     * 
+     * Performance: Gebruikt low-priority dispatcher en delay om UI responsiveness te behouden
      */
     private fun scheduleBackgroundLoading() {
         // Cancel bestaande job als die er is
@@ -190,13 +192,14 @@ class MetadataScherm : AppCompatActivity() {
                 delay(500)
 
                 // Haal volledige data als die er nog niet is
+                // Performance: gebruik IO dispatcher voor file I/O operaties
                 withContext(Dispatchers.IO) {
                     if (isActive) {
                         val fullData = ServerDataCache.getOrLoad(this@MetadataScherm)
                         if (isActive) {
                             withContext(Dispatchers.Main) {
                                 snapshot = fullData
-                                Log.d(TAG, "Background data loading complete")
+                                Log.d(TAG, "Background data loading complete - cache warmed for next screen")
                             }
                         }
                     }
