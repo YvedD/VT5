@@ -27,6 +27,7 @@ import com.yvesds.vt5.VT5App
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.core.ui.ProgressDialogHelper
 import com.yvesds.vt5.databinding.SchermMetadataBinding
+import com.yvesds.vt5.features.alias.AliasManager
 import com.yvesds.vt5.features.opstart.usecases.TrektellenAuth
 import com.yvesds.vt5.features.serverdata.model.CodeItem
 import com.yvesds.vt5.features.serverdata.model.DataSnapshot
@@ -90,6 +91,9 @@ class MetadataScherm : AppCompatActivity() {
     // Scope voor achtergrondtaken
     private val uiScope = CoroutineScope(Job() + Dispatchers.Main)
     private var backgroundLoadJob: Job? = null
+    
+    // SAF helper for alias manager access
+    private lateinit var saf: SaFStorageHelper
 
     // Gekozen waarden
     private var gekozenTelpostId: String? = null
@@ -115,6 +119,9 @@ class MetadataScherm : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = SchermMetadataBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Initialize SAF helper
+        saf = SaFStorageHelper(this)
 
         // geen keyboard voor datum/tijd
         binding.etDatum.inputType = InputType.TYPE_NULL
@@ -180,6 +187,9 @@ class MetadataScherm : AppCompatActivity() {
      * terwijl de gebruiker bezig is met het formulier in te vullen
      * 
      * Performance: Gebruikt low-priority dispatcher en delay om UI responsiveness te behouden
+     * 
+     * UPDATE: Laadt nu ook de alias index voor SoortSelectieScherm, zodat de complete
+     * soortenlijst (alle species uit site_species.json) beschikbaar is voor snelle toegang.
      */
     private fun scheduleBackgroundLoading() {
         // Cancel bestaande job als die er is
@@ -200,6 +210,17 @@ class MetadataScherm : AppCompatActivity() {
                             withContext(Dispatchers.Main) {
                                 snapshot = fullData
                                 Log.d(TAG, "Background data loading complete - cache warmed for next screen")
+                            }
+                        }
+                        
+                        // Also preload alias index for SoortSelectieScherm
+                        // This ensures the complete species list is ready
+                        if (isActive) {
+                            try {
+                                AliasManager.ensureIndexLoadedSuspend(this@MetadataScherm, saf)
+                                Log.d(TAG, "Alias index preloaded in background - ready for species selection")
+                            } catch (ex: Exception) {
+                                Log.w(TAG, "Alias index preload failed (non-critical): ${ex.message}")
                             }
                         }
                     }

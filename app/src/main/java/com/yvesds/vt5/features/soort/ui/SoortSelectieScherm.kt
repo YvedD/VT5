@@ -11,8 +11,10 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.core.ui.ProgressDialogHelper
 import com.yvesds.vt5.databinding.SchermSoortSelectieBinding
+import com.yvesds.vt5.features.alias.AliasManager
 import com.yvesds.vt5.features.recent.RecentSpeciesStore
 import com.yvesds.vt5.features.serverdata.model.DataSnapshot
 import com.yvesds.vt5.features.serverdata.model.ServerDataCache
@@ -33,6 +35,10 @@ import java.util.concurrent.ConcurrentHashMap
  * - Geoptimaliseerde UI updates met DiffUtil en payloads
  * - Verminderde GC pressure door object pooling
  * - Sectioned adapter met "recente soorten" bovenaan
+ * 
+ * UPDATE: Gebruikt nu ALLE unieke soorten uit alias_master.json (via AliasManager)
+ * in plaats van site-specifieke filtering. Dit zorgt voor een complete soortenlijst
+ * die alle soorten uit site_species.json bevat, ongeacht telpost assignment.
  */
 class SoortSelectieScherm : AppCompatActivity() {
 
@@ -41,6 +47,9 @@ class SoortSelectieScherm : AppCompatActivity() {
 
     private var telpostId: String? = null
     private var snapshot: DataSnapshot = DataSnapshot()
+    
+    // SAF helper for alias manager access
+    private lateinit var saf: SaFStorageHelper
 
     // Datamodels
     data class Row(val soortId: String, val naam: String) {
@@ -72,6 +81,9 @@ class SoortSelectieScherm : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = SchermSoortSelectieBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Initialize SAF helper for alias manager access
+        saf = SaFStorageHelper(this)
 
         telpostId = intent.getStringExtra(EXTRA_TELPOST_ID)
 
@@ -262,27 +274,45 @@ class SoortSelectieScherm : AppCompatActivity() {
         }
     }
 
-    private fun buildAlphaRowsForTelpost(): List<Row> {
-        val speciesById = snapshot.speciesById
-        val siteMap = snapshot.siteSpeciesBySite
-        val allowed = telpostId?.let { id -> siteMap[id]?.mapTo(HashSet()) { it.soortid } } ?: emptySet()
-
-        val base = if (allowed.isNotEmpty()) {
-            // Pre-allocate with known size for better performance
-            ArrayList<Row>(allowed.size).apply {
-                allowed.forEach { sid -> 
-                    speciesById[sid]?.let { add(Row(sid, it.soortnaam)) }
+    /**
+     * Build alphabetically sorted species list.
+     * 
+     * NEW: Uses ALL unique species from alias_master.json (via AliasManager)
+     * instead of filtering by telpost. This provides the complete "truth list"
+     * of all species from site_species.json regardless of site assignment.
+     * 
+     * Performance: Runs synchronously but data is already loaded in memory
+     * by AliasManager (loaded during MetadataScherm background preload).
+     */
+    private suspend fun buildAlphaRowsForTelpost(): List<Row> = withContext(Dispatchers.IO) {
+        // Try to get all species from alias index first (preferred source)
+        val aliasSpecies = try {
+            AliasManager.getAllSpeciesFromIndex(this@SoortSelectieScherm, saf)
+        } catch (ex: Exception) {
+            Log.w(TAG, "Failed to get species from alias index: ${ex.message}")
+            emptyMap()
+        }
+        
+        // If alias index has species, use that as the source of truth
+        val base = if (aliasSpecies.isNotEmpty()) {
+            Log.d(TAG, "Using ${aliasSpecies.size} species from alias index (complete list)")
+            ArrayList<Row>(aliasSpecies.size).apply {
+                aliasSpecies.forEach { (sid, naam) ->
+                    add(Row(sid, naam))
                 }
             }
         } else {
-            // Pre-allocate with known size
-            ArrayList<Row>(speciesById.size).apply {
-                speciesById.values.forEach { add(Row(it.soortid, it.soortnaam)) }
+            // Fallback to snapshot.speciesById (all species, no filtering)
+            Log.d(TAG, "Fallback: using ${snapshot.speciesById.size} species from snapshot")
+            ArrayList<Row>(snapshot.speciesById.size).apply {
+                snapshot.speciesById.values.forEach { 
+                    add(Row(it.soortid, it.soortnaam)) 
+                }
             }
         }
 
         // Sort by pre-computed lowercase to avoid repeated lowercase() calls
-        return base.sortedBy { it.naam.lowercase() }
+        return@withContext base.sortedBy { it.naam.lowercase() }
     }
 
     private fun computeRecents(baseAlpha: List<Row>): List<Row> {
