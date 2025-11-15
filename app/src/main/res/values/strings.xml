@@ -57,4 +57,23 @@
     <!-- InstallatieScherm status messages -->
     <string name="status_alias_rebuild_complete">Alias index rebuild voltooid</string>
     <string name="status_alias_rebuild_error">Fout bij rebuild: %1$s</string>
+
+    <!-- MetadataScherm strings -->
+    <string name="metadata_loading">Metadata laden…</string>
+    <string name="metadata_preparing">Bezig met voorbereiden...</string>
+    <string name="metadata_error_no_telpost">Kies eerst een telpost.</string>
+    <string name="metadata_error_no_credentials">Geen user (check login).</string>
+    <string name="metadata_error_location_denied">Locatierechten geweigerd.</string>
+    <string name="metadata_error_loading_data">Fout bij laden essentiële gegevens</string>
+    <string name="metadata_error_no_location">Geen locatie beschikbaar.</string>
+    <string name="metadata_error_weather_fetch">Kon weer niet ophalen.</string>
+    <string name="metadata_error_weather_fetch_short">Kon weer niet ophalen</string>
+    <string name="metadata_error_start_failed_title">Start telling mislukt</string>
+    <string name="metadata_error_start_failed_msg">Kon telling niet starten:\n%1$s</string>
+    <string name="metadata_error_unclear_title">Start telling onduidelijk</string>
+    <string name="metadata_error_unclear_msg">Server antwoordde, maar kon geen onlineId herkennen.\n\nResponse:\n%1$s</string>
+    <string name="metadata_success_started">Telling gestart (onlineId: %1$s)</string>
+    <string name="metadata_error_preparing">Fout bij voorbereiden telling: %1$s</string>
+    <string name="metadata_dialog_time_title">Tijd kiezen</string>
+    <string name="metadata_cloudcover_format">%1$d/8</string>
 </resources>
