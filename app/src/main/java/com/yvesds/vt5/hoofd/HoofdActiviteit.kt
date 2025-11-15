@@ -1,7 +1,6 @@
 package com.yvesds.vt5.hoofd
 
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
@@ -77,11 +76,6 @@ class HoofdActiviteit : AppCompatActivity() {
      * - API < 21: Fallback naar finish()
      */
     private fun finishAndRemoveTaskCompat() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            finishAndRemoveTask()
-        } else {
-            @Suppress("DEPRECATION")
-            finish()
-        }
+        finishAndRemoveTask()
     }
 }
