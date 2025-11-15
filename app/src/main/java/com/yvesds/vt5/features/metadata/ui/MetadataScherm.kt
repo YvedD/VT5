@@ -158,10 +158,10 @@ class MetadataScherm : AppCompatActivity() {
 
                 // Stap 2: Wacht op VT5App background preload (max 3 sec voor codes-only)
                 // Codes-only preload duurt ~50ms, full data later in background
-                Log.d(TAG, "⏳ WAITING: for VT5App codes preload (max 3s)...")
+                Log.d(TAG, "⏳ WAITING: for VT5App codes preload (max 5s)...")
                 var preloadResult: DataSnapshot? = null
                 val startTime = System.currentTimeMillis()
-                val maxWaitMs = 3000L  // Reduced: codes load fast (~50ms)
+                val maxWaitMs = 5000L  // Increased: give phase 2 time to complete (2-4s typical)
                 
                 // Poll elke 50ms tot cache klaar is of timeout (non-blocking with delay)
                 while (System.currentTimeMillis() - startTime < maxWaitMs) {
@@ -180,18 +180,11 @@ class MetadataScherm : AppCompatActivity() {
                     return@launch
                 }
 
-                // Stap 3: Fallback - preload timeout, laad minimale data met progress
-                Log.d(TAG, "⚠️ FALLBACK: Preload timeout - loading minimal data with progress")
-                ProgressDialogHelper.withProgress(this@MetadataScherm, "Metadata laden...") {
-                    val repo = ServerDataRepository(this@MetadataScherm)
-                    val minimal = repo.loadMinimalData()
-                    snapshot = minimal
-
-                    withContext(Dispatchers.Main) {
-                        initializeDropdowns()
-                    }
-
-                    scheduleBackgroundLoading()
+                // Stap 3: Timeout - geen fallback, simpel foutmelding
+                Log.e(TAG, "⚠️ TIMEOUT: Preload not ready after 5s - closing with toast")
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MetadataScherm, "Data niet geladen. Probeer opnieuw.", Toast.LENGTH_LONG).show()
+                    finish()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "❌ ERROR: loading essential data: ${e.message}")
