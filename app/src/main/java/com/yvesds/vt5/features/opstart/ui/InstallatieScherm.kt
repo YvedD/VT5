@@ -54,7 +54,7 @@ class InstallatieScherm : AppCompatActivity() {
     private var dataPreloaded = false
     
     // Track active progress dialogs to prevent leaks
-    private var activeProgressDialog: AlertDialog? = null
+    private var activeProgressDialog: android.app.Dialog? = null
 
     // JSON helper for metadata
     private val jsonPretty = Json { prettyPrint = true; encodeDefaults = true; ignoreUnknownKeys = true }
@@ -461,19 +461,6 @@ class InstallatieScherm : AppCompatActivity() {
         }
     }
 
-    private data class MergeResult(
-        val mergedFilePath: String?,
-        val existingSpecies: Int,
-        val addedFromSite: Int,
-        val aliasesAdded: Int,
-        val conflicts: List<String>,
-        val userAliasesPath: String? = null,
-        val message: String? = null
-    )
-
-    // ... existing mergeAliasWithSite() removed/unused in this variant (legacy CSV path deprecated) ...
-    // by design we no longer create CSVs in runtime
-
     private fun saveCheckUserJson(prettyText: String) {
         val vt5Dir = saf.getVt5DirIfExists() ?: return
         val serverdata = vt5Dir.findFile("serverdata")?.takeIf { it.isDirectory } ?: vt5Dir.createDirectory("serverdata") ?: return
@@ -599,63 +586,6 @@ class InstallatieScherm : AppCompatActivity() {
         val present = isAliasIndexPresent()
         btnAliasPrecompute.isEnabled = !present
         btnAliasPrecompute.alpha = if (present) 0.5f else 1.0f
-    }
-
-    private fun progressDialog(title: String, msg: String): AlertDialog {
-        return AlertDialog.Builder(this)
-            .setTitle(title)
-            .setMessage(msg)
-            .setCancelable(false)
-            .create()
-    }
-
-    // Reuse the normalization logic used elsewhere (replace "/" -> " of " and remove diacritics)
-    private fun normalizeLowerNoDiacritics(input: String): String {
-        val replacedSlash = input.replace("/", " of ")
-        val lower = replacedSlash.lowercase(Locale.getDefault())
-        val decomposed = java.text.Normalizer.normalize(lower, java.text.Normalizer.Form.NFD)
-        val noDiacritics = decomposed.replace("\\p{Mn}+".toRegex(), "")
-        val cleaned = noDiacritics.replace("[^\\p{L}\\p{Nd}]+".toRegex(), " ").trim()
-        return cleaned.replace("\\s+".toRegex(), " ")
-    }
-
-    // Debug helper to inspect Documents/VT5 via SAF
-    private fun verifyOutputsAndShowDialog() {
-        lifecycleScope.launch {
-            val sb = StringBuilder()
-            val vt5Dir = saf.getVt5DirIfExists()
-            if (vt5Dir == null) {
-                sb.append("SAF VT5 root: NOT SET\n")
-            } else {
-                sb.append("Documents/VT5 contents:\n")
-                fun listDir(doc: DFile?, prefix: String) {
-                    if (doc == null) { sb.append(" - $prefix: (not present)\n"); return }
-                    try {
-                        val files = doc.listFiles()
-                        if (files.isEmpty()) sb.append(" - $prefix: (empty)\n")
-                        else {
-                            sb.append(" - $prefix:\n")
-                            files.forEach { d -> sb.append("    * ${d.name}  (isDir=${d.isDirectory})\n") }
-                        }
-                    } catch (ex: Exception) {
-                        sb.append(" - $prefix: error reading: ${ex.message}\n")
-                    }
-                }
-                listDir(vt5Dir.findFile("assets"), "assets")
-                listDir(vt5Dir.findFile("binaries"), "binaries")
-                listDir(vt5Dir.findFile("serverdata"), "serverdata")
-                listDir(vt5Dir.findFile("exports"), "exports")
-                listDir(vt5Dir.findFile("counts"), "counts")
-            }
-
-            runOnUiThread {
-                AlertDialog.Builder(this@InstallatieScherm)
-                    .setTitle("Debug: Documents/VT5")
-                    .setMessage(sb.toString())
-                    .setPositiveButton("OK", null)
-                    .show()
-            }
-        }
     }
 
     /**
