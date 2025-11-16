@@ -11,7 +11,6 @@ import android.widget.RadioButton
 import android.widget.RadioGroup
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.DialogFragment
-import com.yvesds.vt5.R
 import com.yvesds.vt5.databinding.DialogAddAliasBinding
 
 /**

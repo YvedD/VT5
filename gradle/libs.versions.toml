@@ -1,7 +1,7 @@
 [versions]
 # AGP 8.10.1 per user requirement - note: not available in public Maven repositories
 # If build fails, AGP 8.10.1 needs to be manually installed or use available version like 8.7.x
-agp = "8.2.0"
+agp = "8.10.1"
 kotlin = "2.0.21"
 coreKtx = "1.17.0"
 junit = "4.13.2"
