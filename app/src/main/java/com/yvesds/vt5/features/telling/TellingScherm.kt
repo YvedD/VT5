@@ -846,26 +846,29 @@ class TellingScherm : AppCompatActivity() {
     }
 
     // Update logs UI after changes
+    // Routing: "final" → finals adapter, everything else → partials adapter (matching 4e5359e behavior)
     private fun updateLogsUi(newList: List<SpeechLogRow>, bron: String) {
         lifecycleScope.launch(Dispatchers.Main) {
             if (::viewModel.isInitialized) {
                 // UPDATE VIEWMODEL ONLY — observers will update adapters once.
-                if (bron == "final" || bron == "raw") {
+                if (bron == "final") {
                     viewModel.setFinals(newList)
                     // remove 'partial' rows from partials (keep non-partial logs)
                     val preserved = logManager.getPartials().filter { it.bron != "partial" }
                     viewModel.setPartials(preserved)
                 } else {
+                    // raw, partial, systeem all go to partials
                     viewModel.setPartials(newList)
                 }
             } else {
                 // Fallback: no ViewModel — update adapter via uiManager
-                if (bron == "final" || bron == "raw") {
+                if (bron == "final") {
                     uiManager.updateFinals(newList)
                     // clear partials from UI
                     val preserved = logManager.getPartials().filter { it.bron != "partial" }
                     uiManager.updatePartials(preserved)
                 } else {
+                    // raw, partial, systeem all go to partials
                     uiManager.updatePartials(newList)
                 }
             }

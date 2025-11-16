@@ -27,6 +27,10 @@ class TellingLogManager(
 
     /**
      * Add a log entry. Routes to partials or finals based on source.
+     * 
+     * Routing logic (matching commit 4e5359e behavior):
+     * - bron == "final" → finals adapter (parsed/recognized species)
+     * - bron == "raw", "partial", "systeem" → partials adapter (raw ASR output)
      */
     fun addLog(msgIn: String, bron: String): List<TellingScherm.SpeechLogRow>? {
         val msg = msgIn.trim()
@@ -42,37 +46,59 @@ class TellingLogManager(
             return null
         }
 
-        // ASR messages (after stripping "asr:" prefix) go to finals
-        if (msg.contains(RE_ASR_PREFIX)) {
-            val stripped = msg.replace(RE_ASR_PREFIX, "")
-            return addToFinals(stripped, "final")
+        // Clean up message based on source type
+        val cleaned = when (bron) {
+            "raw" -> {
+                // Strip "asr:" prefix and trailing numbers from raw messages
+                var m = msg.replace(RE_ASR_PREFIX, "")
+                m = m.replace(RE_TRIM_RAW_NUMBER, "")
+                m.trim()
+            }
+            else -> {
+                // Strip "asr:" prefix from other messages
+                msg.replace(RE_ASR_PREFIX, "").trim()
+            }
         }
 
-        // Raw messages
-        if (bron == "raw") {
-            return addToFinals(msg, bron)
+        // Route to finals or partials based on bron
+        // IMPORTANT: Only "final" goes to finals, everything else (raw, partial, etc.) goes to partials
+        return if (bron == "final") {
+            addToFinals(cleaned, bron)
+        } else {
+            addToPartials(cleaned, bron)
         }
-
-        // Partials
-        if (bron == "partial") {
-            return addToPartials(msg, bron)
-        }
-
-        // Finals (default)
-        return addToFinals(msg, bron)
     }
 
     /**
      * Upsert partial log: replaces last partial or adds new.
      */
     fun upsertPartialLog(text: String): List<TellingScherm.SpeechLogRow> {
-        val now = System.currentTimeMillis()
+        val cleanedRaw = text.trim()
+        // Ignore empty partials (common at start of capture)
+        if (cleanedRaw.isBlank()) return partialsLog.toList()
+
+        // Parse name and count from raw hypothesis
+        val (nameOnly, cnt) = run {
+            val m = RE_TRAILING_NUMBER.find(cleanedRaw)
+            if (m != null) {
+                val name = m.groups[1]?.value?.trim().orEmpty()
+                val c = m.groups[2]?.value?.toIntOrNull() ?: 0
+                name to c
+            } else {
+                cleanedRaw to 0
+            }
+        }
+
+        // Compose display text: if count present, format "Name -> +N", else plain name
+        val display = if (cnt > 0) "$nameOnly -> +$cnt" else nameOnly
+        
+        val now = System.currentTimeMillis() / 1000L  // Use seconds for consistency
         
         // Remove old partials
         partialsLog.removeIf { it.bron == "partial" }
         
         // Add new partial
-        partialsLog.add(TellingScherm.SpeechLogRow(now, text, "partial"))
+        partialsLog.add(TellingScherm.SpeechLogRow(now, display, "partial"))
         
         // Trim if needed
         if (partialsLog.size > maxLogRows) {
@@ -140,7 +166,7 @@ class TellingLogManager(
     // Private helpers
     
     private fun addToPartials(msg: String, bron: String): List<TellingScherm.SpeechLogRow> {
-        val now = System.currentTimeMillis()
+        val now = System.currentTimeMillis() / 1000L  // Use seconds for consistency
         partialsLog.add(TellingScherm.SpeechLogRow(now, msg, bron))
         
         if (partialsLog.size > maxLogRows) {
@@ -151,7 +177,7 @@ class TellingLogManager(
     }
 
     private fun addToFinals(msg: String, bron: String): List<TellingScherm.SpeechLogRow> {
-        val now = System.currentTimeMillis()
+        val now = System.currentTimeMillis() / 1000L  // Use seconds for consistency
         finalsLog.add(TellingScherm.SpeechLogRow(now, msg, bron))
         
         if (finalsLog.size > maxLogRows) {
