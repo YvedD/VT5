@@ -12,6 +12,7 @@ import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -101,6 +102,36 @@ class VT5App : Application() {
                 Log.e(TAG, "Error during data preloading: ${e.message}", e)
             }
         }
+    }
+
+    override fun onTerminate() {
+        Log.d(TAG, "VT5App onTerminate - cleaning up resources")
+        try {
+            // Cancel all background coroutines
+            appScope.cancel()
+            
+            // Clean up match log writer
+            try {
+                MatchLogWriter.stop()
+            } catch (ex: Exception) {
+                Log.w(TAG, "Failed to stop MatchLogWriter: ${ex.message}", ex)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during app termination: ${e.message}", e)
+        }
+        super.onTerminate()
+    }
+
+    override fun onLowMemory() {
+        Log.w(TAG, "VT5App onLowMemory - clearing caches")
+        super.onLowMemory()
+        // Opportunity to clear caches if needed
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        Log.d(TAG, "VT5App onTrimMemory level=$level")
+        // Additional memory cleanup based on level if needed
     }
 
     companion object {
