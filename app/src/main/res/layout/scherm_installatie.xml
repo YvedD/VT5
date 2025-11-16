@@ -30,7 +30,7 @@
                 android:minLines="3"
                 android:text="@string/install_uitleg"
                 android:textColor="@color/vt5_on_surface"
-                android:textSize="12dp" />
+                android:textSize="12sp" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <!-- SAF -->
