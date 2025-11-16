@@ -35,3 +35,6 @@ Thumbs.db
 # Kotlin/Gradle
 **/.kotlin
 **/.gradle
+/.idea/appInsightsSettings.xml
+/index.html
+/script.js

@@ -28,7 +28,7 @@ import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.core.ui.ProgressDialogHelper
 import com.yvesds.vt5.databinding.SchermMetadataBinding
 import com.yvesds.vt5.features.opstart.usecases.TrektellenAuth
-import com.yvesds.vt5.features.serverdata.model.CodeItem
+import com.yvesds.vt5.features.serverdata.model.CodeItemSlim
 import com.yvesds.vt5.features.serverdata.model.DataSnapshot
 import com.yvesds.vt5.features.serverdata.model.ServerDataCache
 import com.yvesds.vt5.features.serverdata.model.ServerDataRepository
@@ -136,40 +136,58 @@ class MetadataScherm : AppCompatActivity() {
     }
 
     /**
-     * Eerste fase: laad alleen de noodzakelijke data voor het vullen van de dropdown menus
-     * Dit zorgt voor een veel snellere initiële lading
+     * Wacht op VT5App background preload voor instant MetadataScherm open
+     * 
+     * Strategie:
+     * 1. Check instant cache (0ms) - BESTE GEVAL
+     * 2. Wacht kort op VT5App preload (max 3 sec) - NORMALE GEVAL  
+     * 3. Fallback naar minimal load met progress - BACKUP
      */
     private fun loadEssentialData() {
         uiScope.launch {
             try {
-                // Check eerst of we al volledige data in cache hebben
+                // Stap 1: Instant cache check
                 val cachedData = ServerDataCache.getCachedOrNull()
                 if (cachedData != null) {
-                    Log.d(TAG, "Using fully cached data")
+                    Log.d(TAG, "✅ INSTANT: Using pre-cached data (0ms)")
                     snapshot = cachedData
                     initializeDropdowns()
-
-                    // Start het laden van de volledige data in de achtergrond
                     scheduleBackgroundLoading()
                     return@launch
                 }
 
-                // Toon de progress dialog
-                ProgressDialogHelper.withProgress(this@MetadataScherm, "Bezig met laden van gegevens...") {
-                    // Laad de minimale data
-                    val repo = ServerDataRepository(this@MetadataScherm)
-                    val minimal = repo.loadMinimalData()
-                    snapshot = minimal
-
-                    withContext(Dispatchers.Main) {
-                        initializeDropdowns()
+                // Stap 2: Wacht op VT5App background preload (max 3 sec voor codes-only)
+                // Codes-only preload duurt ~50ms, full data later in background
+                Log.d(TAG, "⏳ WAITING: for VT5App codes preload (max 5s)...")
+                var preloadResult: DataSnapshot? = null
+                val startTime = System.currentTimeMillis()
+                val maxWaitMs = 5000L  // Increased: give phase 2 time to complete (2-4s typical)
+                
+                // Poll elke 50ms tot cache klaar is of timeout (non-blocking with delay)
+                while (System.currentTimeMillis() - startTime < maxWaitMs) {
+                    preloadResult = ServerDataCache.getCachedOrNull()
+                    if (preloadResult != null) {
+                        Log.d(TAG, "✅ FAST: VT5App preload ready after ${System.currentTimeMillis() - startTime}ms")
+                        break
                     }
+                    kotlinx.coroutines.delay(50)  // Non-blocking delay
+                }
 
-                    // Start het laden van de volledige data in de achtergrond
+                if (preloadResult != null) {
+                    snapshot = preloadResult
+                    initializeDropdowns()
                     scheduleBackgroundLoading()
+                    return@launch
+                }
+
+                // Stap 3: Timeout - geen fallback, simpel foutmelding
+                Log.e(TAG, "⚠️ TIMEOUT: Preload not ready after 5s - closing with toast")
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@MetadataScherm, "Data niet geladen. Probeer opnieuw.", Toast.LENGTH_LONG).show()
+                    finish()
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error loading essential data: ${e.message}")
+                Log.e(TAG, "❌ ERROR: loading essential data: ${e.message}")
                 Toast.makeText(this@MetadataScherm, "Fout bij laden essentiële gegevens", Toast.LENGTH_SHORT).show()
             }
         }
@@ -255,8 +273,8 @@ class MetadataScherm : AppCompatActivity() {
                 val windLabel = WeatherManager.degTo16WindLabel(cur.windDirection10m)
                 val windCodes = snapshot.codesByCategory["wind"].orEmpty()
                 val valueByLabel = windCodes.associateBy(
-                    { (it.tekst ?: "").uppercase(Locale.getDefault()) },
-                    { it.value ?: "" }
+                    { it.text.uppercase(Locale.getDefault()) },
+                    { it.value }
                 )
                 val foundWindCode = valueByLabel[windLabel] ?: valueByLabel["N"] ?: "n"
                 gekozenWindrichtingCode = foundWindCode
@@ -275,8 +293,8 @@ class MetadataScherm : AppCompatActivity() {
                 gekozenNeerslagCode = rainCode
                 val rainCodes = snapshot.codesByCategory["neerslag"].orEmpty()
                 val rainLabelByValue = rainCodes.associateBy(
-                    { it.value ?: "" },
-                    { it.tekst ?: (it.value ?: "") }
+                    { it.value },
+                    { it.text }
                 )
                 val rainLabel = rainLabelByValue[rainCode] ?: rainCode
                 binding.acNeerslag.setText(rainLabel, false)
@@ -411,8 +429,8 @@ class MetadataScherm : AppCompatActivity() {
         // WINDRICHTING (veld == "wind")
         runCatching {
             val windCodes = getCodesForField("wind")
-            val labels = windCodes.mapNotNull { it.tekst }
-            val values = windCodes.map { it.value ?: "" }
+            val labels = windCodes.map { it.text }
+            val values = windCodes.map { it.value }
             binding.acWindrichting.setAdapter(
                 ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
             )
@@ -444,8 +462,8 @@ class MetadataScherm : AppCompatActivity() {
         // NEERSLAG (veld == "neerslag")
         runCatching {
             val rainCodes = getCodesForField("neerslag")
-            val labels = rainCodes.mapNotNull { it.tekst }
-            val values = rainCodes.map { it.value ?: "" }
+            val labels = rainCodes.map { it.text }
+            val values = rainCodes.map { it.value }
             binding.acNeerslag.setAdapter(
                 ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
             )
@@ -454,19 +472,11 @@ class MetadataScherm : AppCompatActivity() {
             }
         }
 
-        // TYPE TELLING (veld == "typetelling_trek") met filters op tekstkey
+        // TYPE TELLING (veld == "typetelling_trek")
         runCatching {
-            val all = getCodesForField("typetelling_trek")
-            val filtered = all.filterNot { c ->
-                val key = c.key ?: ""
-                key.contains("_sound") ||
-                        key.contains("_ringen") ||
-                        key.startsWith("samplingrate_") ||
-                        key.startsWith("gain_") ||
-                        key.startsWith("verstoring_")
-            }
-            val labels = filtered.mapNotNull { it.tekst }
-            val values = filtered.map { it.value ?: "" }
+            val typeCodes = getCodesForField("typetelling_trek")
+            val labels = typeCodes.map { it.text }
+            val values = typeCodes.map { it.value }
             binding.acTypeTelling.setAdapter(
                 ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
             )
@@ -476,15 +486,13 @@ class MetadataScherm : AppCompatActivity() {
         }
     }
 
-    /** Haal codes per veld uit snapshot en sorteer op sortering (numeriek) + tekst. */
-    private fun getCodesForField(field: String): List<CodeItem> {
+    /** 
+     * Haal codes per veld uit snapshot en sorteer op tekst (alfabetisch).
+     * Note: CodeItemSlim has no sortering field, so we sort by text only.
+     */
+    private fun getCodesForField(field: String): List<CodeItemSlim> {
         val items = snapshot.codesByCategory[field].orEmpty()
-        return items.sortedWith(
-            compareBy(
-                { it.sortering?.toIntOrNull() ?: Int.MAX_VALUE },
-                { it.tekst?.lowercase(Locale.getDefault()) ?: "" }
-            )
-        )
+        return items.sortedBy { it.text.lowercase(Locale.getDefault()) }
     }
 
     /* ---------------- Verder → counts_save (header) → SoortSelectieScherm ---------------- */
