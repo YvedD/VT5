@@ -325,6 +325,16 @@ class MetadataScherm : AppCompatActivity() {
                 visMeters?.let { binding.etZicht.setText(it.toString()) }
                 cur.pressureMsl?.let { binding.etLuchtdruk.setText(it.roundToInt().toString()) }
 
+                // Bouw een weer-samenvatting voor het opmerkingenveld
+                val weerSamenvatting = buildString {
+                    append("Auto: ")
+                    cur.temperature2m?.let { append("${it.roundToInt()}°C, ") }
+                    append("$windLabel ${windForceDisplay}, ")
+                    append("bewolking ${achtsten}/8")
+                    if (rainCode != "geen") append(", $rainLabel")
+                }
+                binding.etWeerOpmerking.setText(weerSamenvatting)
+
                 markWeatherAutoApplied()
             } catch (e: Exception) {
                 Log.e(TAG, "Error fetching weather: ${e.message}")
@@ -603,7 +613,7 @@ class MetadataScherm : AppCompatActivity() {
                     // Teller(s): fallback to empty string (optional field not in current UI)
                     val tellersFromUi = ""
 
-                    val weerOpmerking = "" // optional -> not present in UI currently
+                    val weerOpmerking = binding.etWeerOpmerking.text?.toString()?.trim().orEmpty()
                     val opmerkingen = "" // optional
                     val luchtdrukHpaRaw = binding.etLuchtdruk.text?.toString()?.trim().orEmpty()
 
