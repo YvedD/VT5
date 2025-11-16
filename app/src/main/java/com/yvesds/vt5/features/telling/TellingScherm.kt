@@ -706,7 +706,7 @@ class TellingScherm : AppCompatActivity() {
     /**
      * Handle speech recognition hypotheses and process match results.
      */
-    private fun handleSpeechHypotheses(hypotheses: List<String>, partials: List<String>) {
+    private fun handleSpeechHypotheses(hypotheses: List<Pair<String, Float>>, partials: List<String>) {
         val receivedAt = System.currentTimeMillis()
         lifecycleScope.launch(Dispatchers.Default) {
             val parseStartAt = System.currentTimeMillis()

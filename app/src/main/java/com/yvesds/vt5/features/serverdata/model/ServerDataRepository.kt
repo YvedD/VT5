@@ -130,8 +130,8 @@ class ServerDataRepository(
                 }
                 val codesJob = async(Dispatchers.Default) {
                     codes
-                        .filter { it.category != null }
-                        .groupBy { it.category!! }
+                        .mapNotNull { CodeItemSlim.fromCodeItem(it) }
+                        .groupBy { it.category }
                 }
                 
                 Pair(sitesJob.await(), codesJob.await())
@@ -146,6 +146,25 @@ class ServerDataRepository(
             // Don't update the state flow with partial data
             return@coroutineScope snap
         }
+    }
+
+    /**
+     * Load ONLY codes - ultra-fast startup for code-dependent screens.
+     * Returns codes grouped by category as CodeItemSlim for memory efficiency.
+     */
+    suspend fun loadCodesOnly(): Map<String, List<CodeItemSlim>> = withContext(Dispatchers.IO) {
+        val saf = SaFStorageHelper(context)
+        val vt5Root = saf.getVt5DirIfExists() ?: return@withContext emptyMap()
+        val serverdata = vt5Root.findChildByName("serverdata")?.takeIf { it.isDirectory }
+            ?: return@withContext emptyMap()
+
+        val codes = runCatching {
+            readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES)
+        }.getOrElse { emptyList() }
+
+        codes
+            .mapNotNull { CodeItemSlim.fromCodeItem(it) }
+            .groupBy { it.category }
     }
 
     /** Full data load with parallel processing for better performance */
@@ -203,8 +222,8 @@ class ServerDataRepository(
             val protocolSpeciesByProtocol = protocolSpecies.groupBy { it.protocolid }
 
             val codesByCategory = codes
-                .filter { it.category != null }
-                .groupBy { it.category!! }
+                .mapNotNull { CodeItemSlim.fromCodeItem(it) }
+                .groupBy { it.category }
 
             // Create full snapshot
             val snap = DataSnapshot(
@@ -242,7 +261,7 @@ class ServerDataRepository(
 
     /** Load only codes for a specific field - optimized with caching */
     @Suppress("unused")
-    suspend fun loadCodesFor(field: String): List<CodeItem> = withContext(Dispatchers.IO) {
+    suspend fun loadCodesFor(field: String): List<CodeItemSlim> = withContext(Dispatchers.IO) {
         val saf = SaFStorageHelper(context)
         val vt5Root = saf.getVt5DirIfExists() ?: return@withContext emptyList()
         val serverdata = vt5Root.findChildByName("serverdata")?.takeIf { it.isDirectory } ?: return@withContext emptyList()
@@ -250,23 +269,14 @@ class ServerDataRepository(
         // Reuse previously loaded codes if possible
         val cachedCodes = snapshotState.value.codesByCategory[field]
         if (!cachedCodes.isNullOrEmpty()) {
-            return@withContext cachedCodes.sortedWith(
-                compareBy(
-                    { it.sortering?.toIntOrNull() ?: Int.MAX_VALUE },
-                    { it.tekst?.lowercase(Locale.getDefault()) ?: "" }
-                )
-            )
+            return@withContext cachedCodes.sortedBy { it.text.lowercase(Locale.getDefault()) }
         }
 
         val codes = runCatching { readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES) }.getOrElse { emptyList() }
         codes
+            .mapNotNull { CodeItemSlim.fromCodeItem(it) }
             .filter { it.category == field }
-            .sortedWith(
-                compareBy(
-                    { it.sortering?.toIntOrNull() ?: Int.MAX_VALUE },
-                    { it.tekst?.lowercase(Locale.getDefault()) ?: "" }
-                )
-            )
+            .sortedBy { it.text.lowercase(Locale.getDefault()) }
     }
 
     /* ============ Binaries-first readers (SAF) with optimizations ============ */
