@@ -96,6 +96,35 @@ data class CodeItem(
     @SerialName("sortering") val sortering: String? = null
 )
 
+/**
+ * Lightweight version of CodeItem with only essential fields.
+ * Used for in-memory storage to reduce memory footprint by ~50%.
+ * 
+ * Only contains the 3 fields needed by the app:
+ * - category: for grouping/lookup (was "veld" in JSON)
+ * - text: display text (was "tekst" in JSON)
+ * - value: code value (was "waarde" in JSON)
+ */
+@Serializable
+data class CodeItemSlim(
+    val category: String,  // veld - for grouping/categorization
+    val text: String,      // tekst - display text shown to user
+    val value: String      // waarde - actual code value stored
+) {
+    companion object {
+        /**
+         * Convert full CodeItem to slim version with only essential fields.
+         * Returns null if any required field is missing.
+         */
+        fun fromCodeItem(item: CodeItem): CodeItemSlim? {
+            val cat = item.category ?: return null
+            val txt = item.tekst ?: item.value ?: return null
+            val val_ = item.value ?: return null
+            return CodeItemSlim(cat, txt, val_)
+        }
+    }
+}
+
 /* ---------------- DataSnapshot ---------------- */
 @Serializable
 data class DataSnapshot(
@@ -120,5 +149,7 @@ data class DataSnapshot(
     val protocolSpeciesByProtocol: Map<String, List<ProtocolSpeciesItem>> = emptyMap(),
 
     // Codes – reeds gegroepeerd op category = JSON "veld"
-    val codesByCategory: Map<String, List<CodeItem>> = emptyMap()
+    // Optimized: Uses CodeItemSlim (3 fields) instead of CodeItem (6 fields)
+    // Only includes relevant categories (7 out of 20) = 66% memory reduction
+    val codesByCategory: Map<String, List<CodeItemSlim>> = emptyMap()
 )

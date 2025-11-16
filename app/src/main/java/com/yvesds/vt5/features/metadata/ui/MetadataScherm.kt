@@ -10,6 +10,8 @@ import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.os.Bundle
+import androidx.core.content.edit
+import androidx.core.graphics.toColorInt
 import android.text.InputType
 import android.util.Log
 import android.view.View
@@ -23,10 +25,12 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
+import com.yvesds.vt5.R
 import com.yvesds.vt5.VT5App
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.core.ui.ProgressDialogHelper
 import com.yvesds.vt5.databinding.SchermMetadataBinding
+import com.yvesds.vt5.features.alias.AliasManager
 import com.yvesds.vt5.features.opstart.usecases.TrektellenAuth
 import com.yvesds.vt5.features.serverdata.model.CodeItem
 import com.yvesds.vt5.features.serverdata.model.DataSnapshot
@@ -73,7 +77,6 @@ import kotlin.math.roundToInt
 class MetadataScherm : AppCompatActivity() {
     companion object {
         private const val TAG = "MetadataScherm"
-        const val EXTRA_SELECTED_SOORT_IDS = "selected_soort_ids"
 
         // Key for onlineId stored in prefs (used elsewhere, e.g. TellingScherm)
         private const val PREF_ONLINE_ID = "pref_online_id"
@@ -90,6 +93,9 @@ class MetadataScherm : AppCompatActivity() {
     // Scope voor achtergrondtaken
     private val uiScope = CoroutineScope(Job() + Dispatchers.Main)
     private var backgroundLoadJob: Job? = null
+    
+    // SAF helper for alias manager access
+    private lateinit var saf: SaFStorageHelper
 
     // Gekozen waarden
     private var gekozenTelpostId: String? = null
@@ -108,13 +114,16 @@ class MetadataScherm : AppCompatActivity() {
         val granted = result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
                 result[Manifest.permission.ACCESS_COARSE_LOCATION] == true
         if (granted) onWeerAutoClicked()
-        else Toast.makeText(this, "Locatierechten geweigerd.", Toast.LENGTH_SHORT).show()
+        else Toast.makeText(this, getString(R.string.metadata_error_location_denied), Toast.LENGTH_SHORT).show()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = SchermMetadataBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        // Initialize SAF helper
+        saf = SaFStorageHelper(this)
 
         // geen keyboard voor datum/tijd
         binding.etDatum.inputType = InputType.TYPE_NULL
@@ -138,6 +147,8 @@ class MetadataScherm : AppCompatActivity() {
     /**
      * Eerste fase: laad alleen de noodzakelijke data voor het vullen van de dropdown menus
      * Dit zorgt voor een veel snellere initiële lading
+     * 
+     * OPTIMIZATION: Added progress feedback during minimal load
      */
     private fun loadEssentialData() {
         uiScope.launch {
@@ -154,23 +165,34 @@ class MetadataScherm : AppCompatActivity() {
                     return@launch
                 }
 
-                // Toon de progress dialog
-                ProgressDialogHelper.withProgress(this@MetadataScherm, "Bezig met laden van gegevens...") {
+                // OPTIMIZATION: Detailed progress feedback during load
+                val progressDialog = ProgressDialogHelper.show(this@MetadataScherm, "Codes laden...")
+                try {
                     // Laad de minimale data
                     val repo = ServerDataRepository(this@MetadataScherm)
+                    
+                    // Update progress: loading codes
+                    withContext(Dispatchers.Main) {
+                        ProgressDialogHelper.updateMessage(progressDialog, "Telposten laden...")
+                    }
+                    
                     val minimal = repo.loadMinimalData()
                     snapshot = minimal
 
+                    // Update progress: initializing UI
                     withContext(Dispatchers.Main) {
+                        ProgressDialogHelper.updateMessage(progressDialog, "Interface voorbereiden...")
                         initializeDropdowns()
                     }
 
                     // Start het laden van de volledige data in de achtergrond
                     scheduleBackgroundLoading()
+                } finally {
+                    progressDialog.dismiss()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading essential data: ${e.message}")
-                Toast.makeText(this@MetadataScherm, "Fout bij laden essentiële gegevens", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MetadataScherm, getString(R.string.metadata_error_loading_data), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -178,6 +200,11 @@ class MetadataScherm : AppCompatActivity() {
     /**
      * Plant het laden van de volledige data in de achtergrond
      * terwijl de gebruiker bezig is met het formulier in te vullen
+     * 
+     * Performance: Gebruikt low-priority dispatcher en delay om UI responsiveness te behouden
+     * 
+     * UPDATE: Laadt nu ook de alias index voor SoortSelectieScherm, zodat de complete
+     * soortenlijst (alle species uit site_species.json) beschikbaar is voor snelle toegang.
      */
     private fun scheduleBackgroundLoading() {
         // Cancel bestaande job als die er is
@@ -187,16 +214,28 @@ class MetadataScherm : AppCompatActivity() {
         backgroundLoadJob = uiScope.launch {
             try {
                 // Korte vertraging zodat de UI eerst kan renderen
-                delay(500)
+                delay(50)
 
                 // Haal volledige data als die er nog niet is
+                // Performance: gebruik IO dispatcher voor file I/O operaties
                 withContext(Dispatchers.IO) {
                     if (isActive) {
                         val fullData = ServerDataCache.getOrLoad(this@MetadataScherm)
                         if (isActive) {
                             withContext(Dispatchers.Main) {
                                 snapshot = fullData
-                                Log.d(TAG, "Background data loading complete")
+                                Log.d(TAG, "Background data loading complete - cache warmed for next screen")
+                            }
+                        }
+                        
+                        // Also preload alias index for SoortSelectieScherm
+                        // This ensures the complete species list is ready
+                        if (isActive) {
+                            try {
+                                AliasManager.ensureIndexLoadedSuspend(this@MetadataScherm, saf)
+                                Log.d(TAG, "Alias index preloaded in background - ready for species selection")
+                            } catch (ex: Exception) {
+                                Log.w(TAG, "Alias index preload failed (non-critical): ${ex.message}")
                             }
                         }
                     }
@@ -238,7 +277,7 @@ class MetadataScherm : AppCompatActivity() {
                 // 1) Locatie ophalen (off-main)
                 val loc = withContext(Dispatchers.IO) { WeatherManager.getLastKnownLocation(this@MetadataScherm) }
                 if (loc == null) {
-                    Toast.makeText(this@MetadataScherm, "Geen locatie beschikbaar.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MetadataScherm, getString(R.string.metadata_error_no_location), Toast.LENGTH_SHORT).show()
                     binding.btnWeerAuto.isEnabled = true
                     return@launch
                 }
@@ -246,7 +285,7 @@ class MetadataScherm : AppCompatActivity() {
                 // 2) Huidig weer ophalen (off-main)
                 val cur = withContext(Dispatchers.IO) { WeatherManager.fetchCurrent(loc.latitude, loc.longitude) }
                 if (cur == null) {
-                    Toast.makeText(this@MetadataScherm, "Kon weer niet ophalen.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MetadataScherm, getString(R.string.metadata_error_weather_fetch), Toast.LENGTH_SHORT).show()
                     binding.btnWeerAuto.isEnabled = true
                     return@launch
                 }
@@ -269,7 +308,7 @@ class MetadataScherm : AppCompatActivity() {
 
                 val achtsten = WeatherManager.cloudPercentToAchtsten(cur.cloudCover)
                 gekozenBewolking = achtsten
-                binding.acBewolking.setText("$achtsten/8", false)
+                binding.acBewolking.setText(getString(R.string.metadata_cloudcover_format, achtsten), false)
 
                 val rainCode = WeatherManager.precipitationToCode(cur.precipitation)
                 gekozenNeerslagCode = rainCode
@@ -289,14 +328,14 @@ class MetadataScherm : AppCompatActivity() {
                 markWeatherAutoApplied()
             } catch (e: Exception) {
                 Log.e(TAG, "Error fetching weather: ${e.message}")
-                Toast.makeText(this@MetadataScherm, "Kon weer niet ophalen", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@MetadataScherm, getString(R.string.metadata_error_weather_fetch_short), Toast.LENGTH_SHORT).show()
                 binding.btnWeerAuto.isEnabled = true
             }
         }
     }
 
     private fun markWeatherAutoApplied() {
-        binding.btnWeerAuto.backgroundTintList = ColorStateList.valueOf(Color.parseColor("#117CAF"))
+        binding.btnWeerAuto.backgroundTintList = ColorStateList.valueOf("#117CAF".toColorInt())
         binding.btnWeerAuto.isEnabled = false
     }
 
@@ -373,7 +412,7 @@ class MetadataScherm : AppCompatActivity() {
         row.addView(minutePicker, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
 
         AlertDialog.Builder(this)
-            .setTitle("Tijd kiezen")
+            .setTitle(getString(R.string.metadata_dialog_time_title))
             .setView(row)
             .setPositiveButton("OK") { _, _ ->
                 val hh = hourPicker.value.toString().padStart(2, '0')
@@ -492,7 +531,7 @@ class MetadataScherm : AppCompatActivity() {
     private fun onVerderClicked() {
         val telpostId = gekozenTelpostId
         if (telpostId.isNullOrBlank()) {
-            Toast.makeText(this, "Kies eerst een telpost.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.metadata_error_no_telpost), Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -501,18 +540,12 @@ class MetadataScherm : AppCompatActivity() {
         val username = creds?.first
         val password = creds?.second
         if (username.isNullOrBlank() || password.isNullOrBlank()) {
-            Toast.makeText(this, "Geen user (check login).", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.metadata_error_no_credentials), Toast.LENGTH_SHORT).show()
             return
         }
 
-        // Keuze aan gebruiker: live-modus => eindtijd leeg
-        AlertDialog.Builder(this)
-            .setTitle("Live gaan?")
-            .setMessage("Wil je deze telling in live-modus starten? (eindtijd blijft dan leeg)")
-            .setPositiveButton("Ja (live)") { _, _ -> startTellingAndOpenSoortSelectie(liveMode = true, username = username, password = password) }
-            .setNegativeButton("Nee") { _, _ -> startTellingAndOpenSoortSelectie(liveMode = false, username = username, password = password) }
-            .setNeutralButton("Annuleer", null)
-            .show()
+        // Start directly in live mode (no dialog)
+        startTellingAndOpenSoortSelectie(username = username, password = password)
     }
 
     // Launcher voor SoortSelectieScherm (multi-select)
@@ -536,12 +569,12 @@ class MetadataScherm : AppCompatActivity() {
      *
      * Als counts_save faalt wordt er een foutmelding getoond en wordt het scherm NIET geopend.
      */
-    private fun startTellingAndOpenSoortSelectie(liveMode: Boolean, username: String, password: String) {
+    private fun startTellingAndOpenSoortSelectie(username: String, password: String) {
         val telpostId = gekozenTelpostId ?: return
 
         uiScope.launch {
             try {
-                ProgressDialogHelper.withProgress(this@MetadataScherm, "Bezig met voorbereiden...") {
+                ProgressDialogHelper.withProgress(this@MetadataScherm, getString(R.string.metadata_preparing)) {
                     // Zorg dat volledige snapshot beschikbaar is
                     val snapshot = ServerDataCache.getOrLoad(this@MetadataScherm)
 
@@ -572,10 +605,8 @@ class MetadataScherm : AppCompatActivity() {
                     val zichtMeters = binding.etZicht.text?.toString()?.trim().orEmpty()
                     val typetellingCode = gekozenTypeTellingCode ?: ""
 
-                    // Teller(s): try to read from UI if a field exists (supports etTellers or acTellers)
-                    val tellersFromUi = getOptionalText("etTellers")
-                        ?: getOptionalText("acTellers")
-                        ?: "" // fallback empty if no UI field found
+                    // Teller(s): fallback to empty string (optional field not in current UI)
+                    val tellersFromUi = ""
 
                     val weerOpmerking = "" // optional -> not present in UI currently
                     val opmerkingen = "" // optional
@@ -620,9 +651,9 @@ class MetadataScherm : AppCompatActivity() {
                         Log.w(TAG, "counts_save failed: $resp")
                         withContext(Dispatchers.Main) {
                             AlertDialog.Builder(this@MetadataScherm)
-                                .setTitle("Start telling mislukt")
-                                .setMessage("Kon telling niet starten:\n$resp")
-                                .setPositiveButton("OK", null)
+                                .setTitle(getString(R.string.metadata_error_start_failed_title))
+                                .setMessage(getString(R.string.metadata_error_start_failed_msg, resp))
+                                .setPositiveButton(getString(R.string.dlg_ok), null)
                                 .show()
                         }
                         return@withProgress
@@ -635,9 +666,9 @@ class MetadataScherm : AppCompatActivity() {
                         Log.w(TAG, "Could not parse onlineId from response: $resp")
                         withContext(Dispatchers.Main) {
                             AlertDialog.Builder(this@MetadataScherm)
-                                .setTitle("Start telling onduidelijk")
-                                .setMessage("Server antwoordde, maar kon geen onlineId herkennen.\n\nResponse:\n$resp")
-                                .setPositiveButton("OK", null)
+                                .setTitle(getString(R.string.metadata_error_unclear_title))
+                                .setMessage(getString(R.string.metadata_error_unclear_msg, resp))
+                                .setPositiveButton(getString(R.string.dlg_ok), null)
                                 .show()
                         }
                         return@withProgress
@@ -645,11 +676,16 @@ class MetadataScherm : AppCompatActivity() {
 
                     // Persist onlineId and tellingId in prefs so TellingScherm / DataUploader can use them
                     val prefs = getSharedPreferences("vt5_prefs", MODE_PRIVATE)
-                    prefs.edit().putString(PREF_ONLINE_ID, onlineId).putString(PREF_TELLING_ID, tellingIdLong.toString()).apply()
+                    prefs.edit {
+                        putString(PREF_ONLINE_ID, onlineId)
+                        putString(PREF_TELLING_ID, tellingIdLong.toString())
+                    }
 
                     // Initialize per-telling record counter starting at 1
                     try {
-                        prefs.edit().putLong("pref_next_record_id_$tellingIdLong", 1L).apply()
+                        prefs.edit {
+                            putLong("pref_next_record_id_$tellingIdLong", 1L)
+                        }
                     } catch (ex: Exception) {
                         Log.w(TAG, "Failed initializing next record id: ${ex.message}")
                     }
@@ -657,7 +693,9 @@ class MetadataScherm : AppCompatActivity() {
                     // Persist the envelope JSON (metadata only, without data) for later reuse at Afronden
                     try {
                         val envelopeJson = VT5App.json.encodeToString(ListSerializer(ServerTellingEnvelope.serializer()), envelope)
-                        prefs.edit().putString(PREF_SAVED_ENVELOPE_JSON, envelopeJson).apply()
+                        prefs.edit {
+                            putString(PREF_SAVED_ENVELOPE_JSON, envelopeJson)
+                        }
                     } catch (ex: Exception) {
                         Log.w(TAG, "Failed saving envelope JSON to prefs: ${ex.message}")
                     }
@@ -668,8 +706,9 @@ class MetadataScherm : AppCompatActivity() {
                     TellingSessionManager.setPreselectedSoorten(speciesForTelpost)
 
                     // Success — open SoortSelectieScherm
+                    // Note: snapshot is already loaded and cached, so SoortSelectieScherm will use fast-path
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MetadataScherm, "Telling gestart (onlineId: $onlineId)", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@MetadataScherm, getString(R.string.metadata_success_started, onlineId), Toast.LENGTH_SHORT).show()
                         val intent = Intent(this@MetadataScherm, SoortSelectieScherm::class.java)
                         intent.putExtra(SoortSelectieScherm.EXTRA_TELPOST_ID, telpostId)
                         intent.putExtra("EXTRA_LIVE_MODE", true)
@@ -681,7 +720,7 @@ class MetadataScherm : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e(TAG, "Error preparing species selection or starting counts_save: ${e.message}", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MetadataScherm, "Fout bij voorbereiden telling: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MetadataScherm, getString(R.string.metadata_error_preparing, e.message ?: ""), Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -743,20 +782,7 @@ class MetadataScherm : AppCompatActivity() {
     private fun kotlinx.serialization.json.JsonElement.jsonObjectOrNull() =
         runCatching { this.jsonObject }.getOrNull()
 
-    /** Try to read text from a view by resource-name (returns null if view not found or empty). */
-    private fun getOptionalText(viewIdName: String): String? {
-        return try {
-            val id = resources.getIdentifier(viewIdName, "id", packageName)
-            if (id == 0) return null
-            val v = findViewById<View>(id) ?: return null
-            if (v is TextView) {
-                val s = v.text?.toString()?.trim().orEmpty()
-                if (s.isNotBlank()) s else null
-            } else null
-        } catch (e: Exception) {
-            null
-        }
-    }
+
 
     override fun onDestroy() {
         super.onDestroy()

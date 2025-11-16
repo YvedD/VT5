@@ -98,6 +98,7 @@ class ServerDataRepository(
     /**
      * Load only minimal data required for startup
      * - Optimized for faster initial rendering
+     * - OPTIMIZATION: Parallel loading with separate dispatchers for maximum throughput
      */
     suspend fun loadMinimalData(): DataSnapshot = withContext(Dispatchers.IO) {
         val saf = SaFStorageHelper(context)
@@ -105,29 +106,41 @@ class ServerDataRepository(
         val serverdata = vt5Root.findChildByName("serverdata")?.takeIf { it.isDirectory }
             ?: return@withContext DataSnapshot()
 
-        // Use coroutineScope for structured concurrency so sibling tasks are cancelled on failure
+        // OPTIMIZATION: Use coroutineScope for true parallel loading
+        // Both files load simultaneously on separate IO threads for maximum speed
         coroutineScope {
-            val sitesDef = async { readList<SiteItem>(serverdata, "sites", VT5Bin.Kind.SITES) }
-            val codesDef = async {
+            // Launch both loads in parallel on IO dispatcher
+            val sitesDef = async(Dispatchers.IO) { 
+                readList<SiteItem>(serverdata, "sites", VT5Bin.Kind.SITES) 
+            }
+            val codesDef = async(Dispatchers.IO) {
                 runCatching {
                     readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES)
                 }.getOrElse { emptyList() }
             }
 
-            // Await results into local vals
+            // Await both results (they execute in parallel)
             val sites = sitesDef.await()
             val codes = codesDef.await()
 
-            // Process data
-            val sitesById = sites.associateBy { it.telpostid }
-            val codesByCategory = codes
-                .filter { it.category != null }
-                .groupBy { it.category!! }
+            // OPTIMIZATION: Parallel processing of results
+            val processedData = coroutineScope {
+                val sitesJob = async(Dispatchers.Default) {
+                    sites.associateBy { it.telpostid }
+                }
+                val codesJob = async(Dispatchers.Default) {
+                    codes
+                        .filter { it.category != null }
+                        .groupBy { it.category!! }
+                }
+                
+                Pair(sitesJob.await(), codesJob.await())
+            }
 
             // Create minimal snapshot
             val snap = DataSnapshot(
-                sitesById = sitesById,
-                codesByCategory = codesByCategory
+                sitesById = processedData.first,
+                codesByCategory = processedData.second
             )
 
             // Don't update the state flow with partial data

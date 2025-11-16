@@ -406,6 +406,42 @@ object AliasManager {
     /** Optional getter for the loaded index (null if not loaded) */
     fun getLoadedIndex(): AliasIndex? = loadedIndex
 
+    /**
+     * Get all unique species from the loaded alias index.
+     * Returns a map of speciesId -> canonical name.
+     * This represents ALL species from site_species.json regardless of telpost assignment.
+     * 
+     * Performance: O(n) but cached in memory, runs off-main thread.
+     * Should be called after ensureIndexLoadedSuspend() to guarantee data availability.
+     */
+    suspend fun getAllSpeciesFromIndex(context: Context, saf: SaFStorageHelper): Map<String, String> = withContext(Dispatchers.IO) {
+        try {
+            // Ensure index is loaded
+            ensureIndexLoadedSuspend(context, saf)
+            
+            val index = loadedIndex
+            if (index == null) {
+                Log.w(TAG, "getAllSpeciesFromIndex: index not loaded")
+                return@withContext emptyMap()
+            }
+            
+            // Build unique species map from alias records
+            // Each record has speciesid and canonical, we deduplicate by species ID
+            val speciesMap = mutableMapOf<String, String>()
+            for (record in index.json) {
+                if (!speciesMap.containsKey(record.speciesid)) {
+                    speciesMap[record.speciesid] = record.canonical
+                }
+            }
+            
+            Log.d(TAG, "getAllSpeciesFromIndex: returning ${speciesMap.size} unique species")
+            speciesMap
+        } catch (ex: Exception) {
+            Log.e(TAG, "getAllSpeciesFromIndex failed: ${ex.message}", ex)
+            emptyMap()
+        }
+    }
+
     /* ADD ALIAS (HOT-RELOAD) */
     suspend fun addAlias(
         context: Context,
