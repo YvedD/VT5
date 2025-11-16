@@ -16,6 +16,6 @@
         android:minHeight="0dp"
         android:paddingTop="2dp"
         android:paddingBottom="2dp"
-        android:text="Soortnaam (id: ...)"
+        android:text="@string/soort_species_name_placeholder"
         android:textSize="12sp" />
 </FrameLayout>

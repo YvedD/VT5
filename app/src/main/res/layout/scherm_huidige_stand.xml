@@ -10,7 +10,7 @@
         android:id="@+id/tv_title_huidige_stand"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Huidige stand van zaken"
+        android:text="@string/huidige_stand_title"
         android:textSize="18sp"
         android:textStyle="bold"
         android:paddingBottom="8dp"/>
@@ -33,7 +33,7 @@
         android:id="@+id/tv_totals"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Σ Totaal: 0 | ZW: 0 ex | NO: 0 ex"
+        android:text="@string/huidige_stand_totals"
         android:textStyle="bold"
         android:paddingTop="8dp"
         android:paddingBottom="8dp" />
@@ -44,5 +44,5 @@
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
         android:layout_marginBottom="40dp"
-        android:text="OK" />
+        android:text="@string/huidige_stand_ok" />
 </LinearLayout>

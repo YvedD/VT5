@@ -223,7 +223,7 @@ class TellingScherm : AppCompatActivity() {
                             if (::viewModel.isInitialized) viewModel.setTiles(merged)
 
                             addLog("Soorten toegevoegd: ${additions.size}", "manueel")
-                            Toast.makeText(this@TellingScherm, "Toegevoegd: ${additions.size}", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@TellingScherm, getString(R.string.telling_added_count, additions.size), Toast.LENGTH_SHORT).show()
 
                             // update ASR hints + cached context
                             updateSelectedSpeciesMap()
@@ -414,10 +414,10 @@ class TellingScherm : AppCompatActivity() {
                     dialogHelper.showAddAliasDialog(nameOnly, cnt, flat, 
                         onAliasAdded = { speciesId, canonical, count ->
                             addLog("Alias toegevoegd: '$nameOnly' → $canonical", "alias")
-                            Toast.makeText(this, "Alias opgeslagen (buffer).", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this, getString(R.string.telling_alias_saved_buffer), Toast.LENGTH_SHORT).show()
                             
                             lifecycleScope.launch {
-                                Toast.makeText(this@TellingScherm, "Index wordt bijgewerkt...", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(this@TellingScherm, getString(R.string.telling_index_updating), Toast.LENGTH_SHORT).show()
                                 val ok = withContext(Dispatchers.IO) {
                                     try {
                                         AliasManager.forceRebuildCborNow(this@TellingScherm, safHelper)
@@ -428,10 +428,10 @@ class TellingScherm : AppCompatActivity() {
                                     }
                                 }
                                 if (ok) {
-                                    Toast.makeText(this@TellingScherm, "Alias opgeslagen en index bijgewerkt", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(this@TellingScherm, getString(R.string.telling_alias_saved_index_updated), Toast.LENGTH_SHORT).show()
                                     refreshAliasesRuntimeAsync()
                                 } else {
-                                    Toast.makeText(this@TellingScherm, "Alias opgeslagen (index update later)", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(this@TellingScherm, getString(R.string.telling_alias_saved_index_later), Toast.LENGTH_LONG).show()
                                 }
                             }
                             
@@ -465,7 +465,7 @@ class TellingScherm : AppCompatActivity() {
      */
     private fun handleAfrondenWithConfirmation() {
         val builder = AlertDialog.Builder(this)
-            .setTitle("Afronden bevestigen")
+            .setTitle(getString(R.string.dialog_confirm_finish))
             .setMessage("Weet je zeker dat je wilt afronden en de telling uploaden?")
             .setPositiveButton("Ja") { _, _ ->
                 lifecycleScope.launch {
@@ -535,7 +535,7 @@ class TellingScherm : AppCompatActivity() {
             } catch (ex: Exception) {
                 withContext(Dispatchers.Main) {
                     Log.w(TAG, "ensureAvailableSpeciesFlat failed: ${ex.message}", ex)
-                    Toast.makeText(this@TellingScherm, "Soortenlijst niet beschikbaar", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@TellingScherm, getString(R.string.soort_list_not_available), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -582,7 +582,7 @@ class TellingScherm : AppCompatActivity() {
 
                     if (initial.isEmpty()) {
                         dialog.dismiss()
-                        Toast.makeText(this@TellingScherm, "Geen voorselectie. Keer terug en selecteer soorten.", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this@TellingScherm, getString(R.string.soort_no_preselection), Toast.LENGTH_LONG).show()
                         finish()
                         return@launch
                     }
@@ -610,7 +610,7 @@ class TellingScherm : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading species: ${e.message}")
-                Toast.makeText(this@TellingScherm, "Fout bij laden van soorten", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@TellingScherm, getString(R.string.soort_error_loading_species), Toast.LENGTH_SHORT).show()
                 finish()
             }
         }
@@ -699,7 +699,7 @@ class TellingScherm : AppCompatActivity() {
             Log.d(TAG, "Speech recognition initialized successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing speech recognition", e)
-            Toast.makeText(this, "Kon spraakherkenning niet initialiseren: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.telling_speech_init_error, e.message ?: ""), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -805,7 +805,7 @@ class TellingScherm : AppCompatActivity() {
     private fun showAddSpeciesConfirmationDialog(speciesId: String, displayName: String, count: Int) {
         val msg = "Soort \"$displayName\" herkend met aantal $count.\n\nToevoegen?"
         val dlg = AlertDialog.Builder(this)
-            .setTitle("Soort toevoegen?")
+            .setTitle(getString(R.string.dialog_add_species))
             .setMessage(msg)
             .setPositiveButton("Ja") { _, _ ->
                 addSpeciesToTiles(speciesId, displayName, count)

@@ -29,7 +29,7 @@
             android:layout_height="wrap_content"
             android:ellipsize="end"
             android:maxLines="2"
-            android:text="Soortnaam"
+            android:text="@string/tile_species_name"
             android:textColor="@color/vt5_white"
             android:textSize="16sp" />
 
@@ -37,7 +37,7 @@
             android:id="@+id/tvCount"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="0"
+            android:text="@string/tile_count"
             android:textColor="@color/vt5_green"
             android:textSize="16sp"
             android:textStyle="bold" />

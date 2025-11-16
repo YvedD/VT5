@@ -13,7 +13,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="center_horizontal"
         android:paddingBottom="1dp"
-        android:text="Resultaten spraak- of manuele invoer"
+        android:text="@string/telling_speech_results"
         android:textSize="11sp"
         android:textStyle="bold" />
 
@@ -74,7 +74,7 @@
             android:paddingLeft="3dp"
             android:paddingTop="3dp"
             android:paddingRight="3dp"
-            android:text="Totalen" />
+            android:text="@string/telling_totals" />
 
         <Button
             android:id="@+id/btnAddSoorten"
@@ -84,7 +84,7 @@
             android:paddingLeft="3dp"
             android:paddingTop="3dp"
             android:paddingRight="3dp"
-            android:text="Toevoegen" />
+            android:text="@string/telling_add" />
 
         <Button
             android:id="@+id/btnAfronden"
@@ -95,7 +95,7 @@
             android:paddingLeft="3dp"
             android:paddingTop="3dp"
             android:paddingRight="3dp"
-            android:text="Afronden" />
+            android:text="@string/telling_finish" />
     </LinearLayout>
 
     <!-- Grid met soort-tiles -->

@@ -39,7 +39,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:paddingBottom="6dp"
-                    android:text="Leeftijd"
+                    android:text="@string/annotation_age"
                     android:textAlignment="center"
                     android:textSize="12sp"
                     android:textStyle="normal" />
@@ -155,7 +155,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:paddingBottom="6dp"
-                    android:text="Geslacht"
+                    android:text="@string/annotation_gender"
                     android:textAlignment="center"
                     android:textSize="12sp"
                     android:textStyle="normal" />
@@ -226,7 +226,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:paddingBottom="6dp"
-                    android:text="Kleed"
+                    android:text="@string/annotation_plumage"
                     android:textAlignment="center"
                     android:textSize="12sp"
                     android:textStyle="normal" />
@@ -340,7 +340,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:paddingBottom="6dp"
-                    android:text="Locatie"
+                    android:text="@string/annotation_location"
                     android:textAlignment="center"
                     android:textSize="12sp"
                     android:textStyle="normal" />
@@ -432,7 +432,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:paddingBottom="6dp"
-                    android:text="Hoogte"
+                    android:text="@string/annotation_height"
                     android:textAlignment="center"
                     android:textSize="12sp"
                     android:textStyle="normal" />
@@ -548,27 +548,27 @@
             android:id="@+id/cb_zw"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="ZW" />
+            android:text="@string/annotation_direction_sw" />
 
         <CheckBox
             android:id="@+id/cb_no"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="NO"
+            android:text="@string/annotation_direction_no"
             android:layout_marginStart="12dp" />
 
         <CheckBox
             android:id="@+id/cb_lokaal"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Lokaal"
+            android:text="@string/annotation_local"
             android:layout_marginStart="12dp" />
 
         <CheckBox
             android:id="@+id/cb_markeren"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Markeren"
+            android:text="@string/annotation_mark"
             android:layout_marginStart="12dp" />
     </LinearLayout>
 

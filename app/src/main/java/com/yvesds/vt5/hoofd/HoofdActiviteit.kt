@@ -45,7 +45,7 @@ class HoofdActiviteit : AppCompatActivity() {
         btnVerder.setOnClickListener {
             it.isEnabled = false
             // OPTIMIZATION: Trigger preload during toast display for faster MetadataScherm startup
-            Toast.makeText(this, "Metadata laden…", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.hoofd_metadata_loading), Toast.LENGTH_SHORT).show()
             
             // Start preloading minimal data in background
             lifecycleScope.launch {
