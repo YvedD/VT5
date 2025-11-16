@@ -32,7 +32,7 @@ import com.yvesds.vt5.core.ui.ProgressDialogHelper
 import com.yvesds.vt5.databinding.SchermMetadataBinding
 import com.yvesds.vt5.features.alias.AliasManager
 import com.yvesds.vt5.features.opstart.usecases.TrektellenAuth
-import com.yvesds.vt5.features.serverdata.model.CodeItem
+import com.yvesds.vt5.features.serverdata.model.CodeItemSlim
 import com.yvesds.vt5.features.serverdata.model.DataSnapshot
 import com.yvesds.vt5.features.serverdata.model.ServerDataCache
 import com.yvesds.vt5.features.serverdata.model.ServerDataRepository
@@ -294,8 +294,8 @@ class MetadataScherm : AppCompatActivity() {
                 val windLabel = WeatherManager.degTo16WindLabel(cur.windDirection10m)
                 val windCodes = snapshot.codesByCategory["wind"].orEmpty()
                 val valueByLabel = windCodes.associateBy(
-                    { (it.tekst ?: "").uppercase(Locale.getDefault()) },
-                    { it.value ?: "" }
+                    { it.text.uppercase(Locale.getDefault()) },
+                    { it.value }
                 )
                 val foundWindCode = valueByLabel[windLabel] ?: valueByLabel["N"] ?: "n"
                 gekozenWindrichtingCode = foundWindCode
@@ -314,8 +314,8 @@ class MetadataScherm : AppCompatActivity() {
                 gekozenNeerslagCode = rainCode
                 val rainCodes = snapshot.codesByCategory["neerslag"].orEmpty()
                 val rainLabelByValue = rainCodes.associateBy(
-                    { it.value ?: "" },
-                    { it.tekst ?: (it.value ?: "") }
+                    { it.value },
+                    { it.text }
                 )
                 val rainLabel = rainLabelByValue[rainCode] ?: rainCode
                 binding.acNeerslag.setText(rainLabel, false)
@@ -450,8 +450,8 @@ class MetadataScherm : AppCompatActivity() {
         // WINDRICHTING (veld == "wind")
         runCatching {
             val windCodes = getCodesForField("wind")
-            val labels = windCodes.mapNotNull { it.tekst }
-            val values = windCodes.map { it.value ?: "" }
+            val labels = windCodes.map { it.text }
+            val values = windCodes.map { it.value }
             binding.acWindrichting.setAdapter(
                 ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
             )
@@ -483,8 +483,8 @@ class MetadataScherm : AppCompatActivity() {
         // NEERSLAG (veld == "neerslag")
         runCatching {
             val rainCodes = getCodesForField("neerslag")
-            val labels = rainCodes.mapNotNull { it.tekst }
-            val values = rainCodes.map { it.value ?: "" }
+            val labels = rainCodes.map { it.text }
+            val values = rainCodes.map { it.value }
             binding.acNeerslag.setAdapter(
                 ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
             )
@@ -504,8 +504,8 @@ class MetadataScherm : AppCompatActivity() {
                         key.startsWith("gain_") ||
                         key.startsWith("verstoring_")
             }
-            val labels = filtered.mapNotNull { it.tekst }
-            val values = filtered.map { it.value ?: "" }
+            val labels = filtered.map { it.text }
+            val values = filtered.map { it.value }
             binding.acTypeTelling.setAdapter(
                 ArrayAdapter(this, android.R.layout.simple_list_item_1, labels)
             )
@@ -515,15 +515,10 @@ class MetadataScherm : AppCompatActivity() {
         }
     }
 
-    /** Haal codes per veld uit snapshot en sorteer op sortering (numeriek) + tekst. */
-    private fun getCodesForField(field: String): List<CodeItem> {
+    /** Haal codes per veld uit snapshot en sorteer op tekst. */
+    private fun getCodesForField(field: String): List<CodeItemSlim> {
         val items = snapshot.codesByCategory[field].orEmpty()
-        return items.sortedWith(
-            compareBy(
-                { it.sortering?.toIntOrNull() ?: Int.MAX_VALUE },
-                { it.tekst?.lowercase(Locale.getDefault()) ?: "" }
-            )
-        )
+        return items.sortedBy { it.text.lowercase(Locale.getDefault()) }
     }
 
     /* ---------------- Verder → counts_save (header) → SoortSelectieScherm ---------------- */
