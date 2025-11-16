@@ -7,14 +7,22 @@
 
 ## Samenvatting
 
-De **main** branch bevat nu een consolidatie van **4 recent gemergde Pull Requests**. Deze merge werd uitgevoerd op **16 november 2025 om 13:49:59** via commit `80e09a96` met de titel "Merge vorige 4 PR's naam main branch".
+De **copilot/check-merged-prs-in-main** branch bevat nu een consolidatie van **ALLE 4 recente Pull Requests**, inclusief PR #2 die nu succesvol is toegevoegd.
 
-### Totale Impact
-- **31 bestanden gewijzigd**
-- **4,411 regels toegevoegd** (+)
-- **353 regels verwijderd** (-)
-- **8 nieuwe documentatiebestanden**
-- **6 nieuwe helper classes**
+### Oorspronkelijke Main Merge (16 nov 2025, 13:49)
+- Commit `80e09a96`: "Merge vorige 4 PR's naam main branch"
+- Bevatte PRs #1, #4, en #5
+
+### Deze Branch Update (16 nov 2025)
+- **PR #2 toegevoegd**: TegelBeheer integration & speech refactoring
+- TellingScherm.kt: 1888 → 1302 regels (-586 regels, -31%)
+
+### Totale Impact (Alle 4 PRs)
+- **32 bestanden gewijzigd** (was 31, +1 voor TellingScherm update)
+- **4,828 regels toegevoegd** (+)
+- **939 regels verwijderd** (-)
+- **9 nieuwe documentatiebestanden** (+1: PR2_MERGE_ANALYSE.md)
+- **6 helper classes** (allen nu actief gebruikt)
 
 ---
 
@@ -67,17 +75,38 @@ De **main** branch bevat nu een consolidatie van **4 recent gemergde Pull Reques
 
 ---
 
-### ❌ PR #2: TegelBeheer Integration + Speech Handling
-**Status:** **NIET GEMERGED** (closed zonder merge)  
+### ✅ PR #2: TegelBeheer Integration + Speech Handling
+**Status:** VOLLEDIG GEMERGED (in deze branch)  
 **Titel:** "Refactor TellingScherm: Integrate TegelBeheer and extract speech handling"  
-**Gesloten:** 16 november 2025
+**Gemergd:** 16 november 2025
 
-⚠️ **BELANGRIJK:** Deze PR is **NIET** opgenomen in de main branch! De wijzigingen in deze PR zijn:
-- TegelBeheer API integratie
-- Speech recognition refactoring (7 nieuwe methodes)
-- Zijn **NIET** aanwezig in de huidige main branch
+#### Belangrijkste Wijzigingen:
+1. **TegelBeheer Integratie**
+   - Replaced direct adapter manipulation with TegelBeheer API
+   - 8 methods refactored: `showNumberInputDialog`, `addSpeciesToTiles*`, `updateSoortCount*`, `loadPreselection`, `buildMatchContext`, `updateSelectedSpeciesMap`
+   - Thread-safe tile operations
+   - Centralized tile management
 
-**Reden:** Deze PR was gebaseerd op een andere branch (`copilot/refactor-telling-scherm-code`) en is niet direct naar main gemerged.
+2. **Speech Recognition Refactoring**
+   - Extracted 7 focused methods from 150-line `initializeSpeechRecognition()`
+   - `handleSpeechHypotheses()` - Entry point for hypothesis processing
+   - `handleMatchResult()` - Dispatches to specific handlers
+   - `handleAutoAcceptMatch()`, `handleAutoAcceptAddPopup()`, `handleMultiMatch()` - Type-specific handlers
+   - `recordSpeciesCount()` - Consolidates log/update/collect pattern (3 call sites → 1)
+   - `showAddSpeciesConfirmationDialog()` - Consolidates dialog creation (3 instances → 1)
+
+3. **Code Metrics**
+   - Lines: 1888 → 1302 (-31%, 586 regels verwijderd)
+   - Methods: 32 → 39 (+7 focused methods)
+   - Reduced cyclomatic complexity in speech handling
+   - Eliminated duplicate dialog and recording logic
+
+#### Bestanden Gewijzigd:
+- `app/src/main/java/com/yvesds/vt5/features/telling/TellingScherm.kt` (-586 regels)
+- `REFACTORING_ANALYSE.md` (updated met completion status)
+- `REFACTORING_SUMMARY.md` (nieuw, 180 regels documentatie)
+
+**Update:** Deze PR was oorspronkelijk gesloten maar is nu succesvol gemerged naar deze branch op verzoek van de gebruiker.
 
 ---
 
@@ -283,24 +312,24 @@ Alle nieuwe documentatiebestanden zijn toegevoegd aan de root directory:
 - [x] Complete species list functionaliteit
 - [x] Recent species limit verhoogd naar 30
 - [x] AGP versie gecorrigeerd
-- [x] 7 documentatiebestanden toegevoegd
-
-### ❌ Niet Gemergd
-- [ ] PR #2: TegelBeheer integration (closed zonder merge)
-- [ ] PR #2: Speech recognition 7-method extraction
+- [x] **PR #2: TegelBeheer integration (NU GEMERGED)** ✅
+- [x] **PR #2: Speech recognition 7-method extraction (NU GEMERGED)** ✅
+- [x] **TellingScherm: 1888 → 1302 regels (-31%)** ✅
+- [x] 9 documentatiebestanden toegevoegd (inclusief PR2_MERGE_ANALYSE.md)
 
 ---
 
 ## Conclusie
 
-De main branch bevat nu **alle wijzigingen uit 3 van de 4 recente PR's** (PR #1, #4, en #5). Alleen **PR #2 is niet gemerged**. 
+De **copilot/check-merged-prs-in-main** branch bevat nu **ALLE wijzigingen uit ALLE 4 recente PR's** (PR #1, #2, #4, en #5). 
 
 ### Statistieken:
-- **Totaal gemerged**: 3 PRs ✅
-- **Niet gemerged**: 1 PR ❌
-- **Success rate**: 75%
+- **Totaal gemerged**: 4 PRs ✅✅✅✅
+- **Niet gemerged**: 0 PRs
+- **Success rate**: 100% 🎉
 - **Code quality**: ⭐⭐⭐⭐⭐
 - **Performance gain**: Tot 99% sneller ⚡⚡⚡
+- **Code reductie**: TellingScherm -31% (586 regels verwijderd)
 
 De app is nu **production-ready** met aanzienlijk verbeterde performance, schonere code, en betere gebruikerservaring. Het levert de gewenste "flitsend snelle app" ervaring.
 
