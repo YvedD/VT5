@@ -55,7 +55,7 @@ class TellingDialogHelper(
         }
 
         val dialog = AlertDialog.Builder(activity)
-            .setTitle("${row.naam}: voer aantal in")
+            .setTitle(activity.getString(R.string.dialog_enter_count, row.naam))
             .setMessage("Huidige stand: ${row.count}")
             .setView(input)
             .setPositiveButton("Toevoegen") { _, _ ->
@@ -84,7 +84,7 @@ class TellingDialogHelper(
         val items = candidates.map { "${it.displayName} (${it.speciesId})" }.toTypedArray()
         
         val dialog = AlertDialog.Builder(activity)
-            .setTitle("Selecteer soort")
+            .setTitle(activity.getString(R.string.dialog_select_species))
             .setItems(items) { _, which ->
                 val selected = candidates.getOrNull(which) ?: return@setItems
                 onCandidateSelected(selected.speciesId, selected.displayName, count)
@@ -107,7 +107,7 @@ class TellingDialogHelper(
         val msg = "Soort \"$displayName\" herkend met aantal $count.\n\nToevoegen?"
         
         val dialog = AlertDialog.Builder(activity)
-            .setTitle("Soort toevoegen?")
+            .setTitle(activity.getString(R.string.dialog_add_species))
             .setMessage(msg)
             .setPositiveButton("Ja") { _, _ ->
                 onConfirmed(speciesId, displayName, count)

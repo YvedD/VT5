@@ -47,7 +47,7 @@
         android:id="@+id/tvTeller"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="0 soorten • geselecteerd: 0"
+        android:text="@string/soort_selection_info"
         android:paddingTop="8dp"
         android:paddingBottom="8dp" />
 
@@ -71,13 +71,13 @@
             android:id="@+id/btnAnnuleer"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Annuleer" />
+            android:text="@string/soort_cancel" />
 
         <Button
             android:id="@+id/btnOk"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="12dp"
-            android:text="OK" />
+            android:text="@string/soort_ok" />
     </LinearLayout>
 </LinearLayout>

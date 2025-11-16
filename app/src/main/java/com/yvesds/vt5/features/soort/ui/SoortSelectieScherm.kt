@@ -262,14 +262,14 @@ class SoortSelectieScherm : AppCompatActivity() {
                     Log.d(TAG, "Data loaded and processed in ${elapsed}ms")
 
                     if (baseAlphaRows.isEmpty()) {
-                        Toast.makeText(this@SoortSelectieScherm, "Geen soorten gevonden. Download eerst serverdata.", Toast.LENGTH_LONG).show()
+                        Toast.makeText(this@SoortSelectieScherm, getString(R.string.soort_no_species_download), Toast.LENGTH_LONG).show()
                     }
                 } finally {
                     dialog.dismiss()
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading data", e)
-                Toast.makeText(this@SoortSelectieScherm, "Fout bij laden: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(this@SoortSelectieScherm, getString(R.string.soort_error_loading, e.message ?: ""), Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -473,7 +473,7 @@ class SoortSelectieScherm : AppCompatActivity() {
     private fun updateCounter() {
         val totaal = gridAdapter.currentList.count { it is SoortSelectieSectionedAdapter.RowUi.Species }
         val sel = selectedIds.size
-        binding.tvTeller.text = "$totaal soorten • geselecteerd: $sel"
+        binding.tvTeller.text = getString(R.string.soort_selection_info, totaal, sel)
     }
 
     companion object {

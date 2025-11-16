@@ -144,7 +144,7 @@ class SoortSelectieSectionedAdapter(
                     setupHeaderListener(holder.cb)
                 } else {
                     holder.cb.setOnCheckedChangeListener(null)
-                    holder.cb.text = "Alle recente (${header.recentsCount})"
+                    holder.cb.text = holder.itemView.context.getString(R.string.recents_header, header.recentsCount)
                     holder.cb.isChecked = header.allSelected
                     setupHeaderListener(holder.cb)
                 }

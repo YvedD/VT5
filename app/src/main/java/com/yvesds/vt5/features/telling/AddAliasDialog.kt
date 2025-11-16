@@ -81,7 +81,7 @@ class AddAliasDialog : DialogFragment() {
         }
 
         val dlg = AlertDialog.Builder(requireContext())
-            .setTitle("Koppel alias aan soort")
+            .setTitle(getString(R.string.alias_link_to_species))
             .setView(vb.root)
             .setPositiveButton("Toevoegen") { _, _ ->
                 val checkedId = rg.checkedRadioButtonId

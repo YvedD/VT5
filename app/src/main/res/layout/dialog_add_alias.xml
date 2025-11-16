@@ -10,7 +10,7 @@
         android:id="@+id/tvPartialsLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Geselecteerde partials (kies één):" />
+        android:text="@string/add_alias_partials_label" />
 
     <LinearLayout
         android:id="@+id/containerPartials"
@@ -23,7 +23,7 @@
         android:id="@+id/tvSpeciesLabel"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Zoek soort (type om te zoeken):"
+        android:text="@string/add_alias_search_label"
         android:layout_marginTop="12dp" />
 
     <AutoCompleteTextView

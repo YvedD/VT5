@@ -245,9 +245,9 @@ class AliasEditor(private val context: Context, private val saf: SaFStorageHelpe
                 Handler(Looper.getMainLooper()).post {
                     try {
                         if (success) {
-                            Toast.makeText(context.applicationContext, "Aliassen herladen: klaar", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context.applicationContext, context.getString(R.string.alias_reload_complete), Toast.LENGTH_SHORT).show()
                         } else {
-                            Toast.makeText(context.applicationContext, "Aliassen herladen: mislukt", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context.applicationContext, context.getString(R.string.alias_reload_failed), Toast.LENGTH_SHORT).show()
                         }
                     } catch (_: Exception) { }
                 }

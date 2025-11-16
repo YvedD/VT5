@@ -84,7 +84,7 @@ class HuidigeStandScherm : AppCompatActivity() {
         }
 
         // Set totals text (use SUM symbol Σ)
-        totalsTv.text = "Σ Totaal: $totalSum | ZW: $zwSum ex | NO: $noSum ex"
+        totalsTv.text = getString(R.string.huidige_stand_totals, totalSum, zwSum, noSum)
 
         okBtn.setOnClickListener {
             // Simply finish and return to TellingScherm; TellingScherm state is preserved

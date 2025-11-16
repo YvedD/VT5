@@ -35,7 +35,6 @@ class SpeechRecognitionManager(private val activity: Activity) {
         private const val TAG = "SpeechRecognitionMgr"
         private const val MAX_RESULTS = 5
 
-        private val NUMBER_PATTERN = Pattern.compile("\\b(\\d+)\\b")
         private val SPECIES_COUNT_PATTERN = Pattern.compile("([a-zA-Z\\s]+)\\s+(\\d+)")
         private val DUTCH_NUMBER_WORDS: Map<String, Int> = hashMapOf(
             "nul" to 0,
@@ -74,7 +73,6 @@ class SpeechRecognitionManager(private val activity: Activity) {
     private var aliasesLoaded = false
     var enablePartialsLogging: Boolean = true
     private val asrPartials = ArrayList<String>(32)
-    private val safHelper: SaFStorageHelper by lazy { SaFStorageHelper(activity.applicationContext) }
 
     // Default silence threshold (used to hint the ASR engine)
     @Volatile
@@ -505,42 +503,6 @@ class SpeechRecognitionManager(private val activity: Activity) {
         return null
     }
 
-    private fun findSpeciesIdEfficient(speciesName: String): String? {
-        if (speciesName.isBlank()) return null
-        availableSpecies[speciesName]?.let { return it }
-        for ((key, value) in availableSpecies) {
-            if (key.equals(speciesName, ignoreCase = true)) return value
-        }
-        val normalized = normalizeSpeciesName(speciesName)
-        availableSpecies[normalized]?.let { return it }
-
-        if (aliasesLoaded) {
-            val aliasId = aliasRepository.findSpeciesIdByAlias(speciesName)
-            if (aliasId != null && availableSpecies.containsValue(aliasId)) {
-                return aliasId
-            }
-        }
-
-        val index = phoneticIndex
-        if (index != null) {
-            val activeSpeciesNames = availableSpecies.keys.toSet()
-            val candidates = index.findCandidates(normalizeSpeciesName(speciesName), activeSpeciesNames, 5)
-            if (candidates.isNotEmpty()) {
-                return candidates.first().sourceId
-            }
-        }
-
-        var bestMatch: Pair<String, String>? = null
-        var bestScore = 0.0
-        for ((name, id) in availableSpecies) {
-            val similarity = calculateSimilarity(speciesName, name)
-            if (similarity > 0.85 && similarity > bestScore) {
-                bestScore = similarity
-                bestMatch = id to name
-            }
-        }
-        return bestMatch?.first
-    }
 
     private fun parseSpeciesWithCounts(spokenText: String): List<SpeciesCount> {
         val result = ArrayList<SpeciesCount>(3)
