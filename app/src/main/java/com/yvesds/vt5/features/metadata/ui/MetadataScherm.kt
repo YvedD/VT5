@@ -293,13 +293,14 @@ class MetadataScherm : AppCompatActivity() {
                 // 3) Mapping naar UI
                 val windLabel = WeatherManager.degTo16WindLabel(cur.windDirection10m)
                 val windCodes = snapshot.codesByCategory["wind"].orEmpty()
-                val valueByLabel = windCodes.associateBy(
-                    { it.text.uppercase(Locale.getDefault()) },
-                    { it.value }
-                )
-                val foundWindCode = valueByLabel[windLabel] ?: valueByLabel["N"] ?: "n"
-                gekozenWindrichtingCode = foundWindCode
-                binding.acWindrichting.setText(windLabel, false)
+                
+                // Map abbreviated labels to code values (N->n, NNO->nno, etc.)
+                val windLabelLower = windLabel.lowercase(Locale.getDefault())
+                val codeForLabel = windCodes.find { it.value == windLabelLower } 
+                    ?: windCodes.find { it.value == "n" } // fallback to North
+                
+                gekozenWindrichtingCode = codeForLabel?.value ?: "n"
+                binding.acWindrichting.setText(codeForLabel?.text ?: "Noord", false)
 
                 val bft = WeatherManager.msToBeaufort(cur.windSpeed10m)
                 gekozenWindkracht = bft.toString()
@@ -308,7 +309,7 @@ class MetadataScherm : AppCompatActivity() {
 
                 val achtsten = WeatherManager.cloudPercentToAchtsten(cur.cloudCover)
                 gekozenBewolking = achtsten
-                binding.acBewolking.setText(getString(R.string.metadata_cloudcover_format, achtsten), false)
+                binding.acBewolking.setText("$achtsten/8", false)
 
                 val rainCode = WeatherManager.precipitationToCode(cur.precipitation)
                 gekozenNeerslagCode = rainCode
@@ -326,10 +327,11 @@ class MetadataScherm : AppCompatActivity() {
                 cur.pressureMsl?.let { binding.etLuchtdruk.setText(it.roundToInt().toString()) }
 
                 // Bouw een weer-samenvatting voor het opmerkingenveld
+                val windDisplayText = codeForLabel?.text ?: "Noord"
                 val weerSamenvatting = buildString {
                     append("Auto: ")
                     cur.temperature2m?.let { append("${it.roundToInt()}°C, ") }
-                    append("$windLabel ${windForceDisplay}, ")
+                    append("$windDisplayText ${windForceDisplay}, ")
                     append("bewolking ${achtsten}/8")
                     if (rainCode != "geen") append(", $rainLabel")
                 }
