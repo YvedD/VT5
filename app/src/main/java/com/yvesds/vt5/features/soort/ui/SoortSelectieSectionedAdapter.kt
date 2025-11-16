@@ -7,6 +7,7 @@ import android.widget.CompoundButton
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import com.yvesds.vt5.R
 import com.yvesds.vt5.databinding.RijSoortRecentsFooterBinding
 import com.yvesds.vt5.databinding.RijSoortRecentsHeaderBinding
 import com.yvesds.vt5.databinding.RijSoortRecenteBinding

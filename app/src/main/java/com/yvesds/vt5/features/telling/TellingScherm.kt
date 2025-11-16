@@ -71,6 +71,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import kotlin.jvm.Volatile
 import androidx.core.content.edit
+import com.yvesds.vt5.R
 
 /**
  * TellingScherm.kt

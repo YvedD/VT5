@@ -93,7 +93,7 @@ class MetadataScherm : AppCompatActivity() {
     // Scope voor achtergrondtaken
     private val uiScope = CoroutineScope(Job() + Dispatchers.Main)
     private var backgroundLoadJob: Job? = null
-    
+
     // SAF helper for alias manager access
     private lateinit var saf: SaFStorageHelper
 
@@ -147,7 +147,7 @@ class MetadataScherm : AppCompatActivity() {
     /**
      * Eerste fase: laad alleen de noodzakelijke data voor het vullen van de dropdown menus
      * Dit zorgt voor een veel snellere initiële lading
-     * 
+     *
      * OPTIMIZATION: Added progress feedback during minimal load
      */
     private fun loadEssentialData() {
@@ -170,12 +170,12 @@ class MetadataScherm : AppCompatActivity() {
                 try {
                     // Laad de minimale data
                     val repo = ServerDataRepository(this@MetadataScherm)
-                    
+
                     // Update progress: loading codes
                     withContext(Dispatchers.Main) {
                         ProgressDialogHelper.updateMessage(progressDialog, "Telposten laden...")
                     }
-                    
+
                     val minimal = repo.loadMinimalData()
                     snapshot = minimal
 
@@ -200,9 +200,9 @@ class MetadataScherm : AppCompatActivity() {
     /**
      * Plant het laden van de volledige data in de achtergrond
      * terwijl de gebruiker bezig is met het formulier in te vullen
-     * 
+     *
      * Performance: Gebruikt low-priority dispatcher en delay om UI responsiveness te behouden
-     * 
+     *
      * UPDATE: Laadt nu ook de alias index voor SoortSelectieScherm, zodat de complete
      * soortenlijst (alle species uit site_species.json) beschikbaar is voor snelle toegang.
      */
@@ -227,7 +227,7 @@ class MetadataScherm : AppCompatActivity() {
                                 Log.d(TAG, "Background data loading complete - cache warmed for next screen")
                             }
                         }
-                        
+
                         // Also preload alias index for SoortSelectieScherm
                         // This ensures the complete species list is ready
                         if (isActive) {
@@ -433,7 +433,7 @@ class MetadataScherm : AppCompatActivity() {
             .show()
     }
 
-    
+
     /* ---------------- Dropdowns ---------------- */
 
     private fun bindTelpostDropdown() {
