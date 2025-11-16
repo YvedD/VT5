@@ -128,15 +128,6 @@ class TellingScherm : AppCompatActivity() {
     private lateinit var aliasEditor: AliasEditor
     private val safHelper by lazy { SaFStorageHelper(this) }
 
-    // NEW: Helper classes for refactored code
-    private lateinit var logManager: TellingLogManager
-    private lateinit var dialogHelper: TellingDialogHelper
-    private lateinit var backupManager: TellingBackupManager
-    private lateinit var dataProcessor: TellingDataProcessor
-    private lateinit var uiManager: TellingUiManager
-    private lateinit var afrondHandler: TellingAfrondHandler
-    private lateinit var tegelBeheer: TegelBeheer
-
     // Prefs
     private lateinit var prefs: android.content.SharedPreferences
 
@@ -149,6 +140,11 @@ class TellingScherm : AppCompatActivity() {
     // Partial UI debounce + only keep last partial
     private var lastPartialUiUpdateMs: Long = 0L
     private val PARTIAL_UI_DEBOUNCE_MS = 200L
+
+    private val RE_ASR_PREFIX = Regex("(?i)^\\s*asr:\\s*")
+    private val RE_TRIM_RAW_NUMBER = Regex("\\s+\\d+(?:[.,]\\d+)?\$")
+    private val RE_TRAILING_NUMBER = Regex("^(.*?)(?:\\s+(\\d+)(?:[.,]\\d+)?)?\$")
+    //private val RE_PLUS_NUMBER = Regex("\\+?(\\d+)")
 
     // Cached MatchContext to avoid rebuilding on every parse
     @Volatile
@@ -291,15 +287,11 @@ class TellingScherm : AppCompatActivity() {
         setContentView(binding.root)
 
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        
-        // Initialize helper classes
-        initializeHelpers()
-
-        // Initialize legacy helpers
         aliasEditor = AliasEditor(this, safHelper)
 
-        // Setup UI using UiManager
-        setupUiWithManager()
+        setupPartialsRecyclerView()
+        setupFinalsRecyclerView()
+        setupSpeciesTilesRecyclerView()
 
         // Initialize ViewModel (if you have TellingViewModel in project)
         try {
@@ -307,7 +299,7 @@ class TellingScherm : AppCompatActivity() {
             // Observe VM lists and keep adapters in sync (this ensures rotation preserves UI)
             viewModel.tiles.observe(this) { tiles ->
                 // update adapter (observer will call submitList callback if configured)
-                uiManager.updateTiles(tiles)
+                tilesAdapter.submitList(tiles)
 
                 // Rebuild cachedMatchContext asynchronously on Default to avoid blocking parse path
                 lifecycleScope.launch(Dispatchers.Default) {
@@ -322,14 +314,25 @@ class TellingScherm : AppCompatActivity() {
                 }
             }
             viewModel.partials.observe(this) { list ->
-                uiManager.updatePartials(list)
+                partialsAdapter.submitList(list) {
+                    if (list.isNotEmpty()) {
+                        binding.recyclerViewSpeechPartials.scrollToPosition(list.size - 1)
+                    }
+                }
             }
+            //viewModel.finals.observe(this) { finalsAdapter.submitList(it) }
             viewModel.finals.observe(this) { list ->
-                uiManager.updateFinals(list)
+                finalsAdapter.submitList(list) {
+                    if (list.isNotEmpty()) {
+                        binding.recyclerViewSpeechFinals.scrollToPosition(list.size - 1)
+                    }
+                }
             }
         } catch (ex: Exception) {
             Log.w(TAG, "TellingViewModel not available or failed to init: ${ex.message}")
         }
+
+        setupButtons()
 
         // Register receiver to keep cached context and ASR in sync when AliasManager reloads index
         try {
@@ -345,165 +348,6 @@ class TellingScherm : AppCompatActivity() {
         loadPreselection()
     }
 
-    /**
-     * Initialize all helper classes for refactored code.
-     */
-    private fun initializeHelpers() {
-        logManager = TellingLogManager(MAX_LOG_ROWS)
-        dialogHelper = TellingDialogHelper(this, this, safHelper)
-        backupManager = TellingBackupManager(this, safHelper)
-        dataProcessor = TellingDataProcessor()
-        uiManager = TellingUiManager(this, this, binding)
-        afrondHandler = TellingAfrondHandler(this, backupManager, dataProcessor)
-        
-        // Initialize TegelBeheer with UI callback
-        tegelBeheer = TegelBeheer(object : TegelUi {
-            override fun submitTiles(list: List<SoortTile>) {
-                // Convert SoortTile to SoortRow for adapter
-                val rows = list.map { SoortRow(it.soortId, it.naam, it.count) }
-                tilesAdapter.submitList(rows)
-                if (::viewModel.isInitialized) {
-                    viewModel.setTiles(rows)
-                }
-            }
-            
-            override fun onTileCountUpdated(soortId: String, newCount: Int) {
-                // Optional: trigger any additional actions on count update
-            }
-        })
-    }
-
-    /**
-     * Setup UI using the UiManager helper.
-     */
-    private fun setupUiWithManager() {
-        // Setup RecyclerViews
-        uiManager.setupPartialsRecyclerView()
-        uiManager.setupFinalsRecyclerView()
-        uiManager.setupSpeciesTilesRecyclerView()
-
-        // Store adapter references for backward compatibility
-        partialsAdapter = uiManager.getCurrentPartials().let { SpeechLogAdapter().apply { submitList(it) } }
-        finalsAdapter = uiManager.getCurrentFinals().let { SpeechLogAdapter().apply { submitList(it) } }
-        tilesAdapter = SpeciesTileAdapter { position -> 
-            showNumberInputDialog(position) 
-        }
-        
-        // Setup callbacks for UI manager
-        uiManager.onPartialTapCallback = { pos, row -> handlePartialTap(pos, row) }
-        uiManager.onFinalTapCallback = { pos, row -> handleFinalTap(pos, row) }
-        uiManager.onTileTapCallback = { pos -> showNumberInputDialog(pos) }
-        uiManager.onAddSoortenCallback = { openSoortSelectieForAdd() }
-        uiManager.onAfrondenCallback = { handleAfrondenWithConfirmation() }
-        uiManager.onSaveCloseCallback = { tiles -> handleSaveClose(tiles) }
-
-        // Setup buttons
-        uiManager.setupButtons()
-    }
-
-    /* ---------- UI Callback Handlers ---------- */
-
-    /**
-     * Handle tap on partial log entry - show alias dialog.
-     */
-    private fun handlePartialTap(pos: Int, row: SpeechLogRow) {
-        when (row.bron) {
-            "partial", "raw" -> {
-                val (nameOnly, cnt) = parseNameAndCountFromDisplay(row.tekst)
-                ensureAvailableSpeciesFlat { flat ->
-                    dialogHelper.showAddAliasDialog(nameOnly, cnt, flat, 
-                        onAliasAdded = { speciesId, canonical, count ->
-                            addLog("Alias toegevoegd: '$nameOnly' → $canonical", "alias")
-                            Toast.makeText(this, "Alias opgeslagen (buffer).", Toast.LENGTH_SHORT).show()
-                            
-                            lifecycleScope.launch {
-                                Toast.makeText(this@TellingScherm, "Index wordt bijgewerkt...", Toast.LENGTH_SHORT).show()
-                                val ok = withContext(Dispatchers.IO) {
-                                    try {
-                                        AliasManager.forceRebuildCborNow(this@TellingScherm, safHelper)
-                                        true
-                                    } catch (ex: Exception) {
-                                        Log.w(TAG, "forceRebuildCborNow failed: ${ex.message}", ex)
-                                        false
-                                    }
-                                }
-                                if (ok) {
-                                    Toast.makeText(this@TellingScherm, "Alias opgeslagen en index bijgewerkt", Toast.LENGTH_SHORT).show()
-                                    refreshAliasesRuntimeAsync()
-                                } else {
-                                    Toast.makeText(this@TellingScherm, "Alias opgeslagen (index update later)", Toast.LENGTH_LONG).show()
-                                }
-                            }
-                            
-                            if (count > 0) {
-                                addSpeciesToTilesIfNeeded(speciesId, canonical, count)
-                            }
-                        },
-                        fragmentManager = supportFragmentManager
-                    )
-                }
-            }
-        }
-    }
-
-    /**
-     * Handle tap on final log entry - open annotation screen.
-     */
-    private fun handleFinalTap(pos: Int, row: SpeechLogRow) {
-        if (row.bron == "final") {
-            val intent = Intent(this, AnnotatieScherm::class.java).apply {
-                putExtra(AnnotatieScherm.EXTRA_TEXT, row.tekst)
-                putExtra(AnnotatieScherm.EXTRA_TS, row.ts)
-                putExtra("extra_row_pos", pos)
-            }
-            annotationLauncher.launch(intent)
-        }
-    }
-
-    /**
-     * Handle Afronden button with confirmation dialog.
-     */
-    private fun handleAfrondenWithConfirmation() {
-        val builder = AlertDialog.Builder(this)
-            .setTitle("Afronden bevestigen")
-            .setMessage("Weet je zeker dat je wilt afronden en de telling uploaden?")
-            .setPositiveButton("Ja") { _, _ ->
-                lifecycleScope.launch {
-                    val dialog = ProgressDialogHelper.show(this@TellingScherm, "Bezig met afronden upload...")
-                    try { 
-                        handleAfronden() 
-                    } finally { 
-                        dialog.dismiss() 
-                    }
-                }
-            }
-            .setNegativeButton("Nee", null)
-        
-        val dlg = builder.show()
-        dialogHelper.styleAlertDialogTextToWhite(dlg)
-    }
-
-    /**
-     * Handle Save/Close button - show current status screen.
-     */
-    private fun handleSaveClose(tiles: List<SoortRow>) {
-        val ids = ArrayList<String>(tiles.size)
-        val names = ArrayList<String>(tiles.size)
-        val counts = ArrayList<String>(tiles.size)
-        for (row in tiles) {
-            ids.add(row.soortId)
-            names.add(row.naam)
-            counts.add(row.count.toString())
-        }
-
-        val intent = Intent(this, HuidigeStandScherm::class.java).apply {
-            putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_IDS, ids)
-            putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_NAMEN, names)
-            putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_AANTALLEN, counts)
-        }
-        startActivity(intent)
-    }
-
     override fun onDestroy() {
         try {
             unregisterReceiver(aliasReloadReceiver)
@@ -516,7 +360,190 @@ class TellingScherm : AppCompatActivity() {
         super.onDestroy()
     }
 
-    /* ---------- UI setup (now delegated to UiManager) ---------- */
+    /* ---------- UI setup ---------- */
+    private fun setupPartialsRecyclerView() {
+        val layoutManager = LinearLayoutManager(this)
+        layoutManager.stackFromEnd = true
+        binding.recyclerViewSpeechPartials.layoutManager = layoutManager
+        binding.recyclerViewSpeechPartials.setHasFixedSize(true)
+        partialsAdapter = SpeechLogAdapter()
+        partialsAdapter.showPartialsInRow = true
+        binding.recyclerViewSpeechPartials.adapter = partialsAdapter
+
+        val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onSingleTapUp(e: MotionEvent): Boolean {
+                val child = binding.recyclerViewSpeechPartials.findChildViewUnder(e.x, e.y)
+                if (child != null) {
+                    val pos = binding.recyclerViewSpeechPartials.getChildAdapterPosition(child)
+                    if (pos != RecyclerView.NO_POSITION) {
+                        val row = partialsAdapter.currentList.getOrNull(pos) ?: return true
+                        when (row.bron) {
+                            "partial" -> {
+                                val (nameOnly, cnt) = parseNameAndCountFromDisplay(row.tekst)
+                                ensureAvailableSpeciesFlat { flat ->
+                                    val dlg = AddAliasDialog.newInstance(listOf(nameOnly), flat)
+                                    dlg.listener = object : AddAliasDialog.AddAliasListener {
+                                        override fun onAliasAssigned(speciesId: String, aliasText: String) {
+                                            lifecycleScope.launch {
+                                                val snapshot = ServerDataCache.getOrLoad(this@TellingScherm)
+                                                val canonical = snapshot.speciesById[speciesId]?.soortnaam ?: aliasText
+                                                val tilename = snapshot.speciesById[speciesId]?.soortkey
+
+                                                val added = AliasManager.addAlias(
+                                                    context = this@TellingScherm,
+                                                    saf = safHelper,
+                                                    speciesId = speciesId,
+                                                    aliasText = aliasText.trim(),
+                                                    canonical = canonical,
+                                                    tilename = tilename
+                                                )
+
+                                                if (added) {
+                                                    addLog("Alias toegevoegd: '$aliasText' → $canonical", "alias")
+                                                    Toast.makeText(this@TellingScherm, "Alias opgeslagen (buffer).", Toast.LENGTH_SHORT).show()
+
+                                                    lifecycleScope.launch {
+                                                        Toast.makeText(this@TellingScherm, "Index wordt bijgewerkt...", Toast.LENGTH_SHORT).show()
+                                                        val ok = withContext(Dispatchers.IO) {
+                                                            try {
+                                                                AliasManager.forceRebuildCborNow(this@TellingScherm, safHelper)
+                                                                true
+                                                            } catch (ex: Exception) {
+                                                                Log.w(TAG, "forceRebuildCborNow failed: ${ex.message}", ex)
+                                                                false
+                                                            }
+                                                        }
+                                                        if (ok) {
+                                                            Toast.makeText(this@TellingScherm, "Alias opgeslagen en index bijgewerkt", Toast.LENGTH_SHORT).show()
+                                                            // Zorg dat runtime alias index en ASR herladen worden zodat de nieuwe alias meteen actief is
+                                                            refreshAliasesRuntimeAsync()
+                                                        } else {
+                                                            Toast.makeText(this@TellingScherm, "Alias opgeslagen (index update later)", Toast.LENGTH_LONG).show()
+                                                        }
+                                                    }
+
+                                                    if (cnt > 0) {
+                                                        addSpeciesToTilesIfNeeded(speciesId, canonical, cnt)
+                                                    }
+                                                } else {
+                                                    Toast.makeText(this@TellingScherm, "Alias niet toegevoegd (duplicaat of ongeldig)", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        }
+                                    }
+                                    dlg.show(supportFragmentManager, "addAlias")
+                                }
+                            }
+                            else -> {
+                                if (row.bron == "raw") {
+                                    val (nameOnly, cnt) = parseNameAndCountFromDisplay(row.tekst)
+                                    ensureAvailableSpeciesFlat { flat ->
+                                        val dlg = AddAliasDialog.newInstance(listOf(nameOnly), flat)
+                                        dlg.listener = object : AddAliasDialog.AddAliasListener {
+                                            override fun onAliasAssigned(speciesId: String, aliasText: String) {
+                                                lifecycleScope.launch {
+                                                    val snapshot = ServerDataCache.getOrLoad(this@TellingScherm)
+                                                    val canonical = snapshot.speciesById[speciesId]?.soortnaam ?: aliasText
+                                                    val added = AliasManager.addAlias(
+                                                        context = this@TellingScherm,
+                                                        saf = safHelper,
+                                                        speciesId = speciesId,
+                                                        aliasText = aliasText.trim(),
+                                                        canonical = canonical,
+                                                        tilename = snapshot.speciesById[speciesId]?.soortkey
+                                                    )
+
+                                                    if (added) {
+                                                        addLog("Alias toegevoegd: '$aliasText' → $canonical", "alias")
+                                                        Toast.makeText(this@TellingScherm, "Alias opgeslagen (buffer).", Toast.LENGTH_SHORT).show()
+
+                                                        lifecycleScope.launch {
+                                                            Toast.makeText(this@TellingScherm, "Index wordt bijgewerkt...", Toast.LENGTH_SHORT).show()
+                                                            val ok = withContext(Dispatchers.IO) {
+                                                                try {
+                                                                    AliasManager.forceRebuildCborNow(this@TellingScherm, safHelper)
+                                                                    true
+                                                                } catch (ex: Exception) {
+                                                                    Log.w(TAG, "forceRebuildCborNow failed: ${ex.message}", ex)
+                                                                    false
+                                                                }
+                                                            }
+                                                            if (ok) {
+                                                                Toast.makeText(this@TellingScherm, "Alias opgeslagen en index bijgewerkt", Toast.LENGTH_SHORT).show()
+                                                                // Herlaad runtime index en ASR zodat alias direct gebruikt wordt
+                                                                refreshAliasesRuntimeAsync()
+                                                            } else {
+                                                                Toast.makeText(this@TellingScherm, "Alias opgeslagen (index update later)", Toast.LENGTH_LONG).show()
+                                                            }
+                                                        }
+
+                                                        if (cnt > 0) addSpeciesToTilesIfNeeded(speciesId, canonical, cnt)
+                                                    } else {
+                                                        Toast.makeText(this@TellingScherm, "Alias niet toegevoegd (duplicaat of ongeldig)", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        dlg.show(supportFragmentManager, "addAlias")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                return true
+            }
+        })
+
+        binding.recyclerViewSpeechPartials.addOnItemTouchListener(object : RecyclerView.OnItemTouchListener {
+            override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
+                return gestureDetector.onTouchEvent(e)
+            }
+            override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) {}
+            override fun onRequestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {}
+        })
+    }
+
+    private fun setupFinalsRecyclerView() {
+        val layoutManager = LinearLayoutManager(this)
+        layoutManager.stackFromEnd = true
+        binding.recyclerViewSpeechFinals.layoutManager = layoutManager
+        binding.recyclerViewSpeechFinals.setHasFixedSize(true)
+        finalsAdapter = SpeechLogAdapter()
+        finalsAdapter.showPartialsInRow = false
+        binding.recyclerViewSpeechFinals.adapter = finalsAdapter
+
+        // Gesture handling for finals: open AnnotatieScherm on tap (now for result)
+        val gestureDetector = GestureDetector(this, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onSingleTapUp(e: MotionEvent): Boolean {
+                val child = binding.recyclerViewSpeechFinals.findChildViewUnder(e.x, e.y)
+                if (child != null) {
+                    val pos = binding.recyclerViewSpeechFinals.getChildAdapterPosition(child)
+                    if (pos != RecyclerView.NO_POSITION) {
+                        val row = finalsAdapter.currentList.getOrNull(pos) ?: return true
+                        if (row.bron == "final") {
+                            // Start AnnotatieScherm for result. Pass row position so we can update correct row later.
+                            val intent = Intent(this@TellingScherm, AnnotatieScherm::class.java).apply {
+                                putExtra(AnnotatieScherm.EXTRA_TEXT, row.tekst) // legacy compatibility
+                                putExtra(AnnotatieScherm.EXTRA_TS, row.ts)
+                                putExtra("extra_row_pos", pos)
+                            }
+                            annotationLauncher.launch(intent)
+                        }
+                    }
+                }
+                return true
+            }
+        })
+
+        binding.recyclerViewSpeechFinals.addOnItemTouchListener(object : RecyclerView.OnItemTouchListener {
+            override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
+                return gestureDetector.onTouchEvent(e)
+            }
+            override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) {}
+            override fun onRequestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {}
+        })
+    }
 
     // Ensure availableSpeciesFlat is loaded; onReady is invoked on Main with the flat list.
     private fun ensureAvailableSpeciesFlat(onReady: (List<String>) -> Unit) {
@@ -544,21 +571,96 @@ class TellingScherm : AppCompatActivity() {
     /* ---------- TILE click dialog (adds to existing count) ---------- */
     private fun showNumberInputDialog(position: Int) {
         val current = tilesAdapter.currentList
-        dialogHelper.showNumberInputDialog(position, current) { soortId, delta ->
-            lifecycleScope.launch {
-                // Use tegelBeheer to update tile count
-                val naam = tegelBeheer.findNaamBySoortId(soortId) ?: "Unknown"
-                tegelBeheer.verhoogSoortAantal(soortId, delta)
+        if (position !in current.indices) return
+        val row = current[position]
 
-                // Behave exactly like an ASR final:
-                addFinalLog("$naam -> +$delta")
-                RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
-                collectFinalAsRecord(soortId, delta)
-            }
+        val input = EditText(this).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER
+            hint = "Aantal om toe te voegen"
+            setText("")
+            filters = arrayOf(InputFilter.LengthFilter(6))
         }
+
+        AlertDialog.Builder(this)
+            .setTitle(row.naam)
+            .setMessage("Aantal toevoegen aan bestaand aantal (${row.count}):")
+            .setView(input)
+            .setNegativeButton("Annuleren", null)
+            .setPositiveButton("OK") { _, _ ->
+                val v = input.text?.toString()?.trim()
+                val delta = v?.toIntOrNull() ?: 0
+                if (delta <= 0) {
+                    Toast.makeText(this, "Geen verandering.", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                lifecycleScope.launch {
+                    // Update tile count internally (no separate manual log)
+                    updateSoortCountInternal(row.soortId, delta)
+
+                    // Behave exactly like an ASR final:
+                    addFinalLog("${row.naam} -> +$delta")
+                    RecentSpeciesStore.recordUse(this@TellingScherm, row.soortId, maxEntries = 30)
+                    collectFinalAsRecord(row.soortId, delta)
+                }
+            }
+            .show()
     }
 
+    private fun setupSpeciesTilesRecyclerView() {
+        val flm = FlexboxLayoutManager(this).apply {
+            flexDirection = FlexDirection.ROW
+            flexWrap = FlexWrap.WRAP
+            justifyContent = JustifyContent.FLEX_START
+            alignItems = AlignItems.FLEX_START
+        }
+        binding.recyclerViewSpecies.layoutManager = flm
+        binding.recyclerViewSpecies.setHasFixedSize(true)
+        binding.recyclerViewSpecies.itemAnimator?.changeDuration = 0
 
+        tilesAdapter = SpeciesTileAdapter(onTileClick = { pos -> showNumberInputDialog(pos) })
+        binding.recyclerViewSpecies.adapter = tilesAdapter
+    }
+
+    private fun setupButtons() {
+        binding.btnAddSoorten.setOnClickListener { openSoortSelectieForAdd() }
+
+        // Afronden: confirmation popup before proceeding
+        binding.btnAfronden.setOnClickListener {
+            val builder = AlertDialog.Builder(this@TellingScherm)
+                .setTitle("Afronden bevestigen")
+                .setMessage("Weet je zeker dat je wilt afronden en de telling uploaden?")
+                .setPositiveButton("Ja") { _, _ ->
+                    lifecycleScope.launch {
+                        val dialog = ProgressDialogHelper.show(this@TellingScherm, "Bezig met afronden upload...")
+                        try { handleAfronden() } finally { dialog.dismiss() }
+                    }
+                }
+                .setNegativeButton("Nee", null)
+
+            val dlg = builder.show()
+            styleAlertDialogTextToWhite(dlg)
+        }
+
+        binding.btnSaveClose.setOnClickListener {
+            // Repurposed: show current status screen with current tile data (no popup)
+            val current = tilesAdapter.currentList
+            val ids = ArrayList<String>(current.size)
+            val names = ArrayList<String>(current.size)
+            val counts = ArrayList<String>(current.size)
+            for (row in current) {
+                ids.add(row.soortId)
+                names.add(row.naam)
+                counts.add(row.count.toString())
+            }
+
+            val intent = Intent(this@TellingScherm, HuidigeStandScherm::class.java).apply {
+                putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_IDS, ids)
+                putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_NAMEN, names)
+                putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_AANTALLEN, counts)
+            }
+            startActivity(intent)
+        }
+    }
 
     /* Preselection: load initial tiles (if app passed a preselection state) */
     private fun loadPreselection() {
@@ -574,7 +676,7 @@ class TellingScherm : AppCompatActivity() {
                         val speciesById = snapshot.speciesById
                         val initialList = ids.mapNotNull { sid ->
                             val naam = speciesById[sid]?.soortnaam ?: return@mapNotNull null
-                            SoortTile(sid, naam, 0)
+                            SoortRow(sid, naam, 0)
                         }.sortedBy { it.naam.lowercase(Locale.getDefault()) }
 
                         snapshot to initialList
@@ -587,8 +689,9 @@ class TellingScherm : AppCompatActivity() {
                         return@launch
                     }
 
-                    // Use tegelBeheer to set tiles
-                    tegelBeheer.setTiles(initial)
+                    tilesAdapter.submitList(initial)
+                    if (::viewModel.isInitialized) viewModel.setTiles(initial)
+
                     addLog("Telling gestart met ${initial.size} soorten.", "systeem")
                     dialog.dismiss()
 
@@ -635,8 +738,7 @@ class TellingScherm : AppCompatActivity() {
     private suspend fun buildMatchContext(): MatchContext = withContext(Dispatchers.IO) {
         val snapshot = ServerDataCache.getOrLoad(this@TellingScherm)
 
-        // Use tegelBeheer to get current tiles
-        val tiles = tegelBeheer.getTiles().map { it.soortId }.toSet()
+        val tiles = tilesAdapter.currentList.map { it.soortId }.toSet()
 
         val telpostId = TellingSessionManager.preselectState.value.telpostId
         val siteAllowed = telpostId?.let { id ->
@@ -683,7 +785,120 @@ class TellingScherm : AppCompatActivity() {
 
             // heavy parsing on Default; reuse aliasParser instance
             speechRecognitionManager.setOnHypothesesListener { hypotheses, partials ->
-                handleSpeechHypotheses(hypotheses, partials)
+                val receivedAt = System.currentTimeMillis()
+                lifecycleScope.launch(Dispatchers.Default) {
+                    val parseStartAt = System.currentTimeMillis()
+                    Log.d(TAG, "Hypotheses received at $receivedAt, starting parse at $parseStartAt (hypotheses=${hypotheses.size}, partials=${partials.size})")
+                    try {
+                        val matchContext = cachedMatchContext ?: run {
+                            val t0 = System.currentTimeMillis()
+                            val mc = buildMatchContext()
+                            cachedMatchContext = mc
+                            Log.d(TAG, "buildMatchContext (on-the-fly) ms=${System.currentTimeMillis() - t0}")
+                            mc
+                        }
+
+                        val result = aliasParser.parseSpokenWithHypotheses(hypotheses, matchContext, partials, asrWeight = 0.4)
+                        val parseEndAt = System.currentTimeMillis()
+                        Log.d(TAG, "Parse finished at $parseEndAt (parseDuration=${parseEndAt - parseStartAt} ms)")
+
+                        withContext(Dispatchers.Main) {
+                            val uiStartAt = System.currentTimeMillis()
+                            try {
+                                when (result) {
+                                    is MatchResult.AutoAccept -> {
+                                        val formatted = "${result.candidate.displayName} -> +${result.amount}"
+                                        addFinalLog(formatted)
+                                        updateSoortCountInternal(result.candidate.speciesId, result.amount)
+                                        RecentSpeciesStore.recordUse(this@TellingScherm, result.candidate.speciesId, maxEntries = 30)
+
+                                        // Collect record (do NOT auto-upload: we save pendingRecords for Afronden)
+                                        collectFinalAsRecord(result.candidate.speciesId, result.amount)
+                                    }
+                                    is MatchResult.AutoAcceptAddPopup -> {
+                                        val cnt = result.amount
+                                        val prettyName = result.candidate.displayName
+                                        val speciesId = result.candidate.speciesId
+
+                                        // NEW: if species already present in tiles, bypass popup and directly count it
+                                        val presentInTiles = tilesAdapter.currentList.any { it.soortId == speciesId }
+                                        if (presentInTiles) {
+                                            addFinalLog("$prettyName -> +$cnt")
+                                            updateSoortCountInternal(speciesId, cnt)
+                                            RecentSpeciesStore.recordUse(this@TellingScherm, speciesId, maxEntries = 30)
+
+                                            // Collect record
+                                            collectFinalAsRecord(speciesId, cnt)
+                                        } else {
+                                            val msg = "Soort \"$prettyName\" herkend met aantal $cnt.\n\nToevoegen?"
+                                            val dlg = AlertDialog.Builder(this@TellingScherm)
+                                                .setTitle("Soort toevoegen?")
+                                                .setMessage(msg)
+                                                .setPositiveButton("Ja") { _, _ ->
+                                                    addSpeciesToTiles(result.candidate.speciesId, result.candidate.displayName, cnt)
+                                                    addFinalLog("${result.candidate.displayName} -> +$cnt")
+                                                    // record collected in addSpeciesToTiles? ensure collected as well:
+                                                    collectFinalAsRecord(result.candidate.speciesId, cnt)
+                                                }
+                                                .setNegativeButton("Nee", null)
+                                                .show()
+                                            styleAlertDialogTextToWhite(dlg)
+                                        }
+                                    }
+                                    is MatchResult.MultiMatch -> {
+                                        result.matches.forEach { match ->
+                                            val sid = match.candidate.speciesId
+                                            val cnt = match.amount
+                                            val present = tilesAdapter.currentList.any { it.soortId == sid }
+                                            if (present) {
+                                                addFinalLog("${match.candidate.displayName} -> +${cnt}")
+                                                updateSoortCountInternal(sid, cnt)
+                                                RecentSpeciesStore.recordUse(this@TellingScherm, sid, maxEntries = 30)
+
+                                                // Collect each recognized match
+                                                collectFinalAsRecord(sid, cnt)
+                                            } else {
+                                                val prettyName = match.candidate.displayName
+                                                val msg = "Soort \"$prettyName\" (${cnt}x) herkend.\n\nToevoegen?"
+                                                val dlg = AlertDialog.Builder(this@TellingScherm)
+                                                    .setTitle("Soort toevoegen?")
+                                                    .setMessage(msg)
+                                                    .setPositiveButton("Ja") { _, _ ->
+                                                        addSpeciesToTiles(match.candidate.speciesId, prettyName, cnt)
+                                                        addFinalLog("$prettyName -> +${cnt}")
+                                                        collectFinalAsRecord(match.candidate.speciesId, cnt)
+                                                    }
+                                                    .setNegativeButton("Nee", null)
+                                                    .show()
+                                                styleAlertDialogTextToWhite(dlg)
+                                            }
+                                        }
+                                    }
+                                    is MatchResult.SuggestionList -> {
+                                        val cnt = extractCountFromText(result.hypothesis)
+                                        showSuggestionBottomSheet(result.candidates, cnt)
+                                    }
+                                    is MatchResult.NoMatch -> {
+                                        val now = System.currentTimeMillis()
+                                        if (now - lastPartialUiUpdateMs >= PARTIAL_UI_DEBOUNCE_MS) {
+                                            upsertPartialLog(result.hypothesis)
+                                            lastPartialUiUpdateMs = now
+                                        } else {
+                                            upsertPartialLog(result.hypothesis)
+                                        }
+                                    }
+                                }
+                            } catch (ex: Exception) {
+                                Log.w(TAG, "Hypotheses handling (UI) failed: ${ex.message}", ex)
+                            } finally {
+                                val uiEndAt = System.currentTimeMillis()
+                                Log.d(TAG, "UI handling finished at $uiEndAt (uiDuration=${uiEndAt - uiStartAt} ms)")
+                            }
+                        }
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "Hypotheses handling (background) failed: ${ex.message}", ex)
+                    }
+                }
             }
 
             speechRecognitionManager.setOnRawResultListener { rawText ->
@@ -703,201 +918,186 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
-    /**
-     * Handle speech recognition hypotheses and process match results.
-     */
-    private fun handleSpeechHypotheses(hypotheses: List<String>, partials: List<String>) {
-        val receivedAt = System.currentTimeMillis()
-        lifecycleScope.launch(Dispatchers.Default) {
-            val parseStartAt = System.currentTimeMillis()
-            Log.d(TAG, "Hypotheses received at $receivedAt, starting parse at $parseStartAt (hypotheses=${hypotheses.size}, partials=${partials.size})")
-            try {
-                val matchContext = cachedMatchContext ?: run {
-                    val t0 = System.currentTimeMillis()
-                    val mc = buildMatchContext()
-                    cachedMatchContext = mc
-                    Log.d(TAG, "buildMatchContext (on-the-fly) ms=${System.currentTimeMillis() - t0}")
-                    mc
+    /* ---------- Helper log functions (routed to partials/finals adapters) ---------- */
+
+    // Primary addLog implementation: append a row (used by callers)
+    private fun addLog(msgIn: String, bron: String) {
+        // Filter system messages: only include "Luisteren..." in partials. Other system messages are ignored here.
+        if (bron == "systeem" && !msgIn.contains("Luisteren", ignoreCase = true)) {
+            return
+        }
+
+        val now = System.currentTimeMillis() / 1000L
+        val cleaned = run {
+            var m = msgIn.replace(RE_ASR_PREFIX, "")
+            if (bron == "raw") {
+                m = m.replace(RE_TRIM_RAW_NUMBER, "")
+            }
+            m.trim()
+        }
+
+        val newRow = SpeechLogRow(ts = now, tekst = cleaned, bron = bron)
+
+        lifecycleScope.launch {
+            val newList = withContext(Dispatchers.Default) {
+                if (bron == "final") {
+                    val current = if (::viewModel.isInitialized) viewModel.finals.value.orEmpty() else finalsAdapter.currentList
+                    val list = ArrayList(current)
+                    list.add(newRow)
+                    if (list.size > MAX_LOG_ROWS) {
+                        repeat(list.size - MAX_LOG_ROWS) { list.removeAt(0) }
+                    }
+                    list
+                } else {
+                    val current = if (::viewModel.isInitialized) viewModel.partials.value.orEmpty() else partialsAdapter.currentList
+                    val list = ArrayList(current)
+                    list.add(newRow)
+                    if (list.size > MAX_LOG_ROWS) {
+                        repeat(list.size - MAX_LOG_ROWS) { list.removeAt(0) }
+                    }
+                    list
                 }
+            }
 
-                val result = aliasParser.parseSpokenWithHypotheses(hypotheses, matchContext, partials, asrWeight = 0.4)
-                val parseEndAt = System.currentTimeMillis()
-                Log.d(TAG, "Parse finished at $parseEndAt (parseDuration=${parseEndAt - parseStartAt} ms)")
-
-                withContext(Dispatchers.Main) {
-                    val uiStartAt = System.currentTimeMillis()
-                    try {
-                        handleMatchResult(result)
-                    } catch (ex: Exception) {
-                        Log.w(TAG, "Hypotheses handling (UI) failed: ${ex.message}", ex)
-                    } finally {
-                        val uiEndAt = System.currentTimeMillis()
-                        Log.d(TAG, "UI handling finished at $uiEndAt (uiDuration=${uiEndAt - uiStartAt} ms)")
+            withContext(Dispatchers.Main) {
+                if (::viewModel.isInitialized) {
+                    // UPDATE VIEWMODEL ONLY — observers will update adapters once.
+                    if (bron == "final") {
+                        viewModel.setFinals(newList)
+                        // remove 'partial' rows from partials (keep non-partial logs)
+                        val preserved = viewModel.partials.value?.filter { it.bron != "partial" }.orEmpty()
+                        viewModel.setPartials(preserved)
+                    } else {
+                        viewModel.setPartials(newList)
+                    }
+                } else {
+                    // Fallback: no ViewModel — update adapter directly (legacy behavior)
+                    if (bron == "final") {
+                        finalsAdapter.submitList(newList) {
+                            binding.recyclerViewSpeechFinals.scrollToPosition(newList.size - 1)
+                        }
+                        // clear partials from UI
+                        val preserved = partialsAdapter.currentList.filter { it.bron != "partial" }
+                        partialsAdapter.submitList(preserved)
+                    } else {
+                        partialsAdapter.submitList(newList) {
+                            binding.recyclerViewSpeechPartials.scrollToPosition(newList.size - 1)
+                        }
                     }
                 }
-            } catch (ex: Exception) {
-                Log.w(TAG, "Hypotheses handling (background) failed: ${ex.message}", ex)
             }
         }
     }
 
-    /**
-     * Handle different types of match results from speech parsing.
-     */
-    private fun handleMatchResult(result: MatchResult) {
-        when (result) {
-            is MatchResult.AutoAccept -> {
-                handleAutoAcceptMatch(result)
-            }
-            is MatchResult.AutoAcceptAddPopup -> {
-                handleAutoAcceptAddPopup(result)
-            }
-            is MatchResult.MultiMatch -> {
-                handleMultiMatch(result)
-            }
-            is MatchResult.SuggestionList -> {
-                val cnt = logManager.extractCountFromText(result.hypothesis)
-                showSuggestionBottomSheet(result.candidates, cnt)
-            }
-            is MatchResult.NoMatch -> {
-                val now = System.currentTimeMillis()
-                if (now - lastPartialUiUpdateMs >= PARTIAL_UI_DEBOUNCE_MS) {
-                    upsertPartialLog(result.hypothesis)
-                    lastPartialUiUpdateMs = now
-                } else {
-                    upsertPartialLog(result.hypothesis)
-                }
-            }
-        }
-    }
-
-    private fun handleAutoAcceptMatch(result: MatchResult.AutoAccept) {
-        recordSpeciesCount(result.candidate.speciesId, result.candidate.displayName, result.amount)
-    }
-
-    private fun handleAutoAcceptAddPopup(result: MatchResult.AutoAcceptAddPopup) {
-        val cnt = result.amount
-        val prettyName = result.candidate.displayName
-        val speciesId = result.candidate.speciesId
-
-        // Check if species is already in tiles using tegelBeheer
-        val presentInTiles = tegelBeheer.findIndexBySoortId(speciesId) >= 0
-        if (presentInTiles) {
-            recordSpeciesCount(speciesId, prettyName, cnt)
-        } else {
-            showAddSpeciesConfirmationDialog(speciesId, prettyName, cnt)
-        }
-    }
-
-    /**
-     * Record a species count (add final log, update count, collect record).
-     */
-    private fun recordSpeciesCount(speciesId: String, displayName: String, count: Int) {
-        addFinalLog("$displayName -> +$count")
-        updateSoortCountInternal(speciesId, count)
-        RecentSpeciesStore.recordUse(this, speciesId, maxEntries = 25)
-        collectFinalAsRecord(speciesId, count)
-    }
-
-    /**
-     * Show confirmation dialog for adding a new species to tiles.
-     */
-    private fun showAddSpeciesConfirmationDialog(speciesId: String, displayName: String, count: Int) {
-        val msg = "Soort \"$displayName\" herkend met aantal $count.\n\nToevoegen?"
-        val dlg = AlertDialog.Builder(this)
-            .setTitle("Soort toevoegen?")
-            .setMessage(msg)
-            .setPositiveButton("Ja") { _, _ ->
-                addSpeciesToTiles(speciesId, displayName, count)
-                addFinalLog("$displayName -> +$count")
-                collectFinalAsRecord(speciesId, count)
-            }
-            .setNegativeButton("Nee", null)
-            .show()
-        dialogHelper.styleAlertDialogTextToWhite(dlg)
-    }
-
-    private fun handleMultiMatch(result: MatchResult.MultiMatch) {
-        result.matches.forEach { match ->
-            val sid = match.candidate.speciesId
-            val cnt = match.amount
-            val present = tegelBeheer.findIndexBySoortId(sid) >= 0
-            if (present) {
-                recordSpeciesCount(sid, match.candidate.displayName, cnt)
-            } else {
-                showAddSpeciesConfirmationDialog(sid, match.candidate.displayName, cnt)
-            }
-        }
-    }
-
-    /* ---------- Helper log functions (delegated to logManager) ---------- */
-
-    // Primary addLog implementation: delegate to logManager then update UI
-    private fun addLog(msgIn: String, bron: String) {
-        val newList = logManager.addLog(msgIn, bron)
-        if (newList != null) {
-            updateLogsUi(newList, bron)
-        }
-    }
-
-    // Parse a text using logManager
+    // Parse a text that can be either:
+    // - raw hypothesis like "atalanta 3" or "atalanta"
+    // - formatted display like "Atalanta -> +3"
+    // Returns Pair(nameOnly, count)
     private fun parseNameAndCountFromDisplay(text: String): Pair<String, Int> {
-        return logManager.parseNameAndCountFromDisplay(text)
-    }
+        val t = text.trim()
+        if (t.isEmpty()) return "" to 0
 
-    // Update logs UI after changes
-    private fun updateLogsUi(newList: List<SpeechLogRow>, bron: String) {
-        lifecycleScope.launch(Dispatchers.Main) {
-            if (::viewModel.isInitialized) {
-                // UPDATE VIEWMODEL ONLY — observers will update adapters once.
-                if (bron == "final" || bron == "raw") {
-                    viewModel.setFinals(newList)
-                    // remove 'partial' rows from partials (keep non-partial logs)
-                    val preserved = logManager.getPartials().filter { it.bron != "partial" }
-                    viewModel.setPartials(preserved)
-                } else {
-                    viewModel.setPartials(newList)
-                }
-            } else {
-                // Fallback: no ViewModel — update adapter via uiManager
-                if (bron == "final" || bron == "raw") {
-                    uiManager.updateFinals(newList)
-                    // clear partials from UI
-                    val preserved = logManager.getPartials().filter { it.bron != "partial" }
-                    uiManager.updatePartials(preserved)
-                } else {
-                    uiManager.updatePartials(newList)
-                }
-            }
+        // Try formatted "Name -> +N"
+        val arrowIdx = t.indexOf("->")
+        if (arrowIdx >= 0) {
+            val left = t.substring(0, arrowIdx).trim()
+            val right = t.substring(arrowIdx + 2).trim()
+            val m = Regex("""\+?(\d+)""").find(right)
+            val cnt = m?.groups?.get(1)?.value?.toIntOrNull() ?: 0
+            return left to cnt
+        }
+
+        // Try trailing number pattern e.g. "Name 3" or "Name 3.0" etc.
+        val m = Regex("""^(.*?)(?:\s+(\d+)(?:[.,]\d+)?)?$""").find(t)
+        return if (m != null) {
+            val name = m.groups[1]?.value?.trim().orEmpty()
+            val cnt = m.groups[2]?.value?.toIntOrNull() ?: 0
+            name to cnt
+        } else {
+            t to 0
         }
     }
 
     // Insert or replace the single partial log entry (bron = "partial")
     // Now ignores blanks and formats partial display to include count when present.
-    // Delegate to logManager for upsertPartialLog
     private fun upsertPartialLog(text: String) {
-        val newList = logManager.upsertPartialLog(text)
-        lifecycleScope.launch(Dispatchers.Main) {
-            if (::viewModel.isInitialized) {
-                viewModel.setPartials(newList)
+        val cleanedRaw = text.trim()
+        // Ignore empty partials (common at start of capture)
+        if (cleanedRaw.isBlank()) return
+
+        // Parse name and count from raw hypothesis — use precompiled regex to avoid allocations
+        val (nameOnly, cnt) = run {
+            val m = RE_TRAILING_NUMBER.find(cleanedRaw)
+            if (m != null) {
+                val name = m.groups[1]?.value?.trim().orEmpty()
+                val c = m.groups[2]?.value?.toIntOrNull() ?: 0
+                name to c
             } else {
-                uiManager.updatePartials(newList)
+                cleanedRaw to 0
+            }
+        }
+
+        // Compose display text: if count present, format "Name -> +N", else plain name
+        val display = if (cnt > 0) "$nameOnly -> +$cnt" else nameOnly
+
+        lifecycleScope.launch {
+            val newList = withContext(Dispatchers.Default) {
+                val current = if (::viewModel.isInitialized) viewModel.partials.value.orEmpty() else partialsAdapter.currentList
+                val filtered = current.filter { it.bron != "partial" }.toMutableList()
+                val now = System.currentTimeMillis() / 1000L
+                filtered.add(SpeechLogRow(ts = now, tekst = display, bron = "partial"))
+                if (filtered.size > MAX_LOG_ROWS) {
+                    repeat(filtered.size - MAX_LOG_ROWS) { filtered.removeAt(0) }
+                }
+                filtered
+            }
+
+            withContext(Dispatchers.Main) {
+                if (::viewModel.isInitialized) {
+                    viewModel.setPartials(newList)
+                } else {
+                    partialsAdapter.submitList(newList) {
+                        binding.recyclerViewSpeechPartials.scrollToPosition(newList.size - 1)
+                    }
+                }
             }
         }
     }
 
-    // Delegate to logManager for addFinalLog
+    // Append a final log entry (bron = "final")
+    // Also remove any existing partials so final doesn't sit next to a stale partial.
+    // Vervang volledige addFinalLog(...) functie door onderstaande versie.
+// Ongeveer vervangt: functie die begon rond regel ~997
+
     private fun addFinalLog(text: String) {
-        val updatedFinals = logManager.addFinalLog(text)
-        val updatedPartials = logManager.getPartials().filter { it.bron != "partial" }
-        
-        lifecycleScope.launch(Dispatchers.Main) {
-            if (::viewModel.isInitialized) {
-                viewModel.setFinals(updatedFinals)
-                viewModel.setPartials(updatedPartials)
-            } else {
-                uiManager.updateFinals(updatedFinals)
-                uiManager.updatePartials(updatedPartials)
+        val now = System.currentTimeMillis() / 1000L
+        val newRow = SpeechLogRow(ts = now, tekst = text, bron = "final")
+
+        lifecycleScope.launch {
+            val updatedFinals = withContext(Dispatchers.Default) {
+                val cur = if (::viewModel.isInitialized) viewModel.finals.value.orEmpty() else finalsAdapter.currentList
+                val finalList = ArrayList(cur)
+                finalList.add(newRow)
+                if (finalList.size > MAX_LOG_ROWS) repeat(finalList.size - MAX_LOG_ROWS) { finalList.removeAt(0) }
+                finalList
+            }
+            val updatedPartials = withContext(Dispatchers.Default) {
+                val cur = if (::viewModel.isInitialized) viewModel.partials.value.orEmpty() else partialsAdapter.currentList
+                val filtered = cur.filter { it.bron != "partial" }.toMutableList()
+                if (filtered.size > MAX_LOG_ROWS) repeat(filtered.size - MAX_LOG_ROWS) { filtered.removeAt(0) }
+                filtered
+            }
+
+            withContext(Dispatchers.Main) {
+                if (::viewModel.isInitialized) {
+                    viewModel.setFinals(updatedFinals)
+                    viewModel.setPartials(updatedPartials)
+                } else {
+                    finalsAdapter.submitList(updatedFinals) {
+                        binding.recyclerViewSpeechFinals.scrollToPosition(updatedFinals.size - 1)
+                    }
+                    partialsAdapter.submitList(updatedPartials)
+                }
             }
         }
     }
@@ -926,25 +1126,21 @@ class TellingScherm : AppCompatActivity() {
                         }
                         .setNegativeButton("Nee", null)
                         .show()
-                    dialogHelper.styleAlertDialogTextToWhite(dlg)
+                    styleAlertDialogTextToWhite(dlg)
                 }
-                RecentSpeciesStore.recordUse(this, chosen.speciesId, maxEntries = 25)
+                RecentSpeciesStore.recordUse(this, chosen.speciesId, maxEntries = 30)
             }
             .setNegativeButton("Annuleer", null)
             .show()
     }
 
     private fun addSpeciesToTilesIfNeeded(speciesId: String, canonical: String, extractedCount: Int) {
-        lifecycleScope.launch {
-            val added = tegelBeheer.voegSoortToeIndienNodig(speciesId, canonical, extractedCount)
-            if (!added) {
-                // Species already exists, just increase count
-                tegelBeheer.verhoogSoortAantal(speciesId, extractedCount)
-            }
-            updateSelectedSpeciesMap()
-            RecentSpeciesStore.recordUse(this@TellingScherm, speciesId, maxEntries = 25)
-            addLog("Soort ${if (added) "toegevoegd" else "bijgewerkt"}: $canonical ($extractedCount)", "systeem")
+        val current = tilesAdapter.currentList
+        if (current.any { it.soortId == speciesId }) {
+            updateSoortCount(speciesId, extractedCount)
+            return
         }
+        addSpeciesToTiles(speciesId, canonical, extractedCount)
     }
 
     private fun addSpeciesToTiles(soortId: String, naam: String, initialCount: Int) {
@@ -953,10 +1149,23 @@ class TellingScherm : AppCompatActivity() {
                 val snapshot = withContext(Dispatchers.IO) { ServerDataCache.getOrLoad(this@TellingScherm) }
                 val canonical = snapshot.speciesById[soortId]?.soortnaam ?: naam
 
-                tegelBeheer.voegSoortToe(soortId, canonical, initialCount, mergeIfExists = true)
-                updateSelectedSpeciesMap()
-                RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
-                addLog("Soort toegevoegd: $canonical ($initialCount)", "systeem")
+                val current = tilesAdapter.currentList
+                if (current.any { it.soortId == soortId }) {
+                    updateSoortCount(soortId, initialCount)
+                    return@launch
+                }
+
+                val newRow = SoortRow(soortId, canonical, initialCount)
+                val updated = ArrayList(current)
+                updated.add(newRow)
+
+                withContext(Dispatchers.Main) {
+                    tilesAdapter.submitList(updated)
+                    if (::viewModel.isInitialized) viewModel.setTiles(updated)
+                    updateSelectedSpeciesMap()
+                    RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 30)
+                    addLog("Soort toegevoegd: $canonical ($initialCount)", "systeem")
+                }
             } catch (ex: Exception) {
                 Log.w(TAG, "addSpeciesToTiles failed: ${ex.message}", ex)
                 addLog("Fout bij toevoegen soort ${naam}", "systeem")
@@ -967,25 +1176,58 @@ class TellingScherm : AppCompatActivity() {
     // Updates tile count and logs as 'manueel' by default (keeps previous behaviour).
     private fun updateSoortCount(soortId: String, count: Int) {
         lifecycleScope.launch {
-            val naam = tegelBeheer.findNaamBySoortId(soortId)
-            if (naam == null) {
+            val currentList = tilesAdapter.currentList
+            val pos = currentList.indexOfFirst { it.soortId == soortId }
+            if (pos == -1) {
                 Log.e(TAG, "Species with ID $soortId not found in the list!")
                 return@launch
             }
 
-            tegelBeheer.verhoogSoortAantal(soortId, count)
-            addLog("$naam -> +$count", "manueel")
-            RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
-            updateSelectedSpeciesMap()
+            val item = currentList[pos]
+            val oldCount = item.count
+            val newCount = oldCount + count
+
+            val updatedList = withContext(Dispatchers.Default) {
+                val tmp = ArrayList(currentList)
+                tmp[pos] = item.copy(count = newCount)
+                tmp
+            }
+
+            withContext(Dispatchers.Main) {
+                tilesAdapter.submitList(updatedList)
+                if (::viewModel.isInitialized) viewModel.updateTiles(updatedList)
+                addLog("${item.naam} -> +$count", "manueel")
+                RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 30)
+                updateSelectedSpeciesMap()
+            }
         }
     }
 
     // Internal update used by parser flows, does NOT create a 'Bijgewerkt' log line.
     private fun updateSoortCountInternal(soortId: String, count: Int) {
         lifecycleScope.launch {
-            tegelBeheer.verhoogSoortAantal(soortId, count)
-            RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
-            updateSelectedSpeciesMap()
+            val currentList = tilesAdapter.currentList
+            val pos = currentList.indexOfFirst { it.soortId == soortId }
+            if (pos == -1) {
+                Log.e(TAG, "Species with ID $soortId not found in the list!")
+                return@launch
+            }
+
+            val item = currentList[pos]
+            val newCount = item.count + count
+
+            val updatedList = withContext(Dispatchers.Default) {
+                val tmp = ArrayList(currentList)
+                tmp[pos] = item.copy(count = newCount)
+                tmp
+            }
+
+            withContext(Dispatchers.Main) {
+                tilesAdapter.submitList(updatedList)
+                if (::viewModel.isInitialized) viewModel.updateTiles(updatedList)
+                RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 30)
+                updateSelectedSpeciesMap()
+            }
         }
     }
 
@@ -1037,13 +1279,13 @@ class TellingScherm : AppCompatActivity() {
                     if (::viewModel.isInitialized) viewModel.addPendingRecord(item)
                 }
 
-                // Try SAF backup, else internal fallback using backupManager
+                // Try SAF backup, else internal fallback
                 try {
-                    val doc = backupManager.writeRecordBackupSaf(tellingId, item)
+                    val doc = writeRecordBackupSaf(this@TellingScherm, tellingId, item)
                     if (doc != null) {
                         pendingBackupDocs.add(doc)
                     } else {
-                        val internal = backupManager.writeRecordBackupInternal(tellingId, item)
+                        val internal = writeRecordBackupInternal(this@TellingScherm, tellingId, item)
                         if (internal != null) pendingBackupInternalPaths.add(internal)
                     }
                 } catch (ex: Exception) {
@@ -1059,58 +1301,290 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
+    // Write a single record backup via SAF into Documents/VT5/exports
+    private fun writeRecordBackupSaf(context: Context, tellingId: String, item: ServerTellingDataItem): DocumentFile? {
+        try {
+            val saf = SaFStorageHelper(context)
+            var vt5Dir: DocumentFile? = saf.getVt5DirIfExists()
+            if (vt5Dir == null) {
+                try { saf.ensureFolders() } catch (_: Exception) {}
+                vt5Dir = saf.getVt5DirIfExists()
+            }
+            if (vt5Dir != null) {
+                val exportsDir = saf.findOrCreateDirectory(vt5Dir, "exports") ?: vt5Dir
+                val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                val safeName = "session_${tellingId}_${item.idLocal}_$nowStr.json"
+                val created = exportsDir.createFile("application/json", safeName) ?: return null
+                context.contentResolver.openOutputStream(created.uri)?.bufferedWriter(Charsets.UTF_8).use { w ->
+                    val payloadJson = VT5App.json.encodeToString(ListSerializer(ServerTellingDataItem.serializer()), listOf(item))
+                    w?.write(payloadJson)
+                    w?.flush()
+                }
+                return created
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "writeRecordBackupSaf failed: ${e.message}", e)
+        }
+        return null
+    }
 
+    // Fallback internal write
+    private fun writeRecordBackupInternal(context: Context, tellingId: String, item: ServerTellingDataItem): String? {
+        return try {
+            val root = java.io.File(context.filesDir, "VT5")
+            if (!root.exists()) root.mkdirs()
+            val exports = java.io.File(root, "exports"); if (!exports.exists()) exports.mkdirs()
+            val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val filename = "session_${tellingId}_${item.idLocal}_$nowStr.json"
+            val f = java.io.File(exports, filename)
+            val payloadJson = VT5App.json.encodeToString(ListSerializer(ServerTellingDataItem.serializer()), listOf(item))
+            f.writeText(payloadJson, Charsets.UTF_8)
+            f.absolutePath
+        } catch (e: Exception) {
+            Log.w(TAG, "writeRecordBackupInternal failed: ${e.message}", e)
+            null
+        }
+    }
 
     // Afronden: build counts_save envelope with saved metadata + pendingRecords, POST and handle response
-    /**
-     * Handle Afronden (finalize and upload) using afrondHandler.
-     */
     private suspend fun handleAfronden() {
-        val result = afrondHandler.handleAfronden(
-            pendingRecords = synchronized(pendingRecords) { ArrayList(pendingRecords) },
-            pendingBackupDocs = pendingBackupDocs,
-            pendingBackupInternalPaths = pendingBackupInternalPaths
-        )
-
-        withContext(Dispatchers.Main) {
-            when (result) {
-                is TellingAfrondHandler.AfrondResult.Success -> {
-                    // Cleanup local state
-                    synchronized(pendingRecords) { pendingRecords.clear() }
-                    pendingBackupDocs.clear()
-                    pendingBackupInternalPaths.clear()
-                    if (::viewModel.isInitialized) viewModel.clearPendingRecords()
-
-                    // Show success dialog
+        withContext(Dispatchers.IO) {
+            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val savedEnvelopeJson = prefs.getString(PREF_SAVED_ENVELOPE_JSON, null)
+            if (savedEnvelopeJson.isNullOrBlank()) {
+                withContext(Dispatchers.Main) {
                     val dlg = AlertDialog.Builder(this@TellingScherm)
-                        .setTitle("Afronden geslaagd")
-                        .setMessage("Afronden upload geslaagd. Envelope opgeslagen: ${result.savedPrettyPath ?: "n.v.t."}")
-                        .setPositiveButton("OK") { _, _ ->
-                            val intent = Intent(this@TellingScherm, MetadataScherm::class.java)
-                            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                            startActivity(intent)
-                            finish()
-                        }
-                        .show()
-                    dialogHelper.styleAlertDialogTextToWhite(dlg)
-                }
-                is TellingAfrondHandler.AfrondResult.Failure -> {
-                    // Show failure dialog
-                    val dlg = AlertDialog.Builder(this@TellingScherm)
-                        .setTitle(result.title)
-                        .setMessage(result.message)
+                        .setTitle("Geen metadata")
+                        .setMessage("Er is geen opgeslagen metadata (counts_save header). Keer terug naar metadata en start een telling.")
                         .setPositiveButton("OK", null)
                         .show()
-                    dialogHelper.styleAlertDialogTextToWhite(dlg)
+                    styleAlertDialogTextToWhite(dlg)
                 }
+                return@withContext
+            }
+
+            val envelopeList = try {
+                VT5App.json.decodeFromString(ListSerializer(ServerTellingEnvelope.serializer()), savedEnvelopeJson)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed decoding saved envelope JSON: ${e.message}", e)
+                null
+            }
+            if (envelopeList.isNullOrEmpty()) {
+                withContext(Dispatchers.Main) {
+                    val dlg = AlertDialog.Builder(this@TellingScherm)
+                        .setTitle("Ongeldige envelope")
+                        .setMessage("Opgeslagen envelope ongeldig.")
+                        .setPositiveButton("OK", null)
+                        .show()
+                    styleAlertDialogTextToWhite(dlg)
+                }
+                return@withContext
+            }
+
+            // Inject saved onlineId (if present) into the envelope BEFORE building finalEnv/POST.
+            val envelopeWithOnline = applySavedOnlineIdToEnvelope(envelopeList)
+            // Persist the saved envelope (now containing onlineId) so prefs remains consistent.
+            persistSavedEnvelopeJson(envelopeWithOnline)
+
+            val nowEpoch = (System.currentTimeMillis() / 1000L)
+            val nowEpochStr = nowEpoch.toString()
+            val nowFormatted = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+
+            val baseEnv = envelopeWithOnline[0]
+            val envWithTimes = baseEnv.copy(eindtijd = nowEpochStr, uploadtijdstip = nowFormatted)
+
+            val recordsSnapshot = synchronized(pendingRecords) { ArrayList(pendingRecords) }
+            val nrec = recordsSnapshot.size
+            val nsoort = recordsSnapshot.map { it.soortid }.toSet().size
+
+            val finalEnv = envWithTimes.copy(nrec = nrec.toString(), nsoort = nsoort.toString(), data = recordsSnapshot)
+            val envelopeToSend = listOf(finalEnv)
+
+            // Pretty print and save to SAF (or fallback)
+            val onlineIdPref = prefs.getString(PREF_ONLINE_ID, "") ?: ""
+            val prettyJson = try { PRETTY_JSON.encodeToString(ListSerializer(ServerTellingEnvelope.serializer()), envelopeToSend) } catch (e: Exception) { Log.w(TAG, "pretty encode failed: ${e.message}", e); null }
+
+            var savedPrettyPath: String? = null
+            if (prettyJson != null) {
+                try {
+                    savedPrettyPath = writePrettyEnvelopeToSaf(this@TellingScherm, onlineIdPref.ifBlank { "unknown" }, prettyJson)
+                } catch (e: Exception) {
+                    Log.w(TAG, "writePrettyEnvelopeToSaf failed: ${e.message}", e)
+                    try {
+                        val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                        val fname = "${nowStr}_count_${onlineIdPref.ifBlank { "unknown" }}.json"
+                        val root = java.io.File(this@TellingScherm.filesDir, "VT5/exports"); if (!root.exists()) root.mkdirs()
+                        val f = java.io.File(root, fname); f.writeText(prettyJson, Charsets.UTF_8)
+                        savedPrettyPath = "internal:${f.absolutePath}"
+                    } catch (ex: Exception) { Log.w(TAG, "fallback pretty write failed: ${ex.message}", ex) }
+                }
+            }
+
+            // Credentials & POST
+            val creds = CredentialsStore(this@TellingScherm)
+            val user = creds.getUsername().orEmpty()
+            val pass = creds.getPassword().orEmpty()
+            if (user.isBlank() || pass.isBlank()) {
+                withContext(Dispatchers.Main) { Toast.makeText(this@TellingScherm, "Geen credentials beschikbaar voor upload.", Toast.LENGTH_LONG).show() }
+                return@withContext
+            }
+
+            val baseUrl = "https://trektellen.nl"
+            val language = "dutch"
+            val versie = "1845"
+
+            val (ok, resp) = try {
+                TrektellenApi.postCountsSave(baseUrl, language, versie, user, pass, envelopeToSend)
+            } catch (ex: Exception) {
+                Log.w(TAG, "postCountsSave exception: ${ex.message}", ex)
+                false to (ex.message ?: "exception")
+            }
+
+            val auditPath = writeEnvelopeResponseToSaf(this@TellingScherm, finalEnv.tellingid, prettyJson ?: "{}", resp)
+
+            if (!ok) {
+                withContext(Dispatchers.Main) {
+                    val dlg = AlertDialog.Builder(this@TellingScherm)
+                        .setTitle("Upload mislukt")
+                        .setMessage("Kon telling niet uploaden:\n$resp\n\nEnvelope opgeslagen: ${savedPrettyPath ?: "niet beschikbaar"}\nAuditbestand: ${auditPath ?: "niet beschikbaar"}")
+                        .setPositiveButton("OK", null)
+                        .show()
+                    styleAlertDialogTextToWhite(dlg)
+                }
+                return@withContext
+            }
+
+            // On success: try to parse the onlineId the server returned and persist it back to prefs.
+            try {
+                val returnedOnlineId = parseOnlineIdFromResponse(resp)
+                if (!returnedOnlineId.isNullOrBlank()) {
+                    prefs.edit { putString(PREF_ONLINE_ID, returnedOnlineId) }
+
+                    // Update saved envelope JSON (ensure saved envelope reflects server-confirmed onlineId)
+                    try {
+                        val updated = envelopeWithOnline.toMutableList()
+                        if (updated.isNotEmpty()) {
+                            val first = updated[0].copy(onlineid = returnedOnlineId)
+                            updated[0] = first
+                            persistSavedEnvelopeJson(updated)
+                        }
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "Failed persisting envelope with returned onlineId: ${ex.message}", ex)
+                    }
+                }
+            } catch (ex: Exception) {
+                Log.w(TAG, "Parsing/handling returned onlineId failed: ${ex.message}", ex)
+            }
+
+            // On success: cleanup and return to MetadataScherm
+            try {
+                pendingBackupDocs.forEach { doc -> try { doc.delete() } catch (_: Exception) {} }
+                pendingBackupDocs.clear()
+                pendingBackupInternalPaths.forEach { path -> try { java.io.File(path).delete() } catch (_: Exception) {} }
+                pendingBackupInternalPaths.clear()
+                synchronized(pendingRecords) { pendingRecords.clear() }
+                if (::viewModel.isInitialized) viewModel.clearPendingRecords()
+
+                // Remove keys (we completed the telling)
+                prefs.edit {
+                    remove(PREF_ONLINE_ID).remove(PREF_TELLING_ID).remove(PREF_SAVED_ENVELOPE_JSON)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Cleanup after successful Afronden failed: ${e.message}", e)
+            }
+
+            withContext(Dispatchers.Main) {
+                val dlg = AlertDialog.Builder(this@TellingScherm)
+                    .setTitle("Afronden geslaagd")
+                    .setMessage("Afronden upload geslaagd. Envelope opgeslagen: ${savedPrettyPath ?: "n.v.t."}")
+                    .setPositiveButton("OK") { _, _ ->
+                        val it = Intent(this@TellingScherm, MetadataScherm::class.java)
+                        it.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        startActivity(it)
+                        finish()
+                    }
+                    .show()
+                styleAlertDialogTextToWhite(dlg)
             }
         }
     }
 
     // Write pretty envelope JSON to SAF as "<timestamp>_count_<onlineid>.json"
+    private fun writePrettyEnvelopeToSaf(context: Context, onlineId: String, prettyJson: String): String? {
+        try {
+            val saf = SaFStorageHelper(context)
+            var vt5Dir: DocumentFile? = saf.getVt5DirIfExists()
+            if (vt5Dir == null) {
+                try { saf.ensureFolders() } catch (_: Exception) {}
+                vt5Dir = saf.getVt5DirIfExists()
+            }
+            if (vt5Dir != null) {
+                val exportsDir = saf.findOrCreateDirectory(vt5Dir, "exports") ?: vt5Dir
+                val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                val safeName = "${nowStr}_count_${onlineId}.json"
+                val created = exportsDir.createFile("application/json", safeName) ?: return null
+                context.contentResolver.openOutputStream(created.uri)?.bufferedWriter(Charsets.UTF_8).use { w ->
+                    w?.write(prettyJson)
+                    w?.flush()
+                }
+                return "Documents/VT5/exports/$safeName"
+            } else {
+                // fallback internal
+                val root = java.io.File(context.filesDir, "VT5")
+                if (!root.exists()) root.mkdirs()
+                val exports = java.io.File(root, "exports")
+                if (!exports.exists()) exports.mkdirs()
+                val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                val filename = "${nowStr}_count_${onlineId}.json"
+                val f = java.io.File(exports, filename)
+                f.writeText(prettyJson, Charsets.UTF_8)
+                return "internal:${f.absolutePath}"
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "writePrettyEnvelopeToSaf failed: ${e.message}", e)
+            return null
+        }
+    }
 
+    /* ---------- Remaining helpers (unchanged) ---------- */
+    private fun applySavedOnlineIdToEnvelope(envelopeList: List<com.yvesds.vt5.net.ServerTellingEnvelope>): List<com.yvesds.vt5.net.ServerTellingEnvelope> {
+        try {
+            // read saved onlineId from the same prefs file used elsewhere in the activity
+            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val savedOnlineId = prefs.getString("pref_online_id", null) ?: prefs.getString("pref_onlineid", null) // tolerance for key variants
+            if (savedOnlineId.isNullOrBlank()) return envelopeList
 
+            // copy the list and replace the first envelope's onlineid field
+            val updated = envelopeList.toMutableList()
+            if (updated.isNotEmpty()) {
+                val first = updated[0]
+                // create a copy with the server online id filled in
+                val replaced = first.copy(onlineid = savedOnlineId)
+                updated[0] = replaced
+            }
+            return updated.toList()
+        } catch (ex: Exception) {
+            // on any error, fall back to original envelope (do not block the upload)
+            android.util.Log.w("TellingScherm", "applySavedOnlineIdToEnvelope failed: ${ex.message}", ex)
+            return envelopeList
+        }
+    }
 
+    private fun persistSavedEnvelopeJson(envelopeList: List<com.yvesds.vt5.net.ServerTellingEnvelope>) {
+        try {
+            val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val jsonText = PRETTY_JSON.encodeToString(kotlinx.serialization.builtins.ListSerializer(com.yvesds.vt5.net.ServerTellingEnvelope.serializer()), envelopeList)
+            prefs.edit { putString(PREF_SAVED_ENVELOPE_JSON, jsonText) }
+        } catch (ex: Exception) {
+            Log.w("TellingScherm", "persistSavedEnvelopeJson failed: ${ex.message}", ex)
+        }
+    }
+
+    // Parse a numeric count from string fallback to 1
+    private fun extractCountFromText(text: String): Int {
+        val m = Regex("\\b(\\d+)\\b").find(text)
+        return m?.groups?.get(1)?.value?.toIntOrNull() ?: 1
+    }
 
     private fun initializeVolumeKeyHandler() {
         try {
@@ -1145,19 +1619,19 @@ class TellingScherm : AppCompatActivity() {
     private fun updateSelectedSpeciesMap() {
         selectedSpeciesMap.clear()
 
-        val speciesMap = tegelBeheer.buildSelectedSpeciesMap()
-        if (speciesMap.isEmpty()) {
+        val soorten = tilesAdapter.currentList
+        if (soorten.isEmpty()) {
             Log.w(TAG, "Species list is empty! Cannot update selectedSpeciesMap")
             return
         }
 
-        for ((soortId, naam) in speciesMap) {
-            selectedSpeciesMap[naam] = soortId
-            selectedSpeciesMap[naam.lowercase(Locale.getDefault())] = soortId
+        for (soort in soorten) {
+            selectedSpeciesMap[soort.naam] = soort.soortId
+            selectedSpeciesMap[soort.naam.lowercase(Locale.getDefault())] = soort.soortId
         }
 
         if (speechInitialized) {
-            Log.d(TAG, "Selected species map updated (${speciesMap.size} species)")
+            Log.d(TAG, "Selected species map updated")
         }
     }
 
@@ -1201,12 +1675,106 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
+    // Write envelope + response to SAF exports (Documents/VT5/exports) - audit file
+    private fun writeEnvelopeResponseToSaf(context: Context, tellingId: String, envelopeJson: String, responseText: String): String? {
+        try {
+            val saf = SaFStorageHelper(context)
+            var vt5Dir: DocumentFile? = saf.getVt5DirIfExists()
+            if (vt5Dir == null) {
+                try { saf.ensureFolders() } catch (_: Exception) {}
+                vt5Dir = saf.getVt5DirIfExists()
+            }
+            if (vt5Dir != null) {
+                val exportsDir = saf.findOrCreateDirectory(vt5Dir, "exports") ?: vt5Dir
+                val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                val safeName = "counts_save_response_${tellingId}_$nowStr.txt"
+                val created = exportsDir.createFile("text/plain", safeName) ?: return null
+                context.contentResolver.openOutputStream(created.uri)?.bufferedWriter(Charsets.UTF_8).use { w ->
+                    w?.write("=== Envelope ===\n")
+                    w?.write(envelopeJson)
+                    w?.write("\n\n=== Server response ===\n")
+                    w?.write(responseText)
+                    w?.flush()
+                }
+                return "Documents/VT5/exports/$safeName"
+            } else {
+                // fallback internal
+                val root = java.io.File(context.filesDir, "VT5")
+                if (!root.exists()) root.mkdirs()
+                val exports = java.io.File(root, "exports")
+                if (!exports.exists()) exports.mkdirs()
+                val nowStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                val filename = "counts_save_response_${tellingId}_$nowStr.txt"
+                val f = java.io.File(exports, filename)
+                f.bufferedWriter(Charsets.UTF_8).use { w ->
+                    w.write("=== Envelope ===\n")
+                    w.write(envelopeJson)
+                    w.write("\n\n=== Server response ===\n")
+                    w.write(responseText)
+                    w.flush()
+                }
+                return "internal:${f.absolutePath}"
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "writeEnvelopeResponseToSaf failed: ${e.message}", e)
+            return null
+        }
+    }
+
     // Launch soort selectie
     private fun openSoortSelectieForAdd() {
         val telpostId = TellingSessionManager.preselectState.value.telpostId
         val intent = Intent(this, SoortSelectieScherm::class.java)
             .putExtra(SoortSelectieScherm.EXTRA_TELPOST_ID, telpostId)
         addSoortenLauncher.launch(intent)
+    }
+    private fun parseOnlineIdFromResponse(resp: String): String? {
+        try {
+            if (resp.isBlank()) return null
+
+            // 1) Try JSON object
+            try {
+                val trimmed = resp.trim()
+                if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+                    // Use org.json for flexible parsing of unknown shapes
+                    val jsonRoot = org.json.JSONTokener(trimmed).nextValue()
+                    when (jsonRoot) {
+                        is org.json.JSONObject -> {
+                            val jo = jsonRoot
+                            if (jo.has("onlineid")) return jo.get("onlineid").toString()
+                            if (jo.has("onlineId")) return jo.get("onlineId").toString()
+                            if (jo.has("online_id")) return jo.get("online_id").toString()
+                        }
+                        is org.json.JSONArray -> {
+                            val ja = jsonRoot
+                            if (ja.length() > 0) {
+                                val first = ja.optJSONObject(0)
+                                if (first != null) {
+                                    if (first.has("onlineid")) return first.get("onlineid").toString()
+                                    if (first.has("onlineId")) return first.get("onlineId").toString()
+                                    if (first.has("online_id")) return first.get("online_id").toString()
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // continue to regex fallback
+            }
+
+            // 2) Regex fallback: find digits following onlineid keyword
+            val re = Regex("""["']?(?:onlineid|onlineId|online_id)["']?\s*[:=]\s*["']?(\d+)["']?""", RegexOption.IGNORE_CASE)
+            val m = re.find(resp)
+            if (m != null) return m.groupValues[1]
+
+            // 3) Another fallback: any 5-10 digit number that looks like an id (risky; last resort)
+            val numRe = Regex("""\b(\d{4,12})\b""")
+            val m2 = numRe.find(resp)
+            if (m2 != null) return m2.groupValues[1]
+        } catch (ex: Exception) {
+            Log.w(TAG, "parseOnlineIdFromResponse failed: ${ex.message}", ex)
+        }
+        return null
     }
     // Helper: apply annotations JSON to the matching pending record in-memory (and write a single-record backup).
 // Paste this function into TellingScherm (near other helpers).
@@ -1289,7 +1857,7 @@ class TellingScherm : AppCompatActivity() {
                     val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                     val tellingId = prefs.getString(PREF_TELLING_ID, null)
                     if (!tellingId.isNullOrBlank()) {
-                        backupManager.writeRecordBackupSaf(tellingId, updated)
+                        writeRecordBackupSaf(this@TellingScherm, tellingId, updated)
                     }
                 } catch (ex: Exception) {
                     Log.w(TAG, "applyAnnotationsToPendingRecord: backup write failed: ${ex.message}", ex)
@@ -1300,4 +1868,22 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
+    private fun styleAlertDialogTextToWhite(dialog: AlertDialog) {
+        try {
+            // The AlertDialog title view id is provided by AppCompat, not android.R.
+            val title = dialog.findViewById<TextView?>(androidx.appcompat.R.id.alertTitle)
+            title?.setTextColor(Color.WHITE)
+
+            // The message id is platform-stable
+            val msg = dialog.findViewById<TextView?>(android.R.id.message)
+            msg?.setTextColor(Color.WHITE)
+
+            // Buttons are only available after show(); caller already calls this after .show()
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(Color.WHITE)
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(Color.WHITE)
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(Color.WHITE)
+        } catch (e: Exception) {
+            Log.w(TAG, "styleAlertDialogTextToWhite failed: ${e.message}", e)
+        }
+    }
 }
