@@ -5,7 +5,6 @@ import android.content.Intent
 import android.util.Log
 import android.view.GestureDetector
 import android.view.MotionEvent
-import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -28,7 +27,6 @@ import kotlinx.coroutines.launch
  */
 class TellingUiManager(
     private val activity: Activity,
-    private val lifecycleOwner: LifecycleOwner,
     private val binding: SchermTellingBinding
 ) {
     companion object {

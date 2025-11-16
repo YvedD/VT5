@@ -89,9 +89,6 @@ class TellingScherm : AppCompatActivity() {
         private const val TAG = "TellingScherm"
         private const val PERMISSION_REQUEST_RECORD_AUDIO = 101
 
-        // JSON's
-        private val PRETTY_JSON: Json by lazy { Json { prettyPrint = true } }
-
         // Preferences keys
         private const val PREFS_NAME = "vt5_prefs"
         private const val PREF_ASR_SILENCE_MS = "pref_asr_silence_ms"
@@ -353,7 +350,7 @@ class TellingScherm : AppCompatActivity() {
         dialogHelper = TellingDialogHelper(this, this, safHelper)
         backupManager = TellingBackupManager(this, safHelper)
         dataProcessor = TellingDataProcessor()
-        uiManager = TellingUiManager(this, this, binding)
+        uiManager = TellingUiManager(this, binding)
         afrondHandler = TellingAfrondHandler(this, backupManager, dataProcessor)
         
         // Initialize TegelBeheer with UI callback
@@ -967,21 +964,6 @@ class TellingScherm : AppCompatActivity() {
         }
     }
 
-    // Updates tile count and logs as 'manueel' by default (keeps previous behaviour).
-    private fun updateSoortCount(soortId: String, count: Int) {
-        lifecycleScope.launch {
-            val naam = tegelBeheer.findNaamBySoortId(soortId)
-            if (naam == null) {
-                Log.e(TAG, "Species with ID $soortId not found in the list!")
-                return@launch
-            }
-
-            tegelBeheer.verhoogSoortAantal(soortId, count)
-            addLog("$naam -> +$count", "manueel")
-            RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
-            updateSelectedSpeciesMap()
-        }
-    }
 
     // Internal update used by parser flows, does NOT create a 'Bijgewerkt' log line.
     private fun updateSoortCountInternal(soortId: String, count: Int) {
