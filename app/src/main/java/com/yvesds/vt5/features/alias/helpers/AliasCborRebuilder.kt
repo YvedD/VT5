@@ -6,6 +6,7 @@ import androidx.documentfile.provider.DocumentFile
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.features.alias.AliasIndex
 import com.yvesds.vt5.features.alias.AliasMaster
+import com.yvesds.vt5.features.alias.toAliasIndex
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

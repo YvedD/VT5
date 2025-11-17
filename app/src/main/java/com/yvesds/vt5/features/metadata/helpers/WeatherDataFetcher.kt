@@ -10,6 +10,7 @@ import androidx.core.graphics.toColorInt
 import com.yvesds.vt5.databinding.SchermMetadataBinding
 import com.yvesds.vt5.features.serverdata.model.DataSnapshot
 import com.yvesds.vt5.utils.weather.WeatherManager
+import com.yvesds.vt5.utils.weather.Current
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
@@ -86,7 +87,7 @@ class WeatherDataFetcher(
     }
     
     private fun applyWeatherToForm(
-        cur: WeatherManager.CurrentWeather,
+        cur: Current,
         snapshot: DataSnapshot
     ) {
         // Wind direction
