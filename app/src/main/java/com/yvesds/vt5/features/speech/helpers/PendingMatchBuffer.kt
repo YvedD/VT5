@@ -16,6 +16,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.coroutineContext
 import java.util.UUID
 
 /**
@@ -117,7 +118,7 @@ class PendingMatchBuffer(
 
     private suspend fun runWorkerLoop() {
         while (true) {
-            ensureActive()
+            coroutineContext.ensureActive()
 
             val item = pendingBuffer.poll()
             if (item == null) {

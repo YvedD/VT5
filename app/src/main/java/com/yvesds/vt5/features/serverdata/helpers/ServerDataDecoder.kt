@@ -19,7 +19,7 @@ import java.util.zip.GZIPInputStream
 
 /**
  * Helper for decoding ServerData files from binary (VT5Bin) or JSON formats.
- * 
+ *
  * Responsibilities:
  * - VT5Bin binary format parsing
  * - GZIP decompression
@@ -31,21 +31,21 @@ class ServerDataDecoder(
     private val json: Json = defaultJson,
     private val cbor: Cbor = defaultCbor
 ) {
-    
+
     companion object {
         val defaultJson = Json { ignoreUnknownKeys = true; explicitNulls = false }
         val defaultCbor = Cbor { ignoreUnknownKeys = true }
     }
-    
+
     // Shared buffer for better memory usage
     private val headerBuffer = ByteArray(VT5Bin.HEADER_SIZE)
-    
+
     sealed class Decoded<out T> {
         data class AsList<T>(val list: List<T>) : Decoded<T>()
         data class AsWrapped<T>(val wrapped: WrappedJson<T>) : Decoded<T>()
         data class AsSingle<T>(val value: T) : Decoded<T>()
     }
-    
+
     /**
      * Decode a list from a binary file.
      */
@@ -60,7 +60,7 @@ class ServerDataDecoder(
             is Decoded.AsSingle<T> -> listOf(decoded.value)
         }
     }
-    
+
     /**
      * Decode a single item from a binary file.
      */
@@ -75,7 +75,7 @@ class ServerDataDecoder(
             is Decoded.AsSingle<T> -> decoded.value
         }
     }
-    
+
     /**
      * Decode from VT5Bin binary format.
      */
@@ -85,32 +85,32 @@ class ServerDataDecoder(
     ): Decoded<T>? {
         context.contentResolver.openInputStream(file.uri)?.use { raw ->
             val bis = BufferedInputStream(raw)
-            
+
             // Use shared buffer
             synchronized(headerBuffer) {
                 if (bis.read(headerBuffer) != VT5Bin.HEADER_SIZE) return null
-                
+
                 val hdr = VT5Header.fromBytes(headerBuffer) ?: return null
                 if (!hdr.magic.contentEquals(VT5Bin.MAGIC)) return null
                 if (hdr.headerVersion.toInt() < VT5Bin.HEADER_VERSION.toInt()) return null
                 if (hdr.datasetKind != expectedKind) return null
                 if (hdr.codec != VT5Bin.Codec.JSON && hdr.codec != VT5Bin.Codec.CBOR) return null
                 if (hdr.compression != VT5Bin.Compression.NONE && hdr.compression != VT5Bin.Compression.GZIP) return null
-                
+
                 val pl = hdr.payloadLen.toLong()
                 if (pl < 0) return null
                 val payload = ByteArray(pl.toInt())
                 val read = bis.readNBytesCompat(payload)
                 if (read != pl.toInt()) return null
-                
+
                 val dataBytes = when (hdr.compression) {
-                    VT5Bin.Compression.GZIP -> GZIPInputStream(ByteArrayInputStream(payload)).use { 
-                        it.readAllBytesCompat() 
+                    VT5Bin.Compression.GZIP -> GZIPInputStream(ByteArrayInputStream(payload)).use {
+                        it.readAllBytesCompat()
                     }
                     VT5Bin.Compression.NONE -> payload
                     else -> return null
                 }
-                
+
                 return when (hdr.codec) {
                     VT5Bin.Codec.CBOR -> {
                         runCatching {
@@ -165,7 +165,7 @@ class ServerDataDecoder(
         }
         return null
     }
-    
+
     /**
      * Decode a list from JSON file.
      */
@@ -195,7 +195,7 @@ class ServerDataDecoder(
         }
         return null
     }
-    
+
     /**
      * Decode a single item from JSON file.
      */

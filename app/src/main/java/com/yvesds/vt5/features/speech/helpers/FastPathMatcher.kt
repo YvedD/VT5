@@ -36,7 +36,7 @@ class FastPathMatcher(
      * Try fast-path matching for a single hypothesis
      * @return MatchResult.AutoAccept if matched, null otherwise
      */
-    fun tryFastMatch(
+    suspend fun tryFastMatch(
         hypothesis: String,
         asrConfidence: Float,
         matchContext: MatchContext

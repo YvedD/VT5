@@ -10,6 +10,7 @@ import com.yvesds.vt5.features.speech.MatchContext
 import com.yvesds.vt5.features.speech.MatchResult
 import com.yvesds.vt5.utils.TextUtils
 import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -46,7 +47,7 @@ class HeavyPathMatcher(
         matchContext: MatchContext,
         asrWeight: Double = DEFAULT_ASR_WEIGHT
     ): HeavyMatchResult? {
-        ensureActive()
+        coroutineContext.ensureActive()
 
         val normalized = TextUtils.normalizeLowerNoDiacritics(hypothesis)
         if (normalized.isBlank()) return null
@@ -86,7 +87,7 @@ class HeavyPathMatcher(
      * Try quick exact match for lower-priority hypotheses
      * Useful for remaining hypotheses beyond heavy-path count
      */
-    fun tryQuickExactMatch(
+    suspend fun tryQuickExactMatch(
         hypothesis: String,
         matchContext: MatchContext
     ): MatchResult? {
