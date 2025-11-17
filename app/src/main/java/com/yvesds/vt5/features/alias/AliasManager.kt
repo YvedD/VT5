@@ -69,6 +69,9 @@ object AliasManager {
     @Volatile private var indexLoaded = false
     @Volatile private var loadedIndex: AliasIndex? = null
 
+    /* MASTER WRITE SYNCHRONIZATION */
+    private val masterWriteMutex = Mutex()
+
     /* WRITE QUEUE (legacy batched writes) */
     private val writeQueue = ConcurrentHashMap<String, PendingAlias>()
     private val writePending = AtomicBoolean(false)
@@ -404,163 +407,7 @@ object AliasManager {
 
     /* SEED GENERATION */
     @OptIn(ExperimentalSerializationApi::class)
-    private suspend fun generateSeedFromSpeciesJson(
-        context: android.content.Context,
-        saf: SaFStorageHelper,
-        vt5RootDir: DocumentFile
-    ) = withContext(Dispatchers.IO) {
-        try {
-            // locate serverdata
-            val serverDir = vt5RootDir.findFile("serverdata")?.takeIf { it.isDirectory }
-            if (serverDir == null) {
-                Log.w(TAG, "serverdata not available, aborting seed generation")
-                return@withContext
-            }
-
-            // list contents for diagnostics
-            kotlin.runCatching {
-                val present = serverDir.listFiles().mapNotNull { it.name }
-                Log.i(TAG, "serverdata contains: ${present.joinToString(", ")}")
-            }
-
-            // tolerant lookup for site_species file
-            val siteSpeciesFile = serverDir.listFiles().firstOrNull { doc ->
-                val nm = doc.name?.lowercase() ?: return@firstOrNull false
-                nm == "site_species.json" || nm == "site_species" || nm.startsWith("site_species")
-            }
-
-            if (siteSpeciesFile == null) {
-                Log.w(TAG, "No site_species file found in serverdata")
-                return@withContext
-            } else {
-                Log.i(TAG, "Using site_species file: ${siteSpeciesFile.name} (uri=${siteSpeciesFile.uri})")
-            }
-
-            val siteBytes: ByteArray? = kotlin.runCatching {
-                context.contentResolver.openInputStream(siteSpeciesFile.uri)?.use { it.readBytes() }
-            }.getOrNull()
-
-            if (siteBytes == null || siteBytes.isEmpty()) {
-                Log.w(TAG, "site_species file is empty or could not be read")
-                return@withContext
-            }
-
-            // strip BOM if present
-            val bytesNoBom = if (siteBytes.size >= 3 && siteBytes[0] == 0xEF.toByte() && siteBytes[1] == 0xBB.toByte() && siteBytes[2] == 0xBF.toByte()) {
-                siteBytes.copyOfRange(3, siteBytes.size)
-            } else siteBytes
-
-            val text = bytesNoBom.toString(Charsets.UTF_8).trim()
-            // try parse flexibly: top-level array or object with "json" or "data" keys
-            val siteSpeciesIds = mutableSetOf<String>()
-            kotlin.runCatching {
-                val root = Json.parseToJsonElement(text)
-                var arr = root.jsonArrayOrNull()
-                if (arr == null && root is kotlinx.serialization.json.JsonObject) {
-                    arr = root["json"]?.jsonArray ?: root["data"]?.jsonArray ?: root["items"]?.jsonArray
-                }
-                // fallback: search for first array of objects
-                if (arr == null && root is kotlinx.serialization.json.JsonObject) {
-                    for ((k, v) in root) {
-                        if (v is kotlinx.serialization.json.JsonArray) { arr = v; break }
-                    }
-                }
-                if (arr == null) {
-                    // try recursive search
-                    arr = root.findFirstArrayWithObjects()
-                }
-                if (arr != null) {
-                    arr.forEach { el ->
-                        if (el is kotlinx.serialization.json.JsonObject) {
-                            val sid = el["soortid"]?.jsonPrimitive?.contentOrNull
-                                ?: el["soort_id"]?.jsonPrimitive?.contentOrNull
-                                ?: el["soortId"]?.jsonPrimitive?.contentOrNull
-                                ?: el["id"]?.jsonPrimitive?.contentOrNull
-                            if (!sid.isNullOrBlank()) siteSpeciesIds.add(sid.lowercase().trim())
-                        }
-                    }
-                } else {
-                    Log.w(TAG, "site_species parsed but no usable array found")
-                }
-            }.onFailure {
-                Log.w(TAG, "Failed to parse site_species content: ${it.message}", it)
-            }
-
-            if (siteSpeciesIds.isEmpty()) {
-                Log.w(TAG, "No site_species entries found — aborting seed generation")
-                return@withContext
-            }
-
-            // Load species map (prefer ServerDataCache)
-            val snapshot = kotlin.runCatching { ServerDataCache.getOrLoad(context) }.getOrNull()
-            val speciesMap = mutableMapOf<String, Pair<String, String?>>()
-            if (snapshot != null) {
-                snapshot.speciesById.forEach { (k, v) ->
-                    speciesMap[k.lowercase()] = Pair(v.soortnaam ?: k, v.soortkey?.takeIf { it.isNotBlank() })
-                }
-            } else {
-                // fallback to reading species.json from serverdata
-                val speciesFile = serverDir.findFile("species.json")?.takeIf { it.isFile }
-                val speciesBytes = speciesFile?.let { doc -> kotlin.runCatching { context.contentResolver.openInputStream(doc.uri)?.use { it.readBytes() } }.getOrNull() }
-                if (speciesBytes != null) {
-                    kotlin.runCatching {
-                        val root = Json.parseToJsonElement(speciesBytes.toString(Charsets.UTF_8))
-                        val arr = root.jsonArrayOrNull() ?: root.jsonObject["json"]?.jsonArray
-                        arr?.forEach { el ->
-                            if (el is kotlinx.serialization.json.JsonObject) {
-                                val sid = el["soortid"]?.jsonPrimitive?.contentOrNull?.lowercase()?.trim() ?: return@forEach
-                                val naam = el["soortnaam"]?.jsonPrimitive?.contentOrNull ?: sid
-                                val key = el["soortkey"]?.jsonPrimitive?.contentOrNull
-                                speciesMap[sid] = Pair(naam, key?.takeIf { it.isNotBlank() })
-                            }
-                        }
-                    }.onFailure { Log.w(TAG, "Failed to parse species.json: ${it.message}") }
-                }
-            }
-
-            // Build deterministic, sorted list of site species ids
-            val sidList = siteSpeciesIds.toList().sortedWith(Comparator { a, b ->
-                val ai = a.toIntOrNull(); val bi = b.toIntOrNull()
-                when {
-                    ai != null && bi != null -> ai.compareTo(bi)
-                    ai != null && bi == null -> -1
-                    ai == null && bi != null -> 1
-                    else -> a.compareTo(b)
-                }
-            })
-
-            val speciesList = sidList.map { sid ->
-                val (naamRaw, keyRaw) = speciesMap[sid] ?: Pair(sid, null)
-                val canonical = naamRaw ?: sid
-                val tilename = keyRaw
-                val canonicalAlias = generateAliasData(text = canonical, source = "seed_canonical")
-                val tilenameAlias = if (!tilename.isNullOrBlank() && !tilename.equals(canonical, ignoreCase = true)) {
-                    generateAliasData(text = tilename, source = "seed_tilename")
-                } else null
-
-                SpeciesEntry(
-                    speciesId = sid,
-                    canonical = canonical,
-                    tilename = tilename,
-                    aliases = listOfNotNull(canonicalAlias, tilenameAlias)
-                )
-            }
-
-            // Build new master, then merge user aliases from any existing master BEFORE writing
-            val newMaster = AliasMaster(version = "2.1", timestamp = Instant.now().toString(), species = speciesList)
-            val mergedMaster = mergeUserAliasesIntoMaster(context, vt5RootDir, newMaster)
-
-            // Write master (to assets) and CBOR (to binaries)
-            writeMasterAndCborToSaf(context, mergedMaster, vt5RootDir, saf)
-
-            // Hot-load CBOR into matcher (reload)
-            try { com.yvesds.vt5.features.speech.AliasMatcher.reloadIndex(context, saf) } catch (_: Exception) {}
-
-            Log.i(TAG, "Seed generated: ${mergedMaster.species.size} species, ${mergedMaster.species.sumOf { it.aliases.size }} total aliases")
-        } catch (ex: Exception) {
-            Log.e(TAG, "Seed generation failed: ${ex.message}", ex)
-        }
-    }
+    /* Note: generateSeedFromSpeciesJson moved to AliasSeedGenerator helper */
 
     /**
      * Merge user-added aliases from the existing master (if any) into the new master.
@@ -950,35 +797,6 @@ object AliasManager {
         }
     }
 
-    /* HELPERS */
-
-    // small helpers for JsonElement convenience
-    private fun JsonElement.jsonArrayOrNull() = try { this.jsonArray } catch (_: Throwable) { null }
-    private fun JsonElement.findFirstArrayWithObjects(): kotlinx.serialization.json.JsonArray? {
-        when (this) {
-            is kotlinx.serialization.json.JsonArray -> {
-                if (this.any { it is kotlinx.serialization.json.JsonObject }) return this
-                for (el in this) {
-                    val found = el.findFirstArrayWithObjects()
-                    if (found != null) return found
-                }
-            }
-            is kotlinx.serialization.json.JsonObject -> {
-                for ((_, v) in this) {
-                    val found = v.findFirstArrayWithObjects()
-                    if (found != null) return found
-                }
-            }
-            else -> {}
-        }
-        return null
-    }
-
-    // ---- small utility ----
-    private fun Deferred<Unit>.cancelAndJoinSafe() {
-        try {
-            this.cancel()
-            runCatching { runBlocking { this@cancelAndJoinSafe.join() } }
-        } catch (_: Throwable) { /* ignore */ }
-    }
+    /* Note: Utility functions (jsonArrayOrNull, findFirstArrayWithObjects, cancelAndJoinSafe) 
+     * were removed as they were only used by generateSeedFromSpeciesJson, which is now in AliasSeedGenerator helper */
 }
