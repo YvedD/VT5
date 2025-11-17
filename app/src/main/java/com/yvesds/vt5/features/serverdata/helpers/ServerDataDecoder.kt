@@ -28,7 +28,7 @@ import java.util.zip.GZIPInputStream
  */
 class ServerDataDecoder(
     val context: Context,
-    private val json: Json = defaultJson,
+    internal val json: Json = defaultJson,
     private val cbor: Cbor = defaultCbor
 ) {
 
