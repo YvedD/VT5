@@ -8,21 +8,21 @@ Dit document biedt een **complete overzicht** van alle refactoring werk voor de 
 
 ---
 
-## Current State Overview - UPDATED 2025-11-17 (Phase 5 Complete)
+## Current State Overview - UPDATED 2025-11-17 (Phase 6 Complete)
 
 ### Code Metrics (Totaal: ~16,000 regels)
 
 | Bestand | Regels | Status | Prioriteit | Phase |
 |---------|--------|--------|------------|-------|
-| **TellingScherm.kt** | 1288 | ❌ Te refactoren | 🔴 HOOG | Phase 6 |
+| **TellingScherm.kt** | 1288 | ❌ Te refactoren | 🔴 HOOG | Phase 7 |
 | **AliasManager.kt** | 801 | ✅ Gerefactored | 🟢 DONE | Phase 3 |
-| **SpeechRecognitionManager.kt** | 740 | ❌ Te refactoren | 🟡 MEDIUM | Phase 7 |
-| **AliasSpeechParser.kt** | 540 | ✅ Goed gestructureerd | 🟢 OK | - |
+| **SpeechRecognitionManager.kt** | 740 | ❌ Te refactoren | 🟡 MEDIUM | Phase 8 |
 | **SoortSelectieScherm.kt** | 498 | 🟢 OK (<500) | 🟢 LOW | - |
 | **AliasRepository.kt** | 479 | 🟢 OK (<500) | 🟢 LOW | - |
 | **InstallatieScherm.kt** | 456 | ✅ Gerefactored | 🟢 DONE | Phase 1 |
 | **MetadataScherm.kt** | 367 | ✅ Gerefactored | 🟢 DONE | Phase 2 |
 | **ServerDataRepository.kt** | 238 | ✅ Gerefactored | 🟢 DONE | Phase 5 |
+| **AliasSpeechParser.kt** | 224 | ✅ Gerefactored | 🟢 DONE | Phase 6 |
 
 **Phases Completed**: 
 - ✅ Phase 1: InstallatieScherm (702→456, 35% reductie) 
@@ -30,10 +30,11 @@ Dit document biedt een **complete overzicht** van alle refactoring werk voor de 
 - ✅ Phase 3: AliasManager (1332→801, 40% reductie)
 - ✅ Phase 4: Comprehensive Analysis & Planning
 - ✅ Phase 5: ServerDataRepository (644→238, 63% reductie) ⭐ **HIGHEST REDUCTION**
+- ✅ Phase 6: AliasSpeechParser (540→224, 59% reductie) ⭐ **2ND HIGHEST**
 
-**Total Lines Removed**: 1,368 regels uit 3 bestanden (Phases 2/3/5)  
-**Total Helpers Created**: 12 helpers (~2,175 regels)  
-**Average Reduction**: 52% across all refactored files
+**Total Lines Removed**: 1,684 regels uit 4 bestanden (Phases 2/3/5/6)  
+**Total Helpers Created**: 16 helpers (~2,875 regels)  
+**Average Reduction**: 54% across all refactored files
 
 ---
 
