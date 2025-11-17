@@ -8,21 +8,33 @@ Dit document biedt een **complete overzicht** van alle refactoring werk voor de 
 
 ---
 
-## Current State Overview
+## Current State Overview - UPDATED 2025-11-17 (Phase 6 Complete)
 
 ### Code Metrics (Totaal: ~16,000 regels)
 
-| Bestand | Regels | Methods | Status | Prioriteit |
-|---------|--------|---------|--------|------------|
-| **AliasManager.kt** | 1332 | ? | ❌ Te analyseren | 🔴 KRITIEK |
-| **TellingScherm.kt** | 1288 | 42 | ✅ Gerefactored | 🟢 DONE |
-| **MetadataScherm.kt** | 798 | 21 | ❌ Te analyseren | 🔴 HOOG |
-| **SpeechRecognitionManager.kt** | 740 | ? | ✅ Goed gestructureerd | 🟢 OK |
-| **InstallatieScherm.kt** | 702 | 23 | ✅ Analyse compleet | 🔴 HOOG |
-| **ServerDataRepository.kt** | 644 | ? | ❌ Te analyseren | 🟡 MEDIUM |
-| **AliasSpeechParser.kt** | 540 | ? | ✅ Goed gestructureerd | 🟢 OK |
-| **SoortSelectieScherm.kt** | 498 | ? | ❌ Te analyseren | 🟡 MEDIUM |
-| **AliasRepository.kt** | 479 | ? | ❌ Te analyseren | 🟡 MEDIUM |
+| Bestand | Regels | Status | Prioriteit | Phase |
+|---------|--------|--------|------------|-------|
+| **TellingScherm.kt** | 1288 | ❌ Te refactoren | 🔴 HOOG | Phase 7 |
+| **AliasManager.kt** | 801 | ✅ Gerefactored | 🟢 DONE | Phase 3 |
+| **SpeechRecognitionManager.kt** | 740 | ❌ Te refactoren | 🟡 MEDIUM | Phase 8 |
+| **SoortSelectieScherm.kt** | 498 | 🟢 OK (<500) | 🟢 LOW | - |
+| **AliasRepository.kt** | 479 | 🟢 OK (<500) | 🟢 LOW | - |
+| **InstallatieScherm.kt** | 456 | ✅ Gerefactored | 🟢 DONE | Phase 1 |
+| **MetadataScherm.kt** | 367 | ✅ Gerefactored | 🟢 DONE | Phase 2 |
+| **ServerDataRepository.kt** | 238 | ✅ Gerefactored | 🟢 DONE | Phase 5 |
+| **AliasSpeechParser.kt** | 224 | ✅ Gerefactored | 🟢 DONE | Phase 6 |
+
+**Phases Completed**: 
+- ✅ Phase 1: InstallatieScherm (702→456, 35% reductie) 
+- ✅ Phase 2: MetadataScherm (798→367, 54% reductie)
+- ✅ Phase 3: AliasManager (1332→801, 40% reductie)
+- ✅ Phase 4: Comprehensive Analysis & Planning
+- ✅ Phase 5: ServerDataRepository (644→238, 63% reductie) ⭐ **HIGHEST REDUCTION**
+- ✅ Phase 6: AliasSpeechParser (540→224, 59% reductie) ⭐ **2ND HIGHEST**
+
+**Total Lines Removed**: 1,684 regels uit 4 bestanden (Phases 2/3/5/6)  
+**Total Helpers Created**: 16 helpers (~2,875 regels)  
+**Average Reduction**: 54% across all refactored files
 
 ---
 
@@ -70,27 +82,23 @@ Dit document biedt een **complete overzicht** van alle refactoring werk voor de 
 
 ---
 
-#### 1.2 MetadataScherm.kt Refactoring
-**Omvang**: 798 regels → ~300 regels (verwacht)
+#### 1.2 MetadataScherm.kt Refactoring ✅ **DONE**
+**Result**: 798 → 367 regels (**54% reductie**, 431 regels verwijderd)
 
-**Te analyseren verantwoordelijkheden**:
-- Form management (dropdowns, date/time pickers)
-- Weather data fetching (WeatherManager integration)
-- Server API call (start telling)
-- Data validation
-- Dialog management
+**Helpers Created** (3 classes):
+- ✅ MetadataFormManager.kt (~250 regels) - Form management, validation
+- ✅ WeatherDataFetcher.kt (~140 regels) - Weather API, location permissions
+- ✅ TellingStarter.kt (~200 regels) - Telling start API, envelope building
 
-**Voorgestelde helpers** (indicatief):
-- MetadataFormManager.kt (~150 regels)
-- WeatherDataFetcher.kt (~100 regels)
-- TellingStarter.kt (~120 regels)
-- MetadataValidator.kt (~80 regels)
+**Key Improvements**:
+- Separated concerns: Form, Weather, API calls
+- Simplified activity from complex nested coroutines
+- Better testability and maintainability
+- All functionality preserved
 
-**Tijdsinschatting**: 2 dagen
+**Branch**: `copilot/refactor-aliasmanager-and-metadata`
 
-**Branch**: `copilot/refactor-metadatascherm`
-
-**Status**: ⏳ **Planning phase - detailed analysis needed**
+**Status**: ✅ **COMPLETED**
 
 ---
 
@@ -131,24 +139,27 @@ Dit document biedt een **complete overzicht** van alle refactoring werk voor de 
 
 ---
 
-### Phase 3: Data Layer 🟡 **MEDIUM PRIORITY**
+### Phase 3: Data Layer ✅ **COMPLETED**
 
-#### 3.1 AliasManager.kt Refactoring ⚠️
-**Omvang**: 1332 regels (GROOTSTE BESTAND!) → ~400 regels (verwacht)
+#### 3.1 AliasManager.kt Refactoring ✅ **DONE**
+**Result**: 1332 → 801 regels (**40% reductie**, 531 regels verwijderd)
 
-**Te analyseren**: Gedetailleerde analyse nodig
+**Helpers Created** (6 classes):
+- ✅ AliasIndexCache.kt (~90 regels)
+- ✅ AliasSafWriter.kt (~120 regels)
+- ✅ AliasMasterIO.kt (~220 regels)
+- ✅ AliasIndexLoader.kt (~100 regels)
+- ✅ AliasSeedGenerator.kt (~280 regels)
+- ✅ AliasCborRebuilder.kt (~180 regels)
 
-**Mogelijke helpers**:
-- AliasIndexBuilder.kt
-- AliasIndexLoader.kt
-- AliasIndexCache.kt
-- AliasPrecompute.kt
+**Key Improvements**:
+- ensureIndexLoadedSuspend(): 98 → 20 regels (80% reductie)
+- forceFlush/forceRebuildCborNow: 80+ → 6 regels (93% reductie)
+- Removed 323 regels duplicate/moved code
 
-**Tijdsinschatting**: 3-4 dagen (complex systeem)
+**Branch**: `copilot/refactor-aliasmanager-and-metadata`
 
-**Branch**: `copilot/refactor-aliasmanager`
-
-**Status**: ⏳ **Needs detailed analysis - CRITICAL SIZE**
+**Status**: ✅ **COMPLETED**
 
 ---
 
@@ -177,6 +188,90 @@ Dit document biedt een **complete overzicht** van alle refactoring werk voor de 
 - AfrondWorker.kt (283 regels) - Extract notification logic
 
 **Tijdsinschatting**: 1 dag totaal
+
+---
+
+### Phase 4: Remaining Large Files ⏳ **NEXT PRIORITY**
+
+**Status**: Phase 2 & 3 Complete ✅ | Phase 4 Analysis Ready 🚀
+
+**Target Files** (>500 regels):
+1. **TellingScherm.kt** (1,288 regels) → ~450 regels 🔴 HIGHEST PRIORITY
+2. **SpeechRecognitionManager.kt** (740 regels) → ~400 regels 🟡 MEDIUM
+3. **ServerDataRepository.kt** (644 regels) → ~350 regels 🟡 MEDIUM
+4. **AliasSpeechParser.kt** (540 regels) → ~350 regels 🟢 LOW (optional)
+
+**Total Projected Reduction**: ~1,070 regels
+
+**Detailed Analysis**: Zie `PHASE_4_ANALYSIS.md`
+
+---
+
+#### 4.1 TellingScherm.kt Refactoring 🔴 **RECOMMENDED FIRST**
+**Omvang**: 1,288 regels (NU GROOTSTE FILE!) → ~450 regels (65% reductie)
+
+**✅ Bestaande Helpers** (al aanwezig maar niet volledig gebruikt!):
+- TellingUiManager.kt - UI updates, tiles, colors
+- TellingLogManager.kt - Log display, filtering
+- TellingSessionManager.kt - Session state, persistence
+- TellingBackupManager.kt - Auto-backup, recovery
+- AfrondManager.kt - Finish flow, upload
+- TellingDialogHelper.kt - Dialog styling
+- TegelBeheer.kt - Tile layout management
+- RecordsBeheer.kt - Observation records
+- TellingDataProcessor.kt - Data transformations
+
+**Strategy**: Refactor TellingScherm om volledig te delegeren naar bestaande helpers
+
+**Nieuwe helpers** (indien nodig):
+- TellingSpeechHandler.kt (~150 regels) - Speech recognition integration
+- TellingGestureHandler.kt (~100 regels) - Gesture detection, volume keys
+- TellingDataSync.kt (~100 regels) - Data synchronization
+
+**Tijdsinschatting**: 2.5-3 dagen
+
+**Risico**: Medium-High (centrale functionaliteit)
+
+**Branch**: `copilot/refactor-aliasmanager-and-metadata` (continue in same branch)
+
+---
+
+#### 4.2 SpeechRecognitionManager.kt Refactoring
+**Omvang**: 740 → ~400 regels (46% reductie)
+
+**Voorgestelde helpers** (3 classes):
+- SpeechRecognizerWrapper.kt (~150 regels) - Android SpeechRecognizer lifecycle
+- SpeechResultParser.kt (~120 regels) - Result parsing, normalization
+- PhoneticIndexLoader.kt (~100 regels) - Phonetic index management
+
+**Tijdsinschatting**: 4 dagen
+
+**Risico**: Medium (kernfunctionaliteit)
+
+---
+
+#### 4.3 ServerDataRepository.kt Refactoring
+**Omvang**: 644 → ~350 regels (46% reductie)
+
+**Voorgestelde helpers** (3 classes):
+- ServerDataFileReader.kt (~150 regels) - SAF file operations
+- ServerDataDecoder.kt (~120 regels) - JSON/CBOR decoding
+- ServerDataCacheManager.kt (~100 regels) - Cache management
+
+**Tijdsinschatting**: 2.5 dagen
+
+**Risico**: Laag (data layer)
+
+---
+
+#### 4.4 AliasSpeechParser.kt (Optional)
+**Omvang**: 540 → ~350 regels (35% reductie)
+
+**Status**: ✅ Goed gestructureerd, minimal refactoring needed
+
+**Actie**: Alleen indien tijd over is
+
+**Tijdsinschatting**: 0.5 dag (optional)
 
 ---
 
@@ -212,17 +307,22 @@ Dit document biedt een **complete overzicht** van alle refactoring werk voor de 
 
 ---
 
-## Totale Tijdsinschatting
+## Totale Tijdsinschatting - UPDATED
 
-| Phase | Tijd | Status |
-|-------|------|--------|
-| Phase 0: Planning | 1 dag | ✅ DONE |
-| Phase 1: Setup & Infrastructure | 4-5 dagen | ⏳ NEXT |
-| Phase 2: Core Observation Flow | 2 dagen | 🔜 SOON |
-| Phase 3: Data Layer | 5-6 dagen | 🔜 LATER |
-| Phase 4: Supporting Components | 1 dag | 🔜 LATER |
-| Phase 5: Testing & Documentation | 6-7 dagen | 🔄 PARALLEL |
-| **TOTAAL** | **19-22 dagen** | |
+| Phase | Tijd | Status | Completion Date |
+|-------|------|--------|-----------------|
+| Phase 0: Planning | 1 dag | ✅ DONE | 2025-11-17 |
+| Phase 1: Setup & Infrastructure | 3 dagen | ✅ DONE | 2025-11-17 |
+| Phase 2: MetadataScherm | 2 dagen | ✅ DONE | 2025-11-17 |
+| Phase 3: AliasManager | 3 dagen | ✅ DONE | 2025-11-17 |
+| **Phase 4: Remaining Large Files** | **7-9 dagen** | **⏳ PLANNING** | - |
+| Phase 5: Testing & Documentation | 6-7 dagen | 🔄 PARALLEL | - |
+| **TOTAAL** | **22-25 dagen** | **40% DONE** | |
+
+**Progress**: 
+- ✅ Phases 0-3: 9 dagen (36% van totaal)
+- ⏳ Phase 4: 7-9 dagen (planning)
+- 🔜 Phase 5: 6-7 dagen (parallel)
 
 ---
 
@@ -359,19 +459,27 @@ git push origin main --tags
 
 ---
 
-## Current Status
+## Current Status - UPDATED 2025-11-17
 
-**Phase**: 0 (Planning) ✅ **COMPLETED**
+**Phase**: 2 & 3 ✅ **COMPLETED** | Phase 4 **PLANNING**
 
-**Next Step**: User approval voor Phase 1.1 (InstallatieScherm refactoring)
+**Completed Work**:
+- ✅ Phase 2: MetadataScherm.kt (798→367, 54% reductie)
+- ✅ Phase 3: AliasManager.kt (1332→801, 40% reductie)
+- ✅ Total: 962 regels verwijderd, 9 helpers aangemaakt
 
-**Branch**: `copilot/complete-refactoring-phases`
+**Next Step**: User approval voor Phase 4 refactoring
+
+**Branch**: `copilot/refactor-aliasmanager-and-metadata` (continuing in same branch)
 
 **Documents Ready**:
 - ✅ VOLLEDIGE_APP_ANALYSE.md
 - ✅ VERBETERINGEN_ANALYSE.md  
 - ✅ REFACTORING_INSTALLATIESCHERM.md
-- ✅ REFACTORING_MASTER_PLAN.md (this document)
+- ✅ REFACTORING_MASTER_PLAN.md (this document - UPDATED)
+- ✅ PHASE_2_COMPLETION_SUMMARY.md
+- ✅ PHASE_3_ALIASMANAGER_REFACTORING_COMPLETE.md
+- ✅ **PHASE_4_ANALYSIS.md** (NEW - Complete analysis of remaining files)
 
 ---
 
