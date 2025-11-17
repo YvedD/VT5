@@ -27,7 +27,7 @@ import java.util.zip.GZIPInputStream
  * - Fallback handling (bin → json)
  */
 class ServerDataDecoder(
-    private val context: Context,
+    val context: Context,
     private val json: Json = defaultJson,
     private val cbor: Cbor = defaultCbor
 ) {
@@ -79,7 +79,7 @@ class ServerDataDecoder(
     /**
      * Decode from VT5Bin binary format.
      */
-    inline fun <reified T> decodeBinary(
+    internal inline fun <reified T> decodeBinary(
         file: DocumentFile,
         expectedKind: UShort
     ): Decoded<T>? {
@@ -169,7 +169,7 @@ class ServerDataDecoder(
     /**
      * Decode a list from JSON file.
      */
-    inline fun <reified T> decodeListFromJson(file: DocumentFile): List<T>? {
+    internal inline fun <reified T> decodeListFromJson(file: DocumentFile): List<T>? {
         context.contentResolver.openInputStream(file.uri)?.use { input ->
             val text = input.readBytes().decodeToString()
             return runCatching {
