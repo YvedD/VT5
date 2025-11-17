@@ -99,14 +99,122 @@ object AliasManager {
         }
     }
 
-    /* Note: Helper methods moved to specialized helper classes:
-     * - AliasIndexCache: loadIndexFromInternalCache, writeIndexToInternalCache, deleteInternalCache
-     * - AliasSafWriter: safeWriteToDocument, safeWriteTextToDocument, writeCopyToExports
-     */
+    /* ------------------------
+       Internal CBOR cache helpers
+       ------------------------ */
+
+    @OptIn(ExperimentalSerializationApi::class)
+    private fun loadIndexFromInternalCache(context: Context): AliasIndex? {
+        return try {
+            val f = File(context.filesDir, INTERNAL_CBOR)
+            if (!f.exists() || f.length() == 0L) return null
+            f.inputStream().use { fis ->
+                GZIPInputStream(fis).use { gis ->
+                    val bytes = gis.readBytes()
+                    Cbor.decodeFromByteArray(AliasIndex.serializer(), bytes)
+                }
+            }
+        } catch (ex: Exception) {
+            Log.w(TAG, "loadIndexFromInternalCache failed: ${ex.message}")
+            null
+        }
+    }
+
+    @OptIn(ExperimentalSerializationApi::class)
+    private fun writeIndexToInternalCache(context: Context, index: AliasIndex) {
+        try {
+            val f = File(context.filesDir, INTERNAL_CBOR)
+            val bytes = Cbor.encodeToByteArray(AliasIndex.serializer(), index)
+            val tmp = File(context.filesDir, "$INTERNAL_CBOR.tmp")
+            tmp.outputStream().use { fos ->
+                GZIPOutputStream(fos).use { gos ->
+                    gos.write(bytes)
+                    gos.finish()
+                }
+            }
+            tmp.renameTo(f)
+            Log.i(TAG, "Wrote internal CBOR cache: ${f.absolutePath} (${f.length()} bytes)")
+        } catch (ex: Exception) {
+            Log.w(TAG, "writeIndexToInternalCache failed: ${ex.message}")
+        }
+    }
+
+    private fun deleteInternalCache(context: Context) {
+        try {
+            val f = File(context.filesDir, INTERNAL_CBOR)
+            if (f.exists()) f.delete()
+        } catch (_: Exception) {}
+    }
 
     /**
-     * Ensure the in-memory AliasIndex is loaded - REFACTORED with AliasIndexLoader helper.
-     * This function is suspend and idempotent.
+     * Safe write helpers for SAF DocumentFile targets.
+     * - safeWriteToDocument: writes binary bytes to the given DocumentFile and returns success boolean.
+     * - safeWriteTextToDocument: convenience for text.
+     * - Writes do not throw; they log and return false on error.
+     */
+    private fun safeWriteToDocument(context: Context, doc: DocumentFile?, data: ByteArray): Boolean {
+        if (doc == null) return false
+        return try {
+            // doc.exists() may throw for some providers; guard it
+            runCatching { doc.exists() }.getOrDefault(false)
+            context.contentResolver.openOutputStream(doc.uri, "w")?.use { os ->
+                os.write(data)
+                os.flush()
+            } ?: run {
+                Log.w(TAG, "safeWriteToDocument: openOutputStream returned null for ${doc.uri}")
+                return false
+            }
+            true
+        } catch (fnf: FileNotFoundException) {
+            Log.w(TAG, "safeWriteToDocument FileNotFound for ${doc.uri}: ${fnf.message}")
+            false
+        } catch (sec: SecurityException) {
+            Log.w(TAG, "safeWriteToDocument SecurityException for ${doc.uri}: ${sec.message}")
+            false
+        } catch (ex: Exception) {
+            Log.w(TAG, "safeWriteToDocument failed for ${doc.uri}: ${ex.message}", ex)
+            false
+        }
+    }
+
+    private fun safeWriteTextToDocument(context: Context, doc: DocumentFile?, text: String): Boolean {
+        return safeWriteToDocument(context, doc, text.toByteArray(Charsets.UTF_8))
+    }
+
+    /**
+     * Ensure a visible copy is written to Documents/VT5/exports for user access.
+     * This is best-effort and never fails the operation if it cannot write.
+     */
+    private fun writeCopyToExports(context: Context, vt5RootDir: DocumentFile, name: String, data: ByteArray, mimeType: String) {
+        try {
+            val exports = vt5RootDir.findFile("exports")?.takeIf { it.isDirectory } ?: vt5RootDir.createDirectory("exports")
+            if (exports == null) {
+                Log.w(TAG, "writeCopyToExports: cannot create/find exports dir")
+                return
+            }
+            // replace existing to keep single accessible copy
+            exports.findFile(name)?.delete()
+            val doc = exports.createFile(mimeType, name) ?: run {
+                Log.w(TAG, "writeCopyToExports: failed creating $name in exports")
+                return
+            }
+            if (!safeWriteToDocument(context, doc, data)) {
+                Log.w(TAG, "writeCopyToExports: safe write failed for $name")
+            } else {
+                Log.i(TAG, "writeCopyToExports: wrote $name to exports for user access")
+            }
+        } catch (ex: Exception) {
+            Log.w(TAG, "writeCopyToExports failed: ${ex.message}")
+        }
+    }
+
+    /**
+     * Ensure the in-memory AliasIndex is loaded. This function is suspend and idempotent.
+     * Load priority:
+     * 1) internal CBOR cache (fast)
+     * 2) SAF binaries/aliases_optimized.cbor.gz (copy to internal & load)
+     * 3) SAF assets/alias_master.json or serverdata species.json -> build index
+     * After building/merging (including user aliases), write internal CBOR for next time.
      */
     suspend fun ensureIndexLoadedSuspend(context: Context, saf: SaFStorageHelper) = withContext(Dispatchers.IO) {
         if (indexLoaded && loadedIndex != null) {
@@ -120,17 +228,91 @@ object AliasManager {
                 return@withLock
             }
 
-            // Delegate to AliasIndexLoader helper for priority-based loading
-            val index = AliasIndexLoader.loadIndex(context, saf)
-            if (index != null) {
+            // 1) try internal cache
+            val fromInternal: AliasIndex? = loadIndexFromInternalCache(context)
+            if (fromInternal != null) {
+                loadedIndex = fromInternal
+                indexLoaded = true
+                Log.i(TAG, "Loaded AliasIndex from internal cache")
+                return@withLock
+            }
+
+            // 2) try SAF binaries (Documents/VT5/binaries/aliases_optimized.cbor.gz)
+            val vt5 = saf.getVt5DirIfExists()
+            if (vt5 != null) {
+                try {
+                    val binariesDir = vt5.findFile(BINARIES)?.takeIf { it.isDirectory }
+                    val cborDoc = binariesDir?.findFile(CBOR_FILE)
+                    if (cborDoc != null && cborDoc.isFile) {
+                        context.contentResolver.openInputStream(cborDoc.uri)?.use { ins ->
+                            val tmp = File(context.filesDir, "$INTERNAL_CBOR.tmp")
+                            tmp.outputStream().use { outs -> ins.copyTo(outs) }
+                            tmp.renameTo(File(context.filesDir, INTERNAL_CBOR))
+                        }
+                        val idx = loadIndexFromInternalCache(context)
+                        if (idx != null) {
+                            loadedIndex = idx
+                            indexLoaded = true
+                            Log.i(TAG, "Loaded AliasIndex from SAF binaries (copied to internal)")
+                            return@withLock
+                        }
+                    }
+                } catch (ex: Exception) {
+                    Log.w(TAG, "Failed loading cbor from SAF: ${ex.message}", ex)
+                }
+            }
+
+            // 3) Build from SAF alias_master.json or from serverdata
+            try {
+                val masterFromAssets: AliasMaster? = try {
+                    val assetsDir = vt5?.findFile(ASSETS)?.takeIf { it.isDirectory }
+                    val masterDoc = assetsDir?.findFile(MASTER_FILE)?.takeIf { it.isFile }
+                    masterDoc?.let { doc ->
+                        context.contentResolver.openInputStream(doc.uri)?.use { it.readBytes().toString(Charsets.UTF_8) }?.let { txt ->
+                            jsonPretty.decodeFromString(AliasMaster.serializer(), txt)
+                        }
+                    }
+                } catch (_: Exception) { null }
+
+                val baseMaster = masterFromAssets ?: run {
+                    // fallback: try to build seed from serverdata (this will write master & cbor to SAF)
+                    try {
+                        generateSeedFromSpeciesJson(context, saf, vt5 ?: throw IllegalStateException("VT5 not present"))
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "generateSeedFromSpeciesJson during ensureIndex failed: ${ex.message}", ex)
+                    }
+                    // try reading asset again
+                    if (vt5 != null) {
+                        val assetsDir2 = vt5.findFile(ASSETS)?.takeIf { it.isDirectory }
+                        val masterDoc2 = assetsDir2?.findFile(MASTER_FILE)?.takeIf { it.isFile }
+                        masterDoc2?.let { doc ->
+                            context.contentResolver.openInputStream(doc.uri)?.use { it.readBytes().toString(Charsets.UTF_8) }?.let { txt ->
+                                try { jsonPretty.decodeFromString(AliasMaster.serializer(), txt) } catch (_: Exception) { null }
+                            }
+                        }
+                    } else null
+                }
+
+                val finalMaster = baseMaster ?: AliasMaster(version = "2.1", timestamp = Instant.now().toString(), species = emptyList())
+                val mergedMaster = mergeUserAliasesIntoMaster(context, vt5 ?: throw IllegalStateException("VT5 not present"), finalMaster)
+
+                val index = mergedMaster.toAliasIndex()
+
+                // persist to internal CBOR cache for future fast loads
+                writeIndexToInternalCache(context, index)
+
                 loadedIndex = index
                 indexLoaded = true
-                Log.i(TAG, "AliasIndex loaded via helper")
-            } else {
-                loadedIndex = null
-                indexLoaded = false
-                Log.w(TAG, "AliasIndex: no index available")
+                Log.i(TAG, "Built AliasIndex from JSON and wrote internal cache")
+                return@withLock
+            } catch (ex: Exception) {
+                Log.e(TAG, "Failed to build AliasIndex from JSON: ${ex.message}", ex)
             }
+
+            // last fallback: no index available
+            loadedIndex = null
+            indexLoaded = false
+            Log.w(TAG, "AliasIndex fallback: no index available")
         }
     }
 
@@ -220,21 +402,45 @@ object AliasManager {
                 Log.w(TAG, "addAlias: immediate persist to master.json failed (alias still hotpatched in-memory)")
             }
 
-            // 3) Refresh internal cache and AliasMatcher from updated master
+            // 3) Ensure internal cache and runtime matcher are refreshed so subsequent recognitions immediately see the alias.
+            //    Steps:
+            //     - read alias_master.json from SAF assets
+            //     - build AliasIndex and update internal cache (fast, local)
+            //     - reload AliasMatcher so it picks up internal cache
             try {
-                val vt5Local = saf.getVt5DirIfExists()
+                val vt5Local: DocumentFile? = saf.getVt5DirIfExists()
                 if (vt5Local != null) {
-                    val masterObj = AliasMasterIO.readMasterFromAssets(context, vt5Local)
-                    if (masterObj != null) {
-                        AliasIndexCache.write(context, masterObj.toAliasIndex())
-                        Log.i(TAG, "addAlias: internal CBOR cache updated")
-                        
-                        // Reload AliasMatcher
-                        try {
-                            com.yvesds.vt5.features.speech.AliasMatcher.reloadIndex(context, saf)
-                            Log.i(TAG, "addAlias: AliasMatcher reloaded")
-                        } catch (ex: Exception) {
-                            Log.w(TAG, "addAlias: AliasMatcher reload failed: ${ex.message}", ex)
+                    val assetsDirLocal: DocumentFile? = vt5Local.findFile(ASSETS)?.takeIf { it.isDirectory }
+                    val masterDocLocal: DocumentFile? = assetsDirLocal?.findFile(MASTER_FILE)?.takeIf { it.isFile }
+                    if (masterDocLocal != null) {
+                        val masterJsonLocal: String? = runCatching {
+                            context.contentResolver.openInputStream(masterDocLocal.uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                        }.getOrNull()
+                        if (!masterJsonLocal.isNullOrBlank()) {
+                            val masterObj: AliasMaster? = try {
+                                jsonPretty.decodeFromString(AliasMaster.serializer(), masterJsonLocal)
+                            } catch (ex: Exception) {
+                                Log.w(TAG, "addAlias: decode master failed: ${ex.message}")
+                                null
+                            }
+                            if (masterObj != null) {
+                                // Build AliasIndex and update internal cache (fast, local)
+                                try {
+                                    val idxLocal: AliasIndex = masterObj.toAliasIndex()
+                                    writeIndexToInternalCache(context, idxLocal)
+                                    Log.i(TAG, "addAlias: internal CBOR cache updated from master.json")
+                                } catch (ex: Exception) {
+                                    Log.w(TAG, "addAlias: failed to write internal CBOR cache: ${ex.message}", ex)
+                                }
+
+                                // Reload runtime matcher so it immediately uses the new internal cache
+                                try {
+                                    com.yvesds.vt5.features.speech.AliasMatcher.reloadIndex(context, saf)
+                                    Log.i(TAG, "addAlias: AliasMatcher.reloadIndex invoked")
+                                } catch (ex: Exception) {
+                                    Log.w(TAG, "addAlias: AliasMatcher.reloadIndex failed: ${ex.message}", ex)
+                                }
+                            }
                         }
                     }
                 }
@@ -242,8 +448,8 @@ object AliasManager {
                 Log.w(TAG, "addAlias: post-persist refresh failed: ${ex.message}", ex)
             }
 
-            // 4) Schedule debounced CBOR rebuild for SAF binaries
-            AliasCborRebuilder.scheduleRebuild(context, saf)
+            // 4) Schedule debounced CBOR rebuild (coalesced for many adds) to update SAF/binaries in the background
+            scheduleCborRebuildDebounced(context, saf)
 
             Log.i(TAG, "addAlias: hotpatched and persisted alias='$normalizedText' for species=$speciesId (master.json immediate)")
             return@withContext true
@@ -253,21 +459,121 @@ object AliasManager {
         }
     }
 
-    /* FORCE FLUSH - REFACTORED */
+    /* FORCE FLUSH */
     suspend fun forceFlush(context: Context, saf: SaFStorageHelper) {
-        // Delegate to AliasCborRebuilder for immediate CBOR rebuild
-        AliasCborRebuilder.forceRebuild(context, saf)
-        Log.i(TAG, "Force rebuild completed")
+        // force immediate CBOR rebuild now (synchronous)
+        // Also keep legacy flushWriteQueue behavior for queued entries
+        writeJob?.cancel()
+        if (writeQueue.isNotEmpty()) {
+            Log.i(TAG, "Force flushing ${writeQueue.size} pending aliases (legacy batch path)...")
+            flushWriteQueue(context, saf)
+        }
+        // Also ensure debounced CBOR rebuild runs now
+        scheduleCborRebuildDebounced(context, saf, immediate = true)
     }
 
-    /* FORCE REBUILD CBOR NOW - REFACTORED */
-    suspend fun forceRebuildCborNow(context: Context, saf: SaFStorageHelper) {
-        // Delegate to AliasCborRebuilder for synchronous rebuild
-        AliasCborRebuilder.forceRebuild(context, saf)
-        Log.i(TAG, "Synchronous CBOR rebuild completed")
+    suspend fun forceRebuildCborNow(context: Context, saf: SaFStorageHelper) = withContext(Dispatchers.IO) {
+        cborMutex.withLock {
+            // Cancel any scheduled rebuild and run rebuild synchronously here
+            try {
+                cborRebuildJob?.cancel()
+            } catch (_: Exception) {}
+            try {
+                val vt5 = saf.getVt5DirIfExists() ?: run {
+                    Log.w(TAG, "forceRebuildCborNow: VT5 not available")
+                    return@withContext
+                }
+                val assets = vt5.findFile(ASSETS)?.takeIf { it.isDirectory } ?: run {
+                    Log.w(TAG, "forceRebuildCborNow: assets dir missing")
+                    return@withContext
+                }
+                val masterDoc = assets.findFile(MASTER_FILE)?.takeIf { it.isFile }
+                if (masterDoc == null) {
+                    Log.w(TAG, "forceRebuildCborNow: master.json missing")
+                    return@withContext
+                }
+                val masterJson = runCatching { context.contentResolver.openInputStream(masterDoc.uri)?.use { it.readBytes().toString(Charsets.UTF_8) } }.getOrNull()
+                if (masterJson.isNullOrBlank()) {
+                    Log.w(TAG, "forceRebuildCborNow: master.json empty")
+                    return@withContext
+                }
+                val master = try { jsonPretty.decodeFromString(AliasMaster.serializer(), masterJson) } catch (ex: Exception) {
+                    Log.w(TAG, "forceRebuildCborNow: decode failed: ${ex.message}")
+                    return@withContext
+                }
+                val binaries = vt5.findFile(BINARIES)?.takeIf { it.isDirectory } ?: vt5.createDirectory(BINARIES) ?: run {
+                    Log.w(TAG, "forceRebuildCborNow: cannot create binaries dir")
+                    return@withContext
+                }
+                // rebuildCborCache is suspend and writes CBOR + internal cache; call it directly and wait
+                rebuildCborCache(master, binaries, context, saf)
+                Log.i(TAG, "forceRebuildCborNow: CBOR rebuild finished (synchronous)")
+            } catch (ex: Exception) {
+                Log.w(TAG, "forceRebuildCborNow failed: ${ex.message}", ex)
+            } finally {
+                cborRebuildJob = null
+            }
+        }
     }
 
-    /* Note: scheduleCborRebuildDebounced moved to AliasCborRebuilder helper */
+    /**
+     * Debounced CBOR rebuild scheduling.
+     * - If immediate=true then perform rebuild as soon as possible on writer scope.
+     * - Otherwise debounce for CBOR_REBUILD_DEBOUNCE_MS to coalesce multiple alias adds.
+     */
+    private fun scheduleCborRebuildDebounced(context: Context, saf: SaFStorageHelper, immediate: Boolean = false) {
+        writeScope.launch {
+            cborMutex.withLock {
+                cborRebuildJob?.cancel()
+                cborRebuildJob = writeScope.launch {
+                    try {
+                        if (!immediate) {
+                            delay(CBOR_REBUILD_DEBOUNCE_MS)
+                        }
+                        // Read current master.json from SAF and rebuild CBOR
+                        val vt5 = saf.getVt5DirIfExists() ?: run {
+                            Log.w(TAG, "scheduleCborRebuildDebounced: VT5 not available")
+                            return@launch
+                        }
+                        val assets = vt5.findFile(ASSETS)?.takeIf { it.isDirectory } ?: vt5.createDirectory(ASSETS) ?: run {
+                            Log.w(TAG, "scheduleCborRebuildDebounced: assets dir missing")
+                            return@launch
+                        }
+                        val masterDoc = assets.findFile(MASTER_FILE)?.takeIf { it.isFile }
+                        if (masterDoc == null) {
+                            Log.w(TAG, "scheduleCborRebuildDebounced: master.json missing")
+                            return@launch
+                        }
+                        val masterJson = runCatching { context.contentResolver.openInputStream(masterDoc.uri)?.use { it.readBytes().toString(Charsets.UTF_8) } }.getOrNull()
+                        if (masterJson.isNullOrBlank()) {
+                            Log.w(TAG, "scheduleCborRebuildDebounced: master.json empty")
+                            return@launch
+                        }
+                        val master = try { jsonPretty.decodeFromString(AliasMaster.serializer(), masterJson) } catch (ex: Exception) {
+                            Log.w(TAG, "scheduleCborRebuildDebounced: decode failed: ${ex.message}")
+                            return@launch
+                        }
+
+                        // Rebuild CBOR using existing function (runs on IO inside)
+                        val binaries = vt5.findFile(BINARIES)?.takeIf { it.isDirectory } ?: vt5.createDirectory(BINARIES) ?: run {
+                            Log.w(TAG, "scheduleCborRebuildDebounced: cannot create binaries dir")
+                            return@launch
+                        }
+                        rebuildCborCache(master, binaries, context, saf)
+
+                        // internal cache will be updated by rebuildCborCache
+                        Log.i(TAG, "scheduleCborRebuildDebounced: CBOR rebuild finished")
+                    } catch (ex: CancellationException) {
+                        Log.i(TAG, "CBOR rebuild job cancelled/rescheduled")
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "CBOR rebuild failed: ${ex.message}", ex)
+                    } finally {
+                        cborRebuildJob = null
+                    }
+                }
+            }
+        }
+    }
 
     @ExperimentalSerializationApi
     private suspend fun writeMasterAndCborToSaf(
