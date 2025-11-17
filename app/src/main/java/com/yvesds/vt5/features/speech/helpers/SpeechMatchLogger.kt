@@ -53,7 +53,7 @@ class SpeechMatchLogger(
             MatchLogWriter.enqueueFireAndForget(context, logLine)
 
             // Background SAF write
-            writeTo SAFAsync(logLine)
+            writeToSAFAsync(logLine)
         } catch (ex: Exception) {
             Log.e(TAG, "logMatchResult failed: ${ex.message}", ex)
         }
