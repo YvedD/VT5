@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
+
 package com.yvesds.vt5.features.opstart.helpers
 
 import android.content.Context
