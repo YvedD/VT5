@@ -6,7 +6,7 @@ import androidx.documentfile.provider.DocumentFile
 import java.io.FileNotFoundException
 
 /**
- * AliasIndexWriter: Handles safe writing to SAF DocumentFiles.
+ * AliasSafWriter: Handles safe writing to SAF DocumentFiles.
  * 
  * Responsibilities:
  * - Write binary data to SAF DocumentFile with error handling
@@ -15,9 +15,9 @@ import java.io.FileNotFoundException
  * 
  * All write operations are safe and never throw - they return success boolean.
  */
-object AliasIndexWriter {
+object AliasSafWriter {
     
-    private const val TAG = "AliasIndexWriter"
+    private const val TAG = "AliasSafWriter"
     
     /**
      * Safely write binary data to a DocumentFile.

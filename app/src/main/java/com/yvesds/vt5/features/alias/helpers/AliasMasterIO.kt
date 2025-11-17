@@ -134,7 +134,7 @@ object AliasMasterIO {
                 val prettyJson = jsonPretty.encodeToString(AliasMaster.serializer(), master)
                 
                 if (masterDoc != null) {
-                    val wroteMaster = AliasIndexWriter.safeWriteTextToDocument(context, masterDoc, prettyJson)
+                    val wroteMaster = AliasSafWriter.safeWriteTextToDocument(context, masterDoc, prettyJson)
                     if (!wroteMaster) {
                         Log.w(TAG, "writeMasterAndCbor: writing master.json to assets failed; will fallback to internal cache and exports copy")
                     } else {
@@ -146,7 +146,7 @@ object AliasMasterIO {
                 
                 // Also write a user-visible copy to exports folder (best-effort)
                 runCatching {
-                    AliasIndexWriter.writeCopyToExports(
+                    AliasSafWriter.writeCopyToExports(
                         context, vt5RootDir, MASTER_FILE, 
                         prettyJson.toByteArray(Charsets.UTF_8), "application/json"
                     )
@@ -180,7 +180,7 @@ object AliasMasterIO {
             }.getOrNull()
             
             if (cborDoc != null) {
-                val wroteCborSaf = AliasIndexWriter.safeWriteToDocument(context, cborDoc, gzipped)
+                val wroteCborSaf = AliasSafWriter.safeWriteToDocument(context, cborDoc, gzipped)
                 if (wroteCborSaf) {
                     Log.i(TAG, "writeMasterAndCbor: wrote $CBOR_FILE to ${cborDoc.uri} (${gzipped.size} bytes)")
                 } else {
@@ -192,7 +192,7 @@ object AliasMasterIO {
             
             // Also write user-visible copy to exports
             runCatching {
-                AliasIndexWriter.writeCopyToExports(
+                AliasSafWriter.writeCopyToExports(
                     context, vt5RootDir, CBOR_FILE, gzipped, "application/octet-stream"
                 )
             }
