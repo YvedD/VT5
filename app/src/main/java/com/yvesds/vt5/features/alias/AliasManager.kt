@@ -5,13 +5,29 @@ import android.util.Log
 import androidx.documentfile.provider.DocumentFile
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.features.alias.helpers.*
+import com.yvesds.vt5.features.serverdata.model.ServerDataCache
 import com.yvesds.vt5.features.speech.ColognePhonetic
 import com.yvesds.vt5.features.speech.DutchPhonemizer
 import com.yvesds.vt5.utils.TextUtils
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.cbor.Cbor
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileNotFoundException
 import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
 
 /**
  * AliasManager.kt - REFACTORED with helper delegation
@@ -37,8 +53,16 @@ object AliasManager {
 
     /* FILE PATHS & CONSTANTS */
     private const val MASTER_FILE = "alias_master.json"
+    private const val CBOR_FILE = "aliases_optimized.cbor.gz"
     private const val BINARIES = "binaries"
     private const val ASSETS = "assets"
+
+    /* JSON SERIALIZER */
+    private val jsonPretty = Json {
+        prettyPrint = true
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
 
     /* INDEX LOAD SYNCHRONIZATION */
     private val indexLoadMutex = Mutex()
@@ -293,7 +317,7 @@ object AliasManager {
                 val prettyJson = jsonPrettyLocal.encodeToString(AliasMaster.serializer(), master)
                 var wroteMaster = false
                 if (masterDoc != null) {
-                    wroteMaster = safeWriteTextToDocument(context, masterDoc, prettyJson)
+                    wroteMaster = AliasSafWriter.safeWriteTextToDocument(context, masterDoc, prettyJson)
                     if (!wroteMaster) {
                         Log.w(TAG, "writeMasterAndCborToSaf: writing master.json to assets failed; will fallback to internal cache and exports copy")
                     } else {
@@ -731,7 +755,7 @@ object AliasManager {
 
             // Write master JSON (pretty) using safe helper
             val updatedJson = jsonPretty.encodeToString(AliasMaster.serializer(), updatedMaster)
-            val wroteMaster = safeWriteTextToDocument(context, masterDoc, updatedJson)
+            val wroteMaster = AliasSafWriter.safeWriteTextToDocument(context, masterDoc, updatedJson)
             if (!wroteMaster) {
                 Log.w(TAG, "flushWriteQueue: failed writing master.json to SAF; master updated in hotpatch and internal cache will be updated")
             } else {
@@ -872,7 +896,7 @@ object AliasManager {
                     // already present -> update master timestamp and write to ensure updated timestamp
                     val updatedMaster = master.copy(timestamp = Instant.now().toString(), species = speciesMap.values.sortedBy { it.speciesId })
                     val prettyJson = jsonPretty.encodeToString(AliasMaster.serializer(), updatedMaster)
-                    val wrote = safeWriteTextToDocument(context, masterDoc, prettyJson)
+                    val wrote = AliasSafWriter.safeWriteTextToDocument(context, masterDoc, prettyJson)
                     if (!wrote) {
                         // fallback: write a copy to exports for user access, and ensure internal cache updated
                         writeCopyToExports(context, vt5, MASTER_FILE, prettyJson.toByteArray(Charsets.UTF_8), "application/json")
@@ -887,7 +911,7 @@ object AliasManager {
                     speciesMap[speciesId] = updatedSpeciesEntry
                     val updatedMaster = master.copy(timestamp = Instant.now().toString(), species = speciesMap.values.sortedBy { it.speciesId })
                     val prettyJson = jsonPretty.encodeToString(AliasMaster.serializer(), updatedMaster)
-                    val wrote = safeWriteTextToDocument(context, masterDoc, prettyJson)
+                    val wrote = AliasSafWriter.safeWriteTextToDocument(context, masterDoc, prettyJson)
                     if (!wrote) {
                         // fallback: write to exports and update internal cache
                         writeCopyToExports(context, vt5, MASTER_FILE, prettyJson.toByteArray(Charsets.UTF_8), "application/json")
