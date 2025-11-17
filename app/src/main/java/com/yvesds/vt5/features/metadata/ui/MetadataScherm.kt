@@ -290,161 +290,51 @@ class MetadataScherm : AppCompatActivity() {
     ) { res ->
         if (res.resultCode == Activity.RESULT_OK) {
             val ids = res.data?.getStringArrayListExtra(SoortSelectieScherm.EXTRA_SELECTED_SOORT_IDS).orEmpty()
-            gekozenTelpostId?.let { TellingSessionManager.setTelpost(it) }
+            formManager.gekozenTelpostId?.let { TellingSessionManager.setTelpost(it) }
             TellingSessionManager.setPreselectedSoorten(ids)
-            startActivity(Intent(this, TellingScherm::class.java))
+            val intent = Intent(this, com.yvesds.vt5.features.telling.TellingScherm::class.java)
+            startActivity(intent)
         }
     }
 
     /**
-     * Start telling:
-     *  - Bouw envelope met StartTellingApi
-     *  - POST via TrektellenApi.postCountsSave
-     *  - Bij succes: parse onlineId en opslaan in prefs (PREF_ONLINE_ID)
-     *  - Daarna: stel session (telpost + preselected soorten) in en open SoortSelectieScherm
-     *
-     * Als counts_save faalt wordt er een foutmelding getoond en wordt het scherm NIET geopend.
+     * Start telling - REFACTORED to use TellingStarter helper.
+     * This now delegates the complex logic to TellingStarter.
      */
-    private fun startTellingAndOpenSoortSelectie(username: String, password: String) {
-        val telpostId = gekozenTelpostId ?: return
-
+    private fun startTellingAndOpenSoortSelectie(telpostId: String, username: String, password: String) {
         uiScope.launch {
             try {
                 ProgressDialogHelper.withProgress(this@MetadataScherm, getString(R.string.metadata_preparing)) {
-                    // Zorg dat volledige snapshot beschikbaar is
-                    val snapshot = ServerDataCache.getOrLoad(this@MetadataScherm)
-
-                    // tellingId: gebruik VT5App.nextTellingId() (advances counter)
-                    val tellingIdLong = try {
-                        VT5App.nextTellingId().toLong()
-                    } catch (ex: Exception) {
-                        // Fallback: currentTime seconds as id (shouldn't happen)
-                        Log.w(TAG, "nextTellingId->Long failed: ${ex.message}")
-                        (System.currentTimeMillis() / 1000L)
-                    }
-
-                    // Gebruik de huidige gekozen datum/tijd (prefilled/edited)
-                    val begintijdEpoch = computeBeginEpochSec()
-
-                    // FORCE: Eindtijd altijd leeg string in envelope (we pass liveMode = true)
-                    val eindtijdEpoch = 0L
-
-                    // Prepare values for StartTellingApi
-                    // Use the chosen wind direction CODE if available, otherwise fallback to displayed label.
-                    val windrichtingForServer = gekozenWindrichtingCode?.takeIf { it.isNotBlank() }
-                        ?: binding.acWindrichting.text?.toString()?.takeIf { it.isNotBlank() } ?: ""
-
-                    val windkrachtBft = gekozenWindkracht ?: ""
-                    val temperatuurC = binding.etTemperatuur.text?.toString()?.trim().orEmpty()
-                    val bewolkingAchtsten = gekozenBewolking ?: ""
-                    val neerslagCode = gekozenNeerslagCode ?: ""
-                    val zichtMeters = binding.etZicht.text?.toString()?.trim().orEmpty()
-                    val typetellingCode = gekozenTypeTellingCode ?: ""
-
-                    // Teller(s): fallback to empty string (optional field not in current UI)
-                    val tellersFromUi = ""
-
-                    val weerOpmerking = binding.etWeerOpmerking.text?.toString()?.trim().orEmpty()
-                    val opmerkingen = "" // optional
-                    val luchtdrukHpaRaw = binding.etLuchtdruk.text?.toString()?.trim().orEmpty()
-
-                    // Build envelope (list of 1) -- pass liveMode = true so eindtijd == ""
-                    val envelope = StartTellingApi.buildEnvelopeFromUi(
-                        tellingId = tellingIdLong,
-                        telpostId = telpostId,
-                        begintijdEpochSec = begintijdEpoch,
-                        eindtijdEpochSec = eindtijdEpoch,
-                        windrichtingLabel = windrichtingForServer,
-                        windkrachtBftOnly = windkrachtBft,
-                        temperatuurC = temperatuurC,
-                        bewolkingAchtstenOnly = bewolkingAchtsten,
-                        neerslagCode = neerslagCode,
-                        zichtMeters = zichtMeters,
-                        typetellingCode = typetellingCode,
-                        telers = tellersFromUi,
-                        weerOpmerking = weerOpmerking,
-                        opmerkingen = opmerkingen,
-                        luchtdrukHpaRaw = luchtdrukHpaRaw,
-                        liveMode = true
-                    )
-
-                    // Post counts_save
-                    val baseUrl = "https://trektellen.nl"
-                    val language = "dutch"
-                    val versie = "1845"
-
-                    val (ok, resp) = withContext(Dispatchers.IO) {
-                        try {
-                            TrektellenApi.postCountsSave(baseUrl, language, versie, username, password, envelope)
-                        } catch (ex: Exception) {
-                            Log.w(TAG, "postCountsSave exception: ${ex.message}", ex)
-                            false to (ex.message ?: "exception")
-                        }
-                    }
-
-                    if (!ok) {
-                        // show failure dialog with server response and do not proceed
-                        Log.w(TAG, "counts_save failed: $resp")
+                    // Ensure full snapshot is available
+                    val fullSnapshot = ServerDataCache.getOrLoad(this@MetadataScherm)
+                    
+                    // Start the telling via TellingStarter helper
+                    val result = tellingStarter.startTelling(telpostId, username, password, fullSnapshot)
+                    
+                    if (!result.success) {
+                        // Show error dialog
                         withContext(Dispatchers.Main) {
                             AlertDialog.Builder(this@MetadataScherm)
                                 .setTitle(getString(R.string.metadata_error_start_failed_title))
-                                .setMessage(getString(R.string.metadata_error_start_failed_msg, resp))
+                                .setMessage(getString(R.string.metadata_error_start_failed_msg, result.errorMessage ?: "Unknown error"))
                                 .setPositiveButton(getString(R.string.dlg_ok), null)
                                 .show()
                         }
                         return@withProgress
                     }
-
-                    // Try to extract onlineId from response
-                    val onlineId = parseOnlineIdFromResponse(resp)
-                    if (onlineId.isNullOrBlank()) {
-                        // Could not parse onlineId — treat as error
-                        Log.w(TAG, "Could not parse onlineId from response: $resp")
-                        withContext(Dispatchers.Main) {
-                            AlertDialog.Builder(this@MetadataScherm)
-                                .setTitle(getString(R.string.metadata_error_unclear_title))
-                                .setMessage(getString(R.string.metadata_error_unclear_msg, resp))
-                                .setPositiveButton(getString(R.string.dlg_ok), null)
-                                .show()
-                        }
-                        return@withProgress
-                    }
-
-                    // Persist onlineId and tellingId in prefs so TellingScherm / DataUploader can use them
-                    val prefs = getSharedPreferences("vt5_prefs", MODE_PRIVATE)
-                    prefs.edit {
-                        putString(PREF_ONLINE_ID, onlineId)
-                        putString(PREF_TELLING_ID, tellingIdLong.toString())
-                    }
-
-                    // Initialize per-telling record counter starting at 1
-                    try {
-                        prefs.edit {
-                            putLong("pref_next_record_id_$tellingIdLong", 1L)
-                        }
-                    } catch (ex: Exception) {
-                        Log.w(TAG, "Failed initializing next record id: ${ex.message}")
-                    }
-
-                    // Persist the envelope JSON (metadata only, without data) for later reuse at Afronden
-                    try {
-                        val envelopeJson = VT5App.json.encodeToString(ListSerializer(ServerTellingEnvelope.serializer()), envelope)
-                        prefs.edit {
-                            putString(PREF_SAVED_ENVELOPE_JSON, envelopeJson)
-                        }
-                    } catch (ex: Exception) {
-                        Log.w(TAG, "Failed saving envelope JSON to prefs: ${ex.message}")
-                    }
-
-                    // Also set session state and preselected species (as before)
-                    val speciesForTelpost = snapshot.siteSpeciesBySite[telpostId]?.mapNotNull { it.soortid } ?: emptyList()
+                    
+                    // Success! Setup session and open SoortSelectieScherm
+                    val speciesForTelpost = fullSnapshot.siteSpeciesBySite[telpostId]?.mapNotNull { it.soortid } ?: emptyList()
                     TellingSessionManager.setTelpost(telpostId)
                     TellingSessionManager.setPreselectedSoorten(speciesForTelpost)
-
-                    // Success — open SoortSelectieScherm
-                    // Note: snapshot is already loaded and cached, so SoortSelectieScherm will use fast-path
+                    
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@MetadataScherm, getString(R.string.metadata_success_started, onlineId), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            this@MetadataScherm,
+                            getString(R.string.metadata_success_started, result.onlineId),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        
                         val intent = Intent(this@MetadataScherm, SoortSelectieScherm::class.java)
                         intent.putExtra(SoortSelectieScherm.EXTRA_TELPOST_ID, telpostId)
                         intent.putExtra("EXTRA_LIVE_MODE", true)
@@ -454,69 +344,19 @@ class MetadataScherm : AppCompatActivity() {
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error preparing species selection or starting counts_save: ${e.message}", e)
+                Log.e(TAG, "Error starting telling: ${e.message}", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@MetadataScherm, getString(R.string.metadata_error_preparing, e.message ?: ""), Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        this@MetadataScherm,
+                        getString(R.string.metadata_error_preparing, e.message ?: ""),
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
     }
 
-    /** Compute epoch seconds from UI date+time inputs. Fallback to startEpochSec if parse fails. */
-    private fun computeBeginEpochSec(): Long {
-        runCatching {
-            val dateStr = binding.etDatum.text?.toString()?.trim().orEmpty() // "YYYY-MM-DD"
-            val timeStr = binding.etTijd.text?.toString()?.trim().orEmpty() // "HH:mm"
-            if (dateStr.isBlank() || timeStr.isBlank()) return startEpochSec
-
-            val dt = "${dateStr} ${timeStr}"
-            val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-            val parsed = sdf.parse(dt) ?: return startEpochSec
-            return parsed.time / 1000L
-        }.onFailure {
-            Log.w(TAG, "computeBeginEpochSec failed: ${it.message}")
-        }
-        return startEpochSec
-    }
-
-    /**
-     * Tries to find an onlineId in server response.
-     * Accepts JSON object/array with "onlineid" key or a plain numeric id inside the response.
-     */
-    private fun parseOnlineIdFromResponse(resp: String): String? {
-        try {
-            val el = VT5App.json.parseToJsonElement(resp)
-            // If it's an array take first object
-            val obj = when {
-                el.jsonArrayOrNull() != null && el.jsonArray.size > 0 -> el.jsonArray[0]
-                el.jsonObjectOrNull() != null -> el
-                else -> null
-            }
-            if (obj != null) {
-                val jo = if (obj.jsonObjectOrNull() != null) obj.jsonObject else el.jsonArray[0].jsonObject
-                // Common keys
-                listOf("onlineid", "onlineId", "id", "result", "online_id").forEach { key ->
-                    if (jo.containsKey(key)) {
-                        val v = jo[key]?.toString()?.replace("\"", "") ?: ""
-                        if (v.isNotBlank()) return v
-                    }
-                }
-            }
-        } catch (_: Exception) {
-            // ignore JSON parse errors and fall back to regex
-        }
-
-        // Fallback: find a sequence of 4-10 digits in the response
-        val regex = Regex("""\b(\d{4,10})\b""")
-        val m = regex.find(resp)
-        return m?.groups?.get(1)?.value
-    }
-
-    // Extension helpers to check json element types without crashing if not present
-    private fun kotlinx.serialization.json.JsonElement.jsonArrayOrNull() =
-        runCatching { this.jsonArray }.getOrNull()
-    private fun kotlinx.serialization.json.JsonElement.jsonObjectOrNull() =
-        runCatching { this.jsonObject }.getOrNull()
+    /* Note: computeBeginEpochSec and parseOnlineIdFromResponse moved to TellingStarter helper */
 
 
 
