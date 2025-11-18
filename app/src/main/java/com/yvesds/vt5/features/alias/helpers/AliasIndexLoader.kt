@@ -16,14 +16,16 @@ import java.io.File
  * 
  * Responsibilities:
  * - Load from internal cache (fast path)
+ * - Load from VT5Bin binary format (fastest from SAF)
  * - Load from SAF CBOR (copy to internal)
  * - Load from SAF JSON master
  * - Coordinate loading priority logic
  * 
  * Load priority:
  * 1) Internal cache (context.filesDir)
- * 2) SAF binaries/aliases_optimized.cbor.gz
- * 3) SAF assets/alias_master.json
+ * 2) SAF serverdata/alias_index.bin (VT5Bin format) - NEW in Phase 2
+ * 3) SAF binaries/aliases_optimized.cbor.gz
+ * 4) SAF assets/alias_master.json
  */
 object AliasIndexLoader {
     
@@ -44,14 +46,21 @@ object AliasIndexLoader {
             return@withContext fromInternal
         }
         
-        // 2) Try SAF binaries CBOR
+        // 2) Try VT5Bin binary format (NEW - faster than CBOR, consistent with other serverdata)
+        val fromBinary = AliasVT5BinLoader.loadFromBinary(context, saf)
+        if (fromBinary != null) {
+            Log.i(TAG, "Loaded AliasIndex from VT5Bin binary format")
+            return@withContext fromBinary
+        }
+        
+        // 3) Try SAF binaries CBOR (legacy path)
         val fromSafCbor = loadFromSafCbor(context, saf)
         if (fromSafCbor != null) {
-            Log.i(TAG, "Loaded AliasIndex from SAF binaries (copied to internal)")
+            Log.i(TAG, "Loaded AliasIndex from SAF binaries CBOR (legacy)")
             return@withContext fromSafCbor
         }
         
-        // 3) Try SAF assets JSON master
+        // 4) Try SAF assets JSON master (fallback)
         val fromSafJson = loadFromSafJson(context, saf)
         if (fromSafJson != null) {
             Log.i(TAG, "Built AliasIndex from SAF assets JSON")

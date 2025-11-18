@@ -27,6 +27,11 @@ import java.util.zip.GZIPOutputStream
  *
  * BELANGRIJK: 'checkuser' wordt HIER NIET meer opgehaald.
  * -> checkuser wordt nu opgeslagen door TrektellenAuth.testLogin(...)
+ * 
+ * Phase 2 update: Supports alias_index download with binary format (VT5BIN10).
+ * - alias_index uses Kind.ALIAS_INDEX (100u) for binary format validation
+ * - Binary format provides faster loading than JSON/CBOR
+ * - Consistent with other serverdata (species, sites, etc.)
  */
 object ServerJsonDownloader {
 
@@ -42,12 +47,13 @@ object ServerJsonDownloader {
         username: String,
         password: String,
         language: String = "dutch",
-        versie: String = "1845"
+        versie: String = "1845",
+        includeAliasIndex: Boolean = false
     ): List<String> = withContext(Dispatchers.IO) {
         val msgs = mutableListOf<String>()
 
         // 'checkuser' is hier bewust NIET aanwezig; die wordt via de login-test gezet
-        val targets = listOf(
+        val targets = mutableListOf(
             "sites",
             "species",
             "site_species",
@@ -57,6 +63,11 @@ object ServerJsonDownloader {
             "protocolinfo",
             "protocolspecies"
         )
+        
+        // Add alias_index if requested (Phase 2: Binary Format Rollout)
+        if (includeAliasIndex) {
+            targets.add("alias_index")
+        }
 
         if (serverdataDir == null || !serverdataDir.isDirectory) {
             msgs += "❌ serverdata-map ontbreekt."
