@@ -28,8 +28,8 @@ import java.util.zip.GZIPInputStream
  */
 class ServerDataDecoder(
     val context: Context,
-    internal val json: Json = defaultJson,
-    internal val cbor: Cbor = defaultCbor
+    val json: Json = defaultJson,
+    val cbor: Cbor = defaultCbor
 ) {
 
     companion object {
@@ -79,7 +79,7 @@ class ServerDataDecoder(
     /**
      * Decode from VT5Bin binary format.
      */
-    internal inline fun <reified T> decodeBinary(
+    inline fun <reified T> decodeBinary(
         file: DocumentFile,
         expectedKind: UShort
     ): Decoded<T>? {
@@ -169,7 +169,7 @@ class ServerDataDecoder(
     /**
      * Decode a list from JSON file.
      */
-    internal inline fun <reified T> decodeListFromJson(file: DocumentFile): List<T>? {
+    inline fun <reified T> decodeListFromJson(file: DocumentFile): List<T>? {
         context.contentResolver.openInputStream(file.uri)?.use { input ->
             val text = input.readBytes().decodeToString()
             return runCatching {
