@@ -38,7 +38,8 @@ class ServerDataDecoder(
     }
 
     // Shared buffer for better memory usage
-    private val headerBuffer = ByteArray(VT5Bin.HEADER_SIZE)
+    @PublishedApi
+    internal val headerBuffer = ByteArray(VT5Bin.HEADER_SIZE)
 
     sealed class Decoded<out T> {
         data class AsList<T>(val list: List<T>) : Decoded<T>()
@@ -220,7 +221,7 @@ class ServerDataDecoder(
 
 /* ================= VT5 Header & constants ================= */
 
-internal object VT5Bin {
+object VT5Bin {
     val MAGIC: ByteArray = byteArrayOf(0x56,0x54,0x35,0x42,0x49,0x4E,0x31,0x30) // "VT5BIN10"
     const val HEADER_SIZE: Int = 40
     val HEADER_VERSION: UShort = 0x0001u
@@ -244,7 +245,7 @@ internal object VT5Bin {
     val RECORDCOUNT_UNKNOWN: UInt = 0xFFFF_FFFFu
 }
 
-internal data class VT5Header(
+data class VT5Header(
     val magic: ByteArray,
     val headerVersion: UShort,
     val datasetKind: UShort,
@@ -291,7 +292,7 @@ internal data class VT5Header(
 
 /* ================= I/O utilities ================= */
 
-internal fun InputStream.readNBytesCompat(buf: ByteArray): Int {
+fun InputStream.readNBytesCompat(buf: ByteArray): Int {
     var off = 0
     while (off < buf.size) {
         val r = this.read(buf, off, buf.size - off)
@@ -301,7 +302,7 @@ internal fun InputStream.readNBytesCompat(buf: ByteArray): Int {
     return off
 }
 
-internal fun InputStream.readAllBytesCompat(): ByteArray {
+fun InputStream.readAllBytesCompat(): ByteArray {
     val baos = ByteArrayOutputStream()
     val buffer = ByteArray(8 * 1024)
     while (true) {
