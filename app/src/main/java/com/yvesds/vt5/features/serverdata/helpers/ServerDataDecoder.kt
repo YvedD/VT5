@@ -29,7 +29,7 @@ import java.util.zip.GZIPInputStream
 class ServerDataDecoder(
     val context: Context,
     internal val json: Json = defaultJson,
-    private val cbor: Cbor = defaultCbor
+    internal val cbor: Cbor = defaultCbor
 ) {
 
     companion object {
