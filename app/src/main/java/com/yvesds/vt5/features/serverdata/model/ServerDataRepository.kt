@@ -7,6 +7,7 @@ import android.util.Log
 import com.yvesds.vt5.features.serverdata.helpers.ServerDataDecoder
 import com.yvesds.vt5.features.serverdata.helpers.ServerDataFileReader
 import com.yvesds.vt5.features.serverdata.helpers.ServerDataTransformer
+import com.yvesds.vt5.features.serverdata.helpers.VT5Bin
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -36,19 +37,6 @@ class ServerDataRepository(
 ) {
     companion object {
         private const val TAG = "ServerDataRepo"
-        
-        // VT5Bin Kind constants for type checking
-        private object Kind {
-            const val SPECIES: UShort = 1u
-            const val SITES: UShort = 2u
-            const val SITE_LOCATIONS: UShort = 3u
-            const val SITE_HEIGHTS: UShort = 4u
-            const val SITE_SPECIES: UShort = 5u
-            const val CODES: UShort = 6u
-            const val PROTOCOL_INFO: UShort = 7u
-            const val PROTOCOL_SPECIES: UShort = 8u
-            const val CHECK_USER: UShort = 9u
-        }
     }
 
     private val snapshotState = MutableStateFlow(DataSnapshot())
@@ -78,10 +66,10 @@ class ServerDataRepository(
 
         coroutineScope {
             // Load both files in parallel
-            val sitesJob = async { readList<SiteItem>(serverdata, "sites", Kind.SITES) }
+            val sitesJob = async { readList<SiteItem>(serverdata, "sites", VT5Bin.Kind.SITES) }
             val codesJob = async {
                 runCatching {
-                    readList<CodeItem>(serverdata, "codes", Kind.CODES)
+                    readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES)
                 }.getOrElse { emptyList() }
             }
 
@@ -105,7 +93,7 @@ class ServerDataRepository(
         val serverdata = fileReader.getServerdataDir() ?: return@withContext emptyMap()
 
         val codes = runCatching {
-            readList<CodeItem>(serverdata, "codes", Kind.CODES)
+            readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES)
         }.getOrElse { emptyList() }
 
         ServerDataTransformer.transformCodes(codes)
@@ -126,15 +114,15 @@ class ServerDataRepository(
 
         // Parallel loading of all data files
         return@withContext coroutineScope {
-            val userObjDef = async { readOne<CheckUserItem>(serverdata, "checkuser", Kind.CHECK_USER) }
-            val speciesListDef = async { readList<SpeciesItem>(serverdata, "species", Kind.SPECIES) }
-            val protocolInfoDef = async { readList<ProtocolInfoItem>(serverdata, "protocolinfo", Kind.PROTOCOL_INFO) }
-            val protocolSpeciesDef = async { readList<ProtocolSpeciesItem>(serverdata, "protocolspecies", Kind.PROTOCOL_SPECIES) }
-            val sitesDef = async { readList<SiteItem>(serverdata, "sites", Kind.SITES) }
-            val siteLocationsDef = async { readList<SiteValueItem>(serverdata, "site_locations", Kind.SITE_LOCATIONS) }
-            val siteHeightsDef = async { readList<SiteValueItem>(serverdata, "site_heights", Kind.SITE_HEIGHTS) }
-            val siteSpeciesDef = async { readList<SiteSpeciesItem>(serverdata, "site_species", Kind.SITE_SPECIES) }
-            val codesDef = async { runCatching { readList<CodeItem>(serverdata, "codes", Kind.CODES) }.getOrElse { emptyList() } }
+            val userObjDef = async { readOne<CheckUserItem>(serverdata, "checkuser", VT5Bin.Kind.CHECK_USER) }
+            val speciesListDef = async { readList<SpeciesItem>(serverdata, "species", VT5Bin.Kind.SPECIES) }
+            val protocolInfoDef = async { readList<ProtocolInfoItem>(serverdata, "protocolinfo", VT5Bin.Kind.PROTOCOL_INFO) }
+            val protocolSpeciesDef = async { readList<ProtocolSpeciesItem>(serverdata, "protocolspecies", VT5Bin.Kind.PROTOCOL_SPECIES) }
+            val sitesDef = async { readList<SiteItem>(serverdata, "sites", VT5Bin.Kind.SITES) }
+            val siteLocationsDef = async { readList<SiteValueItem>(serverdata, "site_locations", VT5Bin.Kind.SITE_LOCATIONS) }
+            val siteHeightsDef = async { readList<SiteValueItem>(serverdata, "site_heights", VT5Bin.Kind.SITE_HEIGHTS) }
+            val siteSpeciesDef = async { readList<SiteSpeciesItem>(serverdata, "site_species", VT5Bin.Kind.SITE_SPECIES) }
+            val codesDef = async { runCatching { readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES) }.getOrElse { emptyList() } }
 
             // Await all results
             val userObj = userObjDef.await()
@@ -183,7 +171,7 @@ class ServerDataRepository(
     @Suppress("unused")
     suspend fun loadSitesOnly(): Map<String, SiteItem> = withContext(Dispatchers.IO) {
         val serverdata = fileReader.getServerdataDir() ?: return@withContext emptyMap()
-        val sites = readList<SiteItem>(serverdata, "sites", Kind.SITES)
+        val sites = readList<SiteItem>(serverdata, "sites", VT5Bin.Kind.SITES)
         ServerDataTransformer.transformSites(sites)
     }
 
@@ -200,7 +188,7 @@ class ServerDataRepository(
             return@withContext cachedCodes.sortedBy { it.text.lowercase(Locale.getDefault()) }
         }
 
-        val codes = runCatching { readList<CodeItem>(serverdata, "codes", Kind.CODES) }.getOrElse { emptyList() }
+        val codes = runCatching { readList<CodeItem>(serverdata, "codes", VT5Bin.Kind.CODES) }.getOrElse { emptyList() }
         val transformed = ServerDataTransformer.transformCodes(codes)
         
         transformed[field]?.sortedBy { it.text.lowercase(Locale.getDefault()) } ?: emptyList()
