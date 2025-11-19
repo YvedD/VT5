@@ -136,7 +136,7 @@ class TellingSpeciesManager(
                 tegelBeheer.verhoogSoortAantal(speciesId, extractedCount)
             }
             onTilesUpdated?.invoke()
-            RecentSpeciesStore.recordUse(activity, speciesId, maxEntries = 25)
+            RecentSpeciesStore.recordUse(activity, speciesId, maxEntries = 30)
             onLogMessage?.invoke(
                 "Soort ${if (added) "toegevoegd" else "bijgewerkt"}: $canonical ($extractedCount)",
                 "systeem"
@@ -154,7 +154,7 @@ class TellingSpeciesManager(
 
             tegelBeheer.voegSoortToe(soortId, canonical, initialCount, mergeIfExists = true)
             onTilesUpdated?.invoke()
-            RecentSpeciesStore.recordUse(activity, soortId, maxEntries = 25)
+            RecentSpeciesStore.recordUse(activity, soortId, maxEntries = 30)
             onLogMessage?.invoke("Soort toegevoegd: $canonical ($initialCount)", "systeem")
         } catch (ex: Exception) {
             Log.w(TAG, "addSpeciesToTiles failed: ${ex.message}", ex)
@@ -167,7 +167,7 @@ class TellingSpeciesManager(
      */
     suspend fun updateSoortCountInternal(soortId: String, count: Int) {
         tegelBeheer.verhoogSoortAantal(soortId, count)
-        RecentSpeciesStore.recordUse(activity, soortId, maxEntries = 25)
+        RecentSpeciesStore.recordUse(activity, soortId, maxEntries = 30)
         onTilesUpdated?.invoke()
     }
 

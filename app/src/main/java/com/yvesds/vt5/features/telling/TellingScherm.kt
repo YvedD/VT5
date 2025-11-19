@@ -556,7 +556,7 @@ class TellingScherm : AppCompatActivity() {
 
                 // Behave exactly like an ASR final:
                 addFinalLog("$naam -> +$delta")
-                RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
+                RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 30)
                 speciesManager.collectFinalAsRecord(soortId, delta)
             }
         }
@@ -628,7 +628,7 @@ class TellingScherm : AppCompatActivity() {
             speciesManager.updateSoortCountInternal(speciesId, count)
             speciesManager.collectFinalAsRecord(speciesId, count)
         }
-        RecentSpeciesStore.recordUse(this, speciesId, maxEntries = 25)
+        RecentSpeciesStore.recordUse(this, speciesId, maxEntries = 30)
     }
 
     /**
@@ -756,7 +756,7 @@ class TellingScherm : AppCompatActivity() {
                         .show()
                     dialogHelper.styleAlertDialogTextToWhite(dlg)
                 }
-                RecentSpeciesStore.recordUse(this, chosen.speciesId, maxEntries = 25)
+                RecentSpeciesStore.recordUse(this, chosen.speciesId, maxEntries = 30)
             }
             .setNegativeButton("Annuleer", null)
             .show()
