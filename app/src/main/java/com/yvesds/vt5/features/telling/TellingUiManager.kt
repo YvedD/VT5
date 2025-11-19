@@ -159,10 +159,13 @@ class TellingUiManager(
      * Update partials adapter with new list.
      */
     fun updatePartials(list: List<TellingScherm.SpeechLogRow>) {
-        partialsAdapter.submitList(list)
-        // Auto-scroll to bottom
-        if (list.isNotEmpty()) {
-            binding.recyclerViewSpeechPartials.scrollToPosition(list.size - 1)
+        partialsAdapter.submitList(list) {
+            // Auto-scroll to bottom after list is updated
+            if (list.isNotEmpty()) {
+                binding.recyclerViewSpeechPartials.post {
+                    binding.recyclerViewSpeechPartials.smoothScrollToPosition(list.size - 1)
+                }
+            }
         }
     }
 
@@ -170,10 +173,13 @@ class TellingUiManager(
      * Update finals adapter with new list.
      */
     fun updateFinals(list: List<TellingScherm.SpeechLogRow>) {
-        finalsAdapter.submitList(list)
-        // Auto-scroll to bottom
-        if (list.isNotEmpty()) {
-            binding.recyclerViewSpeechFinals.scrollToPosition(list.size - 1)
+        finalsAdapter.submitList(list) {
+            // Auto-scroll to bottom after list is updated
+            if (list.isNotEmpty()) {
+                binding.recyclerViewSpeechFinals.post {
+                    binding.recyclerViewSpeechFinals.smoothScrollToPosition(list.size - 1)
+                }
+            }
         }
     }
 
