@@ -557,7 +557,7 @@ class TellingScherm : AppCompatActivity() {
                 // Behave exactly like an ASR final:
                 addFinalLog("$naam -> +$delta")
                 RecentSpeciesStore.recordUse(this@TellingScherm, soortId, maxEntries = 25)
-                collectFinalAsRecord(soortId, delta)
+                speciesManager.collectFinalAsRecord(soortId, delta)
             }
         }
     }

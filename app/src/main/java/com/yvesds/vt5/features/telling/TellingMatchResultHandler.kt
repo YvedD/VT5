@@ -24,7 +24,7 @@ class TellingMatchResultHandler(
     // Callbacks for different match types
     var onAutoAccept: ((String, String, Int) -> Unit)? = null
     var onAutoAcceptWithPopup: ((String, String, Int, Boolean) -> Unit)? = null
-    var onMultiMatch: ((List<MatchResult.Match>) -> Unit)? = null
+    var onMultiMatch: ((List<MatchResult.MatchWithAmount>) -> Unit)? = null
     var onSuggestionList: ((List<Candidate>, Int) -> Unit)? = null
     var onNoMatch: ((String) -> Unit)? = null
 
