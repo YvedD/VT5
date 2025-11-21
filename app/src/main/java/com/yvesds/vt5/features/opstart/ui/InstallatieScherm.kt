@@ -229,6 +229,9 @@ class InstallatieScherm : AppCompatActivity() {
                     is ServerAuthenticationManager.AuthResult.Success -> {
                         dialogManager.showInfo(getString(R.string.dlg_titel_result), result.response)
                         
+                        // Save fullname to SharedPreferences for quick access
+                        authManager.saveFullnameToPreferences(result.response)
+                        
                         // Save checkuser.json
                         lifecycleScope.launch(Dispatchers.IO) {
                             try {

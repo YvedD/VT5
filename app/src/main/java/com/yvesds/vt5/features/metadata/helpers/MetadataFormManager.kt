@@ -2,10 +2,13 @@ package com.yvesds.vt5.features.metadata.helpers
 
 import android.app.DatePickerDialog
 import android.content.Context
+import android.text.Editable
+import android.text.TextWatcher
 import android.widget.ArrayAdapter
 import android.widget.LinearLayout
 import android.widget.NumberPicker
 import androidx.appcompat.app.AlertDialog
+import androidx.core.content.edit
 import com.yvesds.vt5.R
 import com.yvesds.vt5.databinding.SchermMetadataBinding
 import com.yvesds.vt5.features.serverdata.model.CodeItemSlim
@@ -32,6 +35,8 @@ class MetadataFormManager(
     
     companion object {
         private const val TAG = "MetadataFormManager"
+        private const val PREFS_NAME = "vt5_prefs"
+        private const val PREF_USER_FULLNAME = "pref_user_fullname"
     }
     
     // Form state
@@ -64,18 +69,69 @@ class MetadataFormManager(
     }
     
     /**
-     * Prefill the Tellers field with the fullname from checkuser.json.
+     * Prefill the Tellers field with user's fullname.
+     * 
+     * Strategy:
+     * 1. Primary: Use SharedPreferences (fast, always available)
+     * 2. Fallback: Use DataSnapshot.currentUser (requires file I/O)
+     * 3. Setup TextWatcher to save manual edits to SharedPreferences
+     * 
      * Only sets the field if it's currently empty and fullname is available.
      */
     fun prefillTellersFromSnapshot(snapshot: DataSnapshot) {
         // Only prefill if the field is empty
         val currentText = binding.etTellers.text?.toString()?.trim().orEmpty()
         if (currentText.isEmpty()) {
-            val fullname = snapshot.currentUser?.fullname
+            // Primary: Try SharedPreferences first (fastest)
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val fullnameFromPrefs = prefs.getString(PREF_USER_FULLNAME, null)
+            
+            val fullname = if (!fullnameFromPrefs.isNullOrBlank()) {
+                fullnameFromPrefs
+            } else {
+                // Fallback: Try DataSnapshot
+                snapshot.currentUser?.fullname
+            }
+            
             if (!fullname.isNullOrBlank()) {
                 binding.etTellers.setText(fullname)
             }
         }
+        
+        // Setup TextWatcher to save manual edits to SharedPreferences
+        setupTellersAutoSave()
+    }
+    
+    /**
+     * Setup TextWatcher om automatisch wijzigingen in het Tellers veld 
+     * op te slaan naar SharedPreferences.
+     */
+    private fun setupTellersAutoSave() {
+        // Remove existing TextWatcher if any (prevent duplicate listeners)
+        binding.etTellers.tag?.let { tag ->
+            if (tag is TextWatcher) {
+                binding.etTellers.removeTextChangedListener(tag)
+            }
+        }
+        
+        val watcher = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            
+            override fun afterTextChanged(s: Editable?) {
+                val newText = s?.toString()?.trim().orEmpty()
+                if (newText.isNotEmpty()) {
+                    // Save to SharedPreferences for future use
+                    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                        putString(PREF_USER_FULLNAME, newText)
+                    }
+                }
+            }
+        }
+        
+        binding.etTellers.addTextChangedListener(watcher)
+        // Store reference to prevent duplicate listeners
+        binding.etTellers.tag = watcher
     }
     
     /**

@@ -4,8 +4,11 @@ package com.yvesds.vt5.features.opstart.helpers
 
 import android.content.Context
 import android.util.Log
+import androidx.core.content.edit
 import androidx.documentfile.provider.DocumentFile
 import com.yvesds.vt5.features.opstart.usecases.TrektellenAuth
+import com.yvesds.vt5.features.serverdata.model.CheckUserItem
+import com.yvesds.vt5.features.serverdata.model.WrappedJson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -42,8 +45,15 @@ class ServerAuthenticationManager(
         ignoreUnknownKeys = true
     }
     
+    private val jsonParser = Json {
+        ignoreUnknownKeys = true
+        isLenient = true
+    }
+    
     companion object {
         private const val TAG = "ServerAuthManager"
+        private const val PREFS_NAME = "vt5_prefs"
+        private const val PREF_USER_FULLNAME = "pref_user_fullname"
     }
     
     /**
@@ -141,6 +151,40 @@ class ServerAuthenticationManager(
             Log.e(TAG, "Error saving checkuser.json: ${e.message}", e)
             false
         }
+    }
+    
+    /**
+     * Extraheer fullname uit checkuser response en sla op in SharedPreferences.
+     * Dit maakt de fullname direct beschikbaar zonder file I/O.
+     * 
+     * @param response De server response als JSON string
+     */
+    fun saveFullnameToPreferences(response: String) {
+        try {
+            val wrapped = jsonParser.decodeFromString<WrappedJson<CheckUserItem>>(response)
+            val fullname = wrapped.json.firstOrNull()?.fullname
+            
+            if (!fullname.isNullOrBlank()) {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                    putString(PREF_USER_FULLNAME, fullname)
+                }
+                Log.d(TAG, "Fullname saved to SharedPreferences: $fullname")
+            } else {
+                Log.w(TAG, "No fullname found in checkuser response")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error extracting fullname from checkuser response: ${e.message}", e)
+        }
+    }
+    
+    /**
+     * Haal fullname op uit SharedPreferences.
+     * 
+     * @return De opgeslagen fullname, of null als niet beschikbaar
+     */
+    fun getFullnameFromPreferences(): String? {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(PREF_USER_FULLNAME, null)
     }
     
     /**
