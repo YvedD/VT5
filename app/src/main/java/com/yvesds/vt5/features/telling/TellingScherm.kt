@@ -177,7 +177,14 @@ class TellingScherm : AppCompatActivity() {
     data class SpeechLogRow(val ts: Long, val tekst: String, val bron: String)
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Initialize helper classes that need launcher registration BEFORE super.onCreate
+        super.onCreate(savedInstanceState)
+        binding = SchermTellingBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        
+        // Initialize helper classes BEFORE registering launchers
+        // (partial initialization for those that need it)
         backupManager = TellingBackupManager(this, safHelper)
         
         // Initialize TegelBeheer early
@@ -196,15 +203,9 @@ class TellingScherm : AppCompatActivity() {
         speciesManager = TellingSpeciesManager(this, this, safHelper, backupManager, tegelBeheer, PREFS_NAME)
         annotationHandler = TellingAnnotationHandler(this, backupManager, PREFS_NAME)
         
-        // Register launchers BEFORE super.onCreate (required by ActivityResultContracts)
+        // Register launchers before super.onCreate (required by ActivityResultContracts)
         speciesManager.registerLaunchers()
         annotationHandler.registerLauncher()
-        
-        super.onCreate(savedInstanceState)
-        binding = SchermTellingBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-
-        prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         
         // Initialize remaining helpers
         initializeHelpers()

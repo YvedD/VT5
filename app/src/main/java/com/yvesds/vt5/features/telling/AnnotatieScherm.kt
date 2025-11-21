@@ -74,9 +74,6 @@ class AnnotatieScherm : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_annotatie)
 
-        // Preserve row position for result handling
-        val rowPosition = intent.getIntExtra("extra_row_pos", -1)
-
         // Show progress while loading cache and populating UI
         lifecycleScope.launch {
             val progress = ProgressDialogHelper.show(this@AnnotatieScherm, getString(R.string.msg_loading_annotations))
@@ -138,8 +135,6 @@ class AnnotatieScherm : AppCompatActivity() {
                 putExtra(EXTRA_ANNOTATIONS_JSON, payload)
                 putExtra(EXTRA_TEXT, summaryText)
                 putExtra(EXTRA_TS, tsSeconds)
-                // Preserve row position for annotation handler
-                putExtra("extra_row_pos", rowPosition)
             }
             setResult(Activity.RESULT_OK, out)
             finish()
