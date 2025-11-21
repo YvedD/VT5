@@ -164,7 +164,7 @@ class ServerAuthenticationManager(
                 VT5App.prefs().edit {
                     putString(PREF_USER_FULLNAME, fullname)
                 }
-                Log.d(TAG, "Fullname saved to SharedPreferences: $fullname")
+                Log.d(TAG, "Fullname saved to SharedPreferences")
             } else {
                 Log.w(TAG, "No fullname found in checkuser response")
             }

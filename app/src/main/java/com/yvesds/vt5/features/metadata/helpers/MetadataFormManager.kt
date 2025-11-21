@@ -104,8 +104,8 @@ class MetadataFormManager(
     }
     
     /**
-     * Setup OnFocusChangeListener om automatisch wijzigingen in het Tellers veld 
-     * op te slaan naar SharedPreferences.
+     * Setup OnFocusChangeListener to automatically save changes in the Tellers field
+     * to SharedPreferences.
      * 
      * Only sets up once to avoid duplicate listeners and performance issues.
      * Saves on focus loss rather than on every keystroke for better performance.
@@ -118,11 +118,9 @@ class MetadataFormManager(
         binding.etTellers.setOnFocusChangeListener { _, hasFocus ->
             if (!hasFocus) {
                 val newText = binding.etTellers.text?.toString()?.trim().orEmpty()
-                if (newText.isNotEmpty()) {
-                    // Save to SharedPreferences for future use
-                    VT5App.prefs().edit {
-                        putString(ServerAuthenticationManager.PREF_USER_FULLNAME, newText)
-                    }
+                // Save to SharedPreferences, even if empty (preserves user intent to clear)
+                VT5App.prefs().edit {
+                    putString(ServerAuthenticationManager.PREF_USER_FULLNAME, newText.ifEmpty { null })
                 }
             }
         }
