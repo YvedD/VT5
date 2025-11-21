@@ -27,6 +27,10 @@ class TellingAnnotationHandler(
     companion object {
         private const val TAG = "TellingAnnotationHandler"
         private const val PREF_TELLING_ID = "pref_telling_id"
+        
+        // Direction constants based on seasonal patterns
+        private const val RICHTING_ZW = "w"  // West/Southwest (seasonal direction)
+        private const val RICHTING_NO = "o"  // East/Northeast (counter-seasonal direction)
     }
 
     // Callback for annotation application
@@ -181,24 +185,23 @@ class TellingAnnotationHandler(
             var newRichting = old.richting
             var newRichtingterug = old.richtingterug
             
-            // If ZW checkbox is checked, set main direction to "w" (west/southwest)
+            // If ZW checkbox is checked, set main direction
             if (map["ZW"] == "1") {
-                newRichting = "w"
+                newRichting = RICHTING_ZW
             }
-            // If NO checkbox is checked, set return direction to "o" (east/northeast)
+            // If NO checkbox is checked, set return direction
             if (map["NO"] == "1") {
-                newRichtingterug = "o"
+                newRichtingterug = RICHTING_NO
             }
             
             // Calculate totaalaantal: sum of aantal + aantalterug + lokaal
-            val aantalInt = newAantal.toIntOrNull() ?: 0
-            val aantalterugInt = newAantalterug.toIntOrNull() ?: 0
-            val lokaalInt = newLokaal.toIntOrNull() ?: 0
+            val aantalInt = newAantal.toIntOrZero()
+            val aantalterugInt = newAantalterug.toIntOrZero()
+            val lokaalInt = newLokaal.toIntOrZero()
             val newTotaalaantal = (aantalInt + aantalterugInt + lokaalInt).toString()
             
             // Set uploadtijdstip to current timestamp in "YYYY-MM-DD HH:MM:SS" format
-            val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
-            val newUploadtijdstip = dateFormat.format(java.util.Date())
+            val newUploadtijdstip = getCurrentTimestamp()
 
             // Create updated copy with all annotations
             val updated = old.copy(
@@ -238,5 +241,19 @@ class TellingAnnotationHandler(
         } catch (ex: Exception) {
             Log.w(TAG, "applyAnnotationsToPendingRecord failed: ${ex.message}", ex)
         }
+    }
+    
+    /**
+     * Helper extension to safely convert string to int, returning 0 if conversion fails.
+     */
+    private fun String.toIntOrZero(): Int = this.toIntOrNull() ?: 0
+    
+    /**
+     * Get current timestamp in "YYYY-MM-DD HH:MM:SS" format.
+     * Uses SimpleDateFormat for compatibility with minSdk 33.
+     */
+    private fun getCurrentTimestamp(): String {
+        val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+        return dateFormat.format(java.util.Date())
     }
 }
