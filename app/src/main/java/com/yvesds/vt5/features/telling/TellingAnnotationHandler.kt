@@ -171,6 +171,7 @@ class TellingAnnotationHandler(
                 location = map["location"] ?: old.location,
                 height = map["height"] ?: old.height,
                 lokaal = map["lokaal"] ?: old.lokaal,
+                lokaal_plus = map["lokaal_plus"] ?: old.lokaal_plus,
                 markeren = map["markeren"] ?: old.markeren,
                 markerenlokaal = map["markerenlokaal"] ?: old.markerenlokaal,
                 aantal = map["aantal"] ?: old.aantal,

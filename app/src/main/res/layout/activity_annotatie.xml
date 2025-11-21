@@ -615,6 +615,7 @@
                 android:layout_height="wrap_content"
                 android:inputType="number"
                 android:hint="0"
+                android:contentDescription="@string/annotation_count_zw"
                 android:textSize="12sp"
                 android:paddingStart="8dp"
                 android:paddingEnd="8dp" />
@@ -640,6 +641,7 @@
                 android:layout_height="wrap_content"
                 android:inputType="number"
                 android:hint="0"
+                android:contentDescription="@string/annotation_count_no"
                 android:textSize="12sp"
                 android:paddingStart="8dp"
                 android:paddingEnd="8dp" />
@@ -665,6 +667,7 @@
                 android:layout_height="wrap_content"
                 android:inputType="number"
                 android:hint="0"
+                android:contentDescription="@string/annotation_count_local"
                 android:textSize="12sp"
                 android:paddingStart="8dp"
                 android:paddingEnd="8dp" />
@@ -693,6 +696,7 @@
                 android:layout_weight="1"
                 android:inputType="textMultiLine"
                 android:hint="@string/annotation_remarks_hint"
+                android:contentDescription="@string/annotation_remarks"
                 android:minLines="2"
                 android:maxLines="4"
                 android:textSize="12sp"

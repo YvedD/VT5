@@ -117,7 +117,7 @@ class AnnotatieScherm : AppCompatActivity() {
                 selectedLabels.add("NO")
             }
             findViewById<CheckBox>(R.id.cb_lokaal)?.takeIf { it.isChecked }?.let {
-                resultMap["lokaal"] = "1"
+                resultMap["lokaal_plus"] = "1"
                 selectedLabels.add("Lokaal")
             }
             findViewById<CheckBox>(R.id.cb_markeren)?.takeIf { it.isChecked }?.let {
