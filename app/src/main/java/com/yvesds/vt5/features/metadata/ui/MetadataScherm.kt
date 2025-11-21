@@ -123,6 +123,9 @@ class MetadataScherm : AppCompatActivity() {
                     Log.d(TAG, "Using fully cached data")
                     snapshot = cachedData
                     initializeDropdowns()
+                    
+                    // Prefill Tellers field with user's fullname from checkuser.json
+                    formManager.prefillTellersFromSnapshot(cachedData)
 
                     // Start het laden van de volledige data in de achtergrond
                     scheduleBackgroundLoading()
@@ -189,6 +192,9 @@ class MetadataScherm : AppCompatActivity() {
                             withContext(Dispatchers.Main) {
                                 snapshot = fullData
                                 Log.d(TAG, "Background data loading complete - cache warmed for next screen")
+                                
+                                // Prefill Tellers field with user's fullname from checkuser.json
+                                formManager.prefillTellersFromSnapshot(fullData)
                             }
                         }
 

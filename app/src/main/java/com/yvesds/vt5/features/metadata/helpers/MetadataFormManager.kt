@@ -64,6 +64,21 @@ class MetadataFormManager(
     }
     
     /**
+     * Prefill the Tellers field with the fullname from checkuser.json.
+     * Only sets the field if it's currently empty and fullname is available.
+     */
+    fun prefillTellersFromSnapshot(snapshot: DataSnapshot) {
+        // Only prefill if the field is empty
+        val currentText = binding.etTellers.text?.toString()?.trim().orEmpty()
+        if (currentText.isEmpty()) {
+            val fullname = snapshot.currentUser?.fullname
+            if (!fullname.isNullOrBlank()) {
+                binding.etTellers.setText(fullname)
+            }
+        }
+    }
+    
+    /**
      * Bind telpost dropdown with site data.
      */
     fun bindTelpostDropdown(snapshot: DataSnapshot) {
