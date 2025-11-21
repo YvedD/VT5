@@ -117,12 +117,36 @@ class AnnotatieScherm : AppCompatActivity() {
                 selectedLabels.add("NO")
             }
             findViewById<CheckBox>(R.id.cb_lokaal)?.takeIf { it.isChecked }?.let {
-                resultMap["lokaal"] = "1"
+                resultMap["lokaal_plus"] = "1"
                 selectedLabels.add("Lokaal")
             }
             findViewById<CheckBox>(R.id.cb_markeren)?.takeIf { it.isChecked }?.let {
                 resultMap["markeren"] = "1"
                 selectedLabels.add("Markeren")
+            }
+            findViewById<CheckBox>(R.id.cb_markeren_lokaal)?.takeIf { it.isChecked }?.let {
+                resultMap["markerenlokaal"] = "1"
+                selectedLabels.add("Markeren Lokaal")
+            }
+
+            // Manual count inputs
+            findViewById<EditText>(R.id.et_aantal_zw)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                resultMap["aantal"] = it
+                selectedLabels.add("ZW: $it")
+            }
+            findViewById<EditText>(R.id.et_aantal_no)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                resultMap["aantalterug"] = it
+                selectedLabels.add("NO: $it")
+            }
+            findViewById<EditText>(R.id.et_aantal_lokaal)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                resultMap["lokaal"] = it
+                selectedLabels.add("Lokaal: $it")
+            }
+            
+            // Remarks/Comments
+            findViewById<EditText>(R.id.et_opmerkingen)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                resultMap["opmerkingen"] = it
+                selectedLabels.add("Opm: $it")
             }
 
             val payload = json.encodeToString(resultMap)
@@ -180,7 +204,7 @@ class AnnotatieScherm : AppCompatActivity() {
                 btn.tag = null
                 btn.setOnClickListener(null)
             }
-            setToggleColor(btn, btn.isChecked)
+            setToggleColor(btn)
             btnList.add(btn)
         }
 
@@ -217,26 +241,26 @@ class AnnotatieScherm : AppCompatActivity() {
         if (clicked.isChecked) {
             for (btn in list) {
                 if (btn === clicked) {
-                    setToggleColor(btn, true)
+                    setToggleColor(btn)
                 } else {
                     if (btn.isChecked) btn.isChecked = false
-                    setToggleColor(btn, false)
+                    setToggleColor(btn)
                 }
             }
         } else {
             // toggled off
-            setToggleColor(clicked, false)
+            setToggleColor(clicked)
         }
     }
 
-    private fun setToggleColor(btn: AppCompatToggleButton?, checked: Boolean) {
+    private fun setToggleColor(btn: AppCompatToggleButton?) {
         if (btn == null) return
-        if (checked) {
-            btn.setBackgroundColor(ContextCompat.getColor(this, R.color.vt5_light_blue))
-            btn.setTextColor(Color.WHITE)
-        } else {
-            btn.setBackgroundColor(ContextCompat.getColor(this, android.R.color.transparent))
-            btn.setTextColor(ContextCompat.getColor(this, android.R.color.white))
-        }
+        // Ensure the button uses the selector background (preserve the blue border)
+        // The style already sets this, but we refresh it to ensure it's not lost
+        btn.setBackgroundResource(R.drawable.vt5_btn_selector)
+        // Set text color to white for readability
+        btn.setTextColor(Color.WHITE)
+        // Refresh drawable state to apply the selector based on isChecked
+        btn.refreshDrawableState()
     }
 }

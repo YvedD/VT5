@@ -27,6 +27,10 @@ class TellingAnnotationHandler(
     companion object {
         private const val TAG = "TellingAnnotationHandler"
         private const val PREF_TELLING_ID = "pref_telling_id"
+        
+        // Direction constants based on seasonal patterns
+        private const val RICHTING_ZW = "w"  // West/Southwest (seasonal direction)
+        private const val RICHTING_NO = "o"  // East/Northeast (counter-seasonal direction)
     }
 
     // Callback for annotation application
@@ -163,16 +167,60 @@ class TellingAnnotationHandler(
 
             val old = pendingRecords[idx]
 
-            // Create updated copy with annotations
+            // Update annotation fields from the map
+            val newLeeftijd = map["leeftijd"] ?: old.leeftijd
+            val newGeslacht = map["geslacht"] ?: old.geslacht
+            val newKleed = map["kleed"] ?: old.kleed
+            val newLocation = map["location"] ?: old.location
+            val newHeight = map["height"] ?: old.height
+            val newLokaal = map["lokaal"] ?: old.lokaal
+            val newLokaalPlus = map["lokaal_plus"] ?: old.lokaal_plus
+            val newMarkeren = map["markeren"] ?: old.markeren
+            val newMarkerenLokaal = map["markerenlokaal"] ?: old.markerenlokaal
+            val newAantal = map["aantal"] ?: old.aantal
+            val newAantalterug = map["aantalterug"] ?: old.aantalterug
+            val newOpmerkingen = map["opmerkingen"] ?: map["remarks"] ?: old.opmerkingen
+            
+            // Handle direction fields based on ZW/NO checkboxes
+            var newRichting = old.richting
+            var newRichtingterug = old.richtingterug
+            
+            // If ZW checkbox is checked, set main direction
+            if (map["ZW"] == "1") {
+                newRichting = RICHTING_ZW
+            }
+            // If NO checkbox is checked, set return direction
+            if (map["NO"] == "1") {
+                newRichtingterug = RICHTING_NO
+            }
+            
+            // Calculate totaalaantal: sum of aantal + aantalterug + lokaal
+            val aantalInt = newAantal.toIntOrZero()
+            val aantalterugInt = newAantalterug.toIntOrZero()
+            val lokaalInt = newLokaal.toIntOrZero()
+            val newTotaalaantal = (aantalInt + aantalterugInt + lokaalInt).toString()
+            
+            // Set uploadtijdstip to current timestamp in "YYYY-MM-DD HH:MM:SS" format
+            val newUploadtijdstip = getCurrentTimestamp()
+
+            // Create updated copy with all annotations
             val updated = old.copy(
-                leeftijd = map["leeftijd"] ?: old.leeftijd,
-                geslacht = map["geslacht"] ?: old.geslacht,
-                kleed = map["kleed"] ?: old.kleed,
-                location = map["location"] ?: old.location,
-                height = map["height"] ?: old.height,
-                lokaal = map["lokaal"] ?: old.lokaal,
-                markeren = map["markeren"] ?: old.markeren,
-                opmerkingen = map["opmerkingen"] ?: map["remarks"] ?: old.opmerkingen
+                leeftijd = newLeeftijd,
+                geslacht = newGeslacht,
+                kleed = newKleed,
+                location = newLocation,
+                height = newHeight,
+                lokaal = newLokaal,
+                lokaal_plus = newLokaalPlus,
+                markeren = newMarkeren,
+                markerenlokaal = newMarkerenLokaal,
+                aantal = newAantal,
+                aantalterug = newAantalterug,
+                richting = newRichting,
+                richtingterug = newRichtingterug,
+                opmerkingen = newOpmerkingen,
+                totaalaantal = newTotaalaantal,
+                uploadtijdstip = newUploadtijdstip
             )
 
             // Update in-memory pending record via callback
@@ -193,5 +241,19 @@ class TellingAnnotationHandler(
         } catch (ex: Exception) {
             Log.w(TAG, "applyAnnotationsToPendingRecord failed: ${ex.message}", ex)
         }
+    }
+    
+    /**
+     * Helper extension to safely convert string to int, returning 0 if conversion fails.
+     */
+    private fun String.toIntOrZero(): Int = this.toIntOrNull() ?: 0
+    
+    /**
+     * Get current timestamp in "YYYY-MM-DD HH:MM:SS" format.
+     * Uses SimpleDateFormat for compatibility with minSdk 33.
+     */
+    private fun getCurrentTimestamp(): String {
+        val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+        return dateFormat.format(java.util.Date())
     }
 }

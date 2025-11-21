@@ -267,32 +267,17 @@ class TellingScherm : AppCompatActivity() {
     private fun initializeHelpers() {
         logManager = TellingLogManager(MAX_LOG_ROWS)
         dialogHelper = TellingDialogHelper(this, this, safHelper)
-        backupManager = TellingBackupManager(this, safHelper)
+        // backupManager already initialized before super.onCreate()
         dataProcessor = TellingDataProcessor()
         uiManager = TellingUiManager(this, binding)
         afrondHandler = TellingAfrondHandler(this, backupManager, dataProcessor)
         
-        // Initialize TegelBeheer with UI callback
-        tegelBeheer = TegelBeheer(object : TegelUi {
-            override fun submitTiles(list: List<SoortTile>) {
-                // Convert SoortTile to SoortRow for adapter
-                val rows = list.map { SoortRow(it.soortId, it.naam, it.count) }
-                tilesAdapter.submitList(rows)
-                if (::viewModel.isInitialized) {
-                    viewModel.setTiles(rows)
-                }
-            }
-            
-            override fun onTileCountUpdated(soortId: String, newCount: Int) {
-                // Optional: trigger any additional actions on count update
-            }
-        })
+        // tegelBeheer already initialized before super.onCreate()
 
         // Initialize new helper classes
         speechHandler = TellingSpeechHandler(this, this, safHelper, prefs)
         matchResultHandler = TellingMatchResultHandler(this)
-        speciesManager = TellingSpeciesManager(this, this, safHelper, backupManager, tegelBeheer, PREFS_NAME)
-        annotationHandler = TellingAnnotationHandler(this, backupManager, PREFS_NAME)
+        // speciesManager and annotationHandler already initialized before super.onCreate()
         initializer = TellingInitializer(this)
 
         // Setup callbacks for new helpers
