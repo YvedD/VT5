@@ -50,6 +50,7 @@ class MetadataFormManager(
     
     // Store TextWatcher as property to prevent memory leaks
     private var tellersTextWatcher: TextWatcher? = null
+    private var isTellersAutoSaveSetup = false
     
     /**
      * Initialize date and time pickers.
@@ -101,24 +102,25 @@ class MetadataFormManager(
             }
         }
         
-        // Setup TextWatcher to save manual edits to SharedPreferences
+        // Setup TextWatcher to save manual edits to SharedPreferences (only once)
         setupTellersAutoSave()
     }
     
     /**
      * Setup TextWatcher om automatisch wijzigingen in het Tellers veld 
      * op te slaan naar SharedPreferences.
+     * 
+     * Only sets up once to avoid duplicate listeners and performance issues.
+     * Saves on focus loss rather than on every keystroke for better performance.
      */
     private fun setupTellersAutoSave() {
-        // Remove existing TextWatcher if any (prevent duplicate listeners)
-        tellersTextWatcher?.let { binding.etTellers.removeTextChangedListener(it) }
+        // Only setup once
+        if (isTellersAutoSaveSetup) return
         
-        tellersTextWatcher = object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            
-            override fun afterTextChanged(s: Editable?) {
-                val newText = s?.toString()?.trim().orEmpty()
+        // Save when field loses focus (better performance than saving on every keystroke)
+        binding.etTellers.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) {
+                val newText = binding.etTellers.text?.toString()?.trim().orEmpty()
                 if (newText.isNotEmpty()) {
                     // Save to SharedPreferences for future use
                     VT5App.prefs().edit {
@@ -128,7 +130,7 @@ class MetadataFormManager(
             }
         }
         
-        binding.etTellers.addTextChangedListener(tellersTextWatcher)
+        isTellersAutoSaveSetup = true
     }
     
     /**
