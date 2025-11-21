@@ -135,16 +135,8 @@ class WeatherDataFetcher(
             binding.etLuchtdruk.setText(it.roundToInt().toString()) 
         }
         
-        // Build weather summary for remarks
-        val windDisplayText = codeForLabel?.text ?: "Noord"
-        val weerSamenvatting = buildString {
-            append("Auto: ")
-            cur.temperature2m?.let { append("${it.roundToInt()}°C, ") }
-            append("$windDisplayText $windForceDisplay, ")
-            append("bewolking $achtsten/8")
-            if (rainCode != "geen") append(", $rainLabel")
-        }
-        binding.etWeerOpmerking.setText(weerSamenvatting)
+        // Keep weather remarks field (etWeerOpmerking) empty for manual input
+        // Removed auto-generated summary as per requirement
         
         markWeatherAutoApplied()
     }
