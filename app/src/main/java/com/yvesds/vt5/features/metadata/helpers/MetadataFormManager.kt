@@ -2,8 +2,6 @@ package com.yvesds.vt5.features.metadata.helpers
 
 import android.app.DatePickerDialog
 import android.content.Context
-import android.text.Editable
-import android.text.TextWatcher
 import android.widget.ArrayAdapter
 import android.widget.LinearLayout
 import android.widget.NumberPicker
@@ -48,8 +46,7 @@ class MetadataFormManager(
     var gekozenTypeTellingCode: String? = null
     var startEpochSec: Long = System.currentTimeMillis() / 1000L
     
-    // Store TextWatcher as property to prevent memory leaks
-    private var tellersTextWatcher: TextWatcher? = null
+    // Track if auto-save is already setup to prevent duplicate listeners
     private var isTellersAutoSaveSetup = false
     
     /**
@@ -78,7 +75,7 @@ class MetadataFormManager(
      * Strategy:
      * 1. Primary: Use SharedPreferences (fast, always available)
      * 2. Fallback: Use DataSnapshot.currentUser (requires file I/O)
-     * 3. Setup TextWatcher to save manual edits to SharedPreferences
+     * 3. Setup OnFocusChangeListener to save manual edits to SharedPreferences
      * 
      * Only sets the field if it's currently empty and fullname is available.
      */
@@ -102,12 +99,12 @@ class MetadataFormManager(
             }
         }
         
-        // Setup TextWatcher to save manual edits to SharedPreferences (only once)
+        // Setup OnFocusChangeListener to save manual edits to SharedPreferences (only once)
         setupTellersAutoSave()
     }
     
     /**
-     * Setup TextWatcher om automatisch wijzigingen in het Tellers veld 
+     * Setup OnFocusChangeListener om automatisch wijzigingen in het Tellers veld 
      * op te slaan naar SharedPreferences.
      * 
      * Only sets up once to avoid duplicate listeners and performance issues.
