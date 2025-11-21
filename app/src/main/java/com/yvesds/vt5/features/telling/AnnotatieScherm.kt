@@ -204,7 +204,7 @@ class AnnotatieScherm : AppCompatActivity() {
                 btn.tag = null
                 btn.setOnClickListener(null)
             }
-            setToggleColor(btn, btn.isChecked)
+            setToggleColor(btn)
             btnList.add(btn)
         }
 
@@ -241,24 +241,24 @@ class AnnotatieScherm : AppCompatActivity() {
         if (clicked.isChecked) {
             for (btn in list) {
                 if (btn === clicked) {
-                    setToggleColor(btn, true)
+                    setToggleColor(btn)
                 } else {
                     if (btn.isChecked) btn.isChecked = false
-                    setToggleColor(btn, false)
+                    setToggleColor(btn)
                 }
             }
         } else {
             // toggled off
-            setToggleColor(clicked, false)
+            setToggleColor(clicked)
         }
     }
 
-    private fun setToggleColor(btn: AppCompatToggleButton?, checked: Boolean) {
+    private fun setToggleColor(btn: AppCompatToggleButton?) {
         if (btn == null) return
         // Ensure the button uses the selector background (preserve the blue border)
         // The style already sets this, but we refresh it to ensure it's not lost
         btn.setBackgroundResource(R.drawable.vt5_btn_selector)
-        // Set text color based on state
+        // Set text color to white for readability
         btn.setTextColor(Color.WHITE)
         // Refresh drawable state to apply the selector based on isChecked
         btn.refreshDrawableState()
