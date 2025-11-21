@@ -45,15 +45,9 @@ class ServerAuthenticationManager(
         ignoreUnknownKeys = true
     }
     
-    private val jsonParser = Json {
-        ignoreUnknownKeys = true
-        isLenient = true
-    }
-    
     companion object {
         private const val TAG = "ServerAuthManager"
-        private const val PREFS_NAME = "vt5_prefs"
-        private const val PREF_USER_FULLNAME = "pref_user_fullname"
+        const val PREF_USER_FULLNAME = "pref_user_fullname"
     }
     
     /**
@@ -161,11 +155,12 @@ class ServerAuthenticationManager(
      */
     fun saveFullnameToPreferences(response: String) {
         try {
-            val wrapped = jsonParser.decodeFromString<WrappedJson<CheckUserItem>>(response)
+            // Reuse existing jsonPretty which has ignoreUnknownKeys enabled
+            val wrapped = jsonPretty.decodeFromString<WrappedJson<CheckUserItem>>(response)
             val fullname = wrapped.json.firstOrNull()?.fullname
             
             if (!fullname.isNullOrBlank()) {
-                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
+                com.yvesds.vt5.VT5App.prefs().edit {
                     putString(PREF_USER_FULLNAME, fullname)
                 }
                 Log.d(TAG, "Fullname saved to SharedPreferences: $fullname")
@@ -183,8 +178,7 @@ class ServerAuthenticationManager(
      * @return De opgeslagen fullname, of null als niet beschikbaar
      */
     fun getFullnameFromPreferences(): String? {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getString(PREF_USER_FULLNAME, null)
+        return com.yvesds.vt5.VT5App.prefs().getString(PREF_USER_FULLNAME, null)
     }
     
     /**

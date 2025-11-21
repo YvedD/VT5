@@ -35,8 +35,6 @@ class MetadataFormManager(
     
     companion object {
         private const val TAG = "MetadataFormManager"
-        private const val PREFS_NAME = "vt5_prefs"
-        private const val PREF_USER_FULLNAME = "pref_user_fullname"
     }
     
     // Form state
@@ -47,6 +45,9 @@ class MetadataFormManager(
     var gekozenNeerslagCode: String? = null
     var gekozenTypeTellingCode: String? = null
     var startEpochSec: Long = System.currentTimeMillis() / 1000L
+    
+    // Store TextWatcher as property to prevent memory leaks
+    private var tellersTextWatcher: TextWatcher? = null
     
     /**
      * Initialize date and time pickers.
@@ -83,8 +84,8 @@ class MetadataFormManager(
         val currentText = binding.etTellers.text?.toString()?.trim().orEmpty()
         if (currentText.isEmpty()) {
             // Primary: Try SharedPreferences first (fastest)
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val fullnameFromPrefs = prefs.getString(PREF_USER_FULLNAME, null)
+            val fullnameFromPrefs = com.yvesds.vt5.VT5App.prefs()
+                .getString(com.yvesds.vt5.features.opstart.helpers.ServerAuthenticationManager.PREF_USER_FULLNAME, null)
             
             val fullname = if (!fullnameFromPrefs.isNullOrBlank()) {
                 fullnameFromPrefs
@@ -108,13 +109,9 @@ class MetadataFormManager(
      */
     private fun setupTellersAutoSave() {
         // Remove existing TextWatcher if any (prevent duplicate listeners)
-        binding.etTellers.tag?.let { tag ->
-            if (tag is TextWatcher) {
-                binding.etTellers.removeTextChangedListener(tag)
-            }
-        }
+        tellersTextWatcher?.let { binding.etTellers.removeTextChangedListener(it) }
         
-        val watcher = object : TextWatcher {
+        tellersTextWatcher = object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             
@@ -122,16 +119,14 @@ class MetadataFormManager(
                 val newText = s?.toString()?.trim().orEmpty()
                 if (newText.isNotEmpty()) {
                     // Save to SharedPreferences for future use
-                    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit {
-                        putString(PREF_USER_FULLNAME, newText)
+                    com.yvesds.vt5.VT5App.prefs().edit {
+                        putString(com.yvesds.vt5.features.opstart.helpers.ServerAuthenticationManager.PREF_USER_FULLNAME, newText)
                     }
                 }
             }
         }
         
-        binding.etTellers.addTextChangedListener(watcher)
-        // Store reference to prevent duplicate listeners
-        binding.etTellers.tag = watcher
+        binding.etTellers.addTextChangedListener(tellersTextWatcher)
     }
     
     /**
