@@ -124,6 +124,30 @@ class AnnotatieScherm : AppCompatActivity() {
                 resultMap["markeren"] = "1"
                 selectedLabels.add("Markeren")
             }
+            findViewById<CheckBox>(R.id.cb_markeren_lokaal)?.takeIf { it.isChecked }?.let {
+                resultMap["markerenlokaal"] = "1"
+                selectedLabels.add("Markeren Lokaal")
+            }
+
+            // Manual count inputs
+            findViewById<EditText>(R.id.et_aantal_zw)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                resultMap["aantal"] = it
+                selectedLabels.add("ZW: $it")
+            }
+            findViewById<EditText>(R.id.et_aantal_no)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                resultMap["aantalterug"] = it
+                selectedLabels.add("NO: $it")
+            }
+            findViewById<EditText>(R.id.et_aantal_lokaal)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                resultMap["lokaal"] = it
+                selectedLabels.add("Lokaal: $it")
+            }
+            
+            // Remarks/Comments
+            findViewById<EditText>(R.id.et_opmerkingen)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                resultMap["opmerkingen"] = it
+                selectedLabels.add("Opm: $it")
+            }
 
             val payload = json.encodeToString(resultMap)
 
@@ -231,12 +255,12 @@ class AnnotatieScherm : AppCompatActivity() {
 
     private fun setToggleColor(btn: AppCompatToggleButton?, checked: Boolean) {
         if (btn == null) return
-        if (checked) {
-            btn.setBackgroundColor(ContextCompat.getColor(this, R.color.vt5_light_blue))
-            btn.setTextColor(Color.WHITE)
-        } else {
-            btn.setBackgroundColor(ContextCompat.getColor(this, android.R.color.transparent))
-            btn.setTextColor(ContextCompat.getColor(this, android.R.color.white))
-        }
+        // Ensure the button uses the selector background (preserve the blue border)
+        // The style already sets this, but we refresh it to ensure it's not lost
+        btn.setBackgroundResource(R.drawable.vt5_btn_selector)
+        // Set text color based on state
+        btn.setTextColor(Color.WHITE)
+        // Refresh drawable state to apply the selector based on isChecked
+        btn.refreshDrawableState()
     }
 }

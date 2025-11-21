@@ -120,6 +120,13 @@
     <string name="annotation_direction_no">NO</string>
     <string name="annotation_local">Lokaal</string>
     <string name="annotation_mark">Markeren</string>
+    <string name="annotation_mark_local">Markeren Lokaal</string>
+    <string name="annotation_manual_counts_title">Manuele aantallen:</string>
+    <string name="annotation_count_zw">Aantal ZW :</string>
+    <string name="annotation_count_no">Aantal NO :</string>
+    <string name="annotation_count_local">Aantal Lokaal :</string>
+    <string name="annotation_remarks">Opmerking:</string>
+    <string name="annotation_remarks_hint">Opmerkingen bij waarneming</string>
     
     <string name="telling_speech_results">Resultaten spraak- of manuele invoer</string>
     <string name="telling_totals">Totalen</string>
