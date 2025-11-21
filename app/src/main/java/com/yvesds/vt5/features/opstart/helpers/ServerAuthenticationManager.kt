@@ -6,6 +6,7 @@ import android.content.Context
 import android.util.Log
 import androidx.core.content.edit
 import androidx.documentfile.provider.DocumentFile
+import com.yvesds.vt5.VT5App
 import com.yvesds.vt5.features.opstart.usecases.TrektellenAuth
 import com.yvesds.vt5.features.serverdata.model.CheckUserItem
 import com.yvesds.vt5.features.serverdata.model.WrappedJson
@@ -160,7 +161,7 @@ class ServerAuthenticationManager(
             val fullname = wrapped.json.firstOrNull()?.fullname
             
             if (!fullname.isNullOrBlank()) {
-                com.yvesds.vt5.VT5App.prefs().edit {
+                VT5App.prefs().edit {
                     putString(PREF_USER_FULLNAME, fullname)
                 }
                 Log.d(TAG, "Fullname saved to SharedPreferences: $fullname")
@@ -178,7 +179,7 @@ class ServerAuthenticationManager(
      * @return De opgeslagen fullname, of null als niet beschikbaar
      */
     fun getFullnameFromPreferences(): String? {
-        return com.yvesds.vt5.VT5App.prefs().getString(PREF_USER_FULLNAME, null)
+        return VT5App.prefs().getString(PREF_USER_FULLNAME, null)
     }
     
     /**

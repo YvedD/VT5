@@ -10,7 +10,9 @@ import android.widget.NumberPicker
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.edit
 import com.yvesds.vt5.R
+import com.yvesds.vt5.VT5App
 import com.yvesds.vt5.databinding.SchermMetadataBinding
+import com.yvesds.vt5.features.opstart.helpers.ServerAuthenticationManager
 import com.yvesds.vt5.features.serverdata.model.CodeItemSlim
 import com.yvesds.vt5.features.serverdata.model.DataSnapshot
 import java.text.SimpleDateFormat
@@ -84,8 +86,8 @@ class MetadataFormManager(
         val currentText = binding.etTellers.text?.toString()?.trim().orEmpty()
         if (currentText.isEmpty()) {
             // Primary: Try SharedPreferences first (fastest)
-            val fullnameFromPrefs = com.yvesds.vt5.VT5App.prefs()
-                .getString(com.yvesds.vt5.features.opstart.helpers.ServerAuthenticationManager.PREF_USER_FULLNAME, null)
+            val fullnameFromPrefs = VT5App.prefs()
+                .getString(ServerAuthenticationManager.PREF_USER_FULLNAME, null)
             
             val fullname = if (!fullnameFromPrefs.isNullOrBlank()) {
                 fullnameFromPrefs
@@ -119,8 +121,8 @@ class MetadataFormManager(
                 val newText = s?.toString()?.trim().orEmpty()
                 if (newText.isNotEmpty()) {
                     // Save to SharedPreferences for future use
-                    com.yvesds.vt5.VT5App.prefs().edit {
-                        putString(com.yvesds.vt5.features.opstart.helpers.ServerAuthenticationManager.PREF_USER_FULLNAME, newText)
+                    VT5App.prefs().edit {
+                        putString(ServerAuthenticationManager.PREF_USER_FULLNAME, newText)
                     }
                 }
             }
