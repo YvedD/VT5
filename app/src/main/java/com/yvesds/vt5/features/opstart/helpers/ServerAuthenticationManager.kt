@@ -4,8 +4,12 @@ package com.yvesds.vt5.features.opstart.helpers
 
 import android.content.Context
 import android.util.Log
+import androidx.core.content.edit
 import androidx.documentfile.provider.DocumentFile
+import com.yvesds.vt5.VT5App
 import com.yvesds.vt5.features.opstart.usecases.TrektellenAuth
+import com.yvesds.vt5.features.serverdata.model.CheckUserItem
+import com.yvesds.vt5.features.serverdata.model.WrappedJson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -44,6 +48,7 @@ class ServerAuthenticationManager(
     
     companion object {
         private const val TAG = "ServerAuthManager"
+        const val PREF_USER_FULLNAME = "pref_user_fullname"
     }
     
     /**
@@ -141,6 +146,40 @@ class ServerAuthenticationManager(
             Log.e(TAG, "Error saving checkuser.json: ${e.message}", e)
             false
         }
+    }
+    
+    /**
+     * Extraheer fullname uit checkuser response en sla op in SharedPreferences.
+     * Dit maakt de fullname direct beschikbaar zonder file I/O.
+     * 
+     * @param response De server response als JSON string
+     */
+    fun saveFullnameToPreferences(response: String) {
+        try {
+            // Reuse existing jsonPretty which has ignoreUnknownKeys enabled
+            val wrapped = jsonPretty.decodeFromString<WrappedJson<CheckUserItem>>(response)
+            val fullname = wrapped.json.firstOrNull()?.fullname
+            
+            if (!fullname.isNullOrBlank()) {
+                VT5App.prefs().edit {
+                    putString(PREF_USER_FULLNAME, fullname)
+                }
+                Log.d(TAG, "Fullname saved to SharedPreferences")
+            } else {
+                Log.w(TAG, "No fullname found in checkuser response")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error extracting fullname from checkuser response: ${e.message}", e)
+        }
+    }
+    
+    /**
+     * Haal fullname op uit SharedPreferences.
+     * 
+     * @return De opgeslagen fullname, of null als niet beschikbaar
+     */
+    fun getFullnameFromPreferences(): String? {
+        return VT5App.prefs().getString(PREF_USER_FULLNAME, null)
     }
     
     /**

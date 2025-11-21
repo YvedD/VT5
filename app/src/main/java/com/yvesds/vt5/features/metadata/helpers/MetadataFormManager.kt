@@ -6,8 +6,11 @@ import android.widget.ArrayAdapter
 import android.widget.LinearLayout
 import android.widget.NumberPicker
 import androidx.appcompat.app.AlertDialog
+import androidx.core.content.edit
 import com.yvesds.vt5.R
+import com.yvesds.vt5.VT5App
 import com.yvesds.vt5.databinding.SchermMetadataBinding
+import com.yvesds.vt5.features.opstart.helpers.ServerAuthenticationManager
 import com.yvesds.vt5.features.serverdata.model.CodeItemSlim
 import com.yvesds.vt5.features.serverdata.model.DataSnapshot
 import java.text.SimpleDateFormat
@@ -43,6 +46,9 @@ class MetadataFormManager(
     var gekozenTypeTellingCode: String? = null
     var startEpochSec: Long = System.currentTimeMillis() / 1000L
     
+    // Track if auto-save is already setup to prevent duplicate listeners
+    private var isTellersAutoSaveSetup = false
+    
     /**
      * Initialize date and time pickers.
      */
@@ -61,6 +67,65 @@ class MetadataFormManager(
         binding.etDatum.setText(dateFmt.format(cal.time))
         binding.etTijd.setText(timeFmt.format(cal.time))
         startEpochSec = System.currentTimeMillis() / 1000L
+    }
+    
+    /**
+     * Prefill the Tellers field with user's fullname.
+     * 
+     * Strategy:
+     * 1. Primary: Use SharedPreferences (fast, always available)
+     * 2. Fallback: Use DataSnapshot.currentUser (requires file I/O)
+     * 3. Setup OnFocusChangeListener to save manual edits to SharedPreferences
+     * 
+     * Only sets the field if it's currently empty and fullname is available.
+     */
+    fun prefillTellersFromSnapshot(snapshot: DataSnapshot) {
+        // Only prefill if the field is empty
+        val currentText = binding.etTellers.text?.toString()?.trim().orEmpty()
+        if (currentText.isEmpty()) {
+            // Primary: Try SharedPreferences first (fastest)
+            val fullnameFromPrefs = VT5App.prefs()
+                .getString(ServerAuthenticationManager.PREF_USER_FULLNAME, null)
+            
+            val fullname = if (!fullnameFromPrefs.isNullOrBlank()) {
+                fullnameFromPrefs
+            } else {
+                // Fallback: Try DataSnapshot
+                snapshot.currentUser?.fullname
+            }
+            
+            if (!fullname.isNullOrBlank()) {
+                binding.etTellers.setText(fullname)
+            }
+        }
+        
+        // Setup OnFocusChangeListener to save manual edits to SharedPreferences (only once)
+        setupTellersAutoSave()
+    }
+    
+    /**
+     * Setup OnFocusChangeListener to automatically save changes in the Tellers field
+     * to SharedPreferences.
+     * 
+     * Only sets up once to avoid duplicate listeners and performance issues.
+     * Saves on focus loss rather than on every keystroke for better performance.
+     */
+    private fun setupTellersAutoSave() {
+        // Only setup once
+        if (isTellersAutoSaveSetup) return
+        
+        // Save when field loses focus (better performance than saving on every keystroke)
+        binding.etTellers.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) {
+                val newText = binding.etTellers.text?.toString()?.trim().orEmpty()
+                // Save to SharedPreferences, even if empty (preserves user intent to clear)
+                VT5App.prefs().edit {
+                    putString(ServerAuthenticationManager.PREF_USER_FULLNAME, newText.ifEmpty { null })
+                }
+            }
+        }
+        
+        isTellersAutoSaveSetup = true
     }
     
     /**
