@@ -14,22 +14,22 @@ Het bestand `app/src/main/assets/annotations.json` bevat alle annotatie opties m
 {
   "kleed": [
     {
-      "tekst": "Zomerkleed",
+      "tekst": "zomerkleed",
       "veld": "kleed",
       "waarde": "B"
     },
     {
-      "tekst": "Winterkleed",
+      "tekst": "winterkleed",
       "veld": "kleed",
-      "waarde": "N"
+      "waarde": "W"
     }
     // ... meer opties
   ],
   "leeftijd": [
     {
-      "tekst": "Adult",
+      "tekst": "adult",
       "veld": "leeftijd",
-      "waarde": "ad"
+      "waarde": "A"
     }
     // ... meer opties
   ]
@@ -38,9 +38,13 @@ Het bestand `app/src/main/assets/annotations.json` bevat alle annotatie opties m
 ```
 
 **Structuur per optie**:
-- `tekst`: De tekst die de gebruiker ziet op de knop (bijv. "Zomerkleed")
+- `tekst`: De tekst die de gebruiker ziet op de knop (bijv. "zomerkleed")
 - `veld`: Het veld in ServerTellingDataItem waar de waarde opgeslagen wordt (bijv. "kleed")
 - `waarde`: De **CODE** die naar de server gestuurd wordt (bijv. "B")
+
+**Let op**: In de echte annotations.json staan de height en location velden gekruist gemapped:
+- `"height"` items mappen naar `"veld": "location"`
+- `"location"` items mappen naar `"veld": "height"`
 
 ### 2. Data Flow
 
@@ -101,56 +105,58 @@ val updated = old.copy(
 ### Leeftijd (leeftijd)
 | Tekst | Code | Betekenis |
 |-------|------|-----------|
-| Adult | `ad` | Adult vogel |
-| 1e jaar / juveniel | `1j` | Eerste kalenderjaar |
-| 2e jaar | `2j` | Tweede kalenderjaar |
-| 3e jaar | `3j` | Derde kalenderjaar |
-| 4e jaar | `4j` | Vierde kalenderjaar |
-| Juveniel | `juv` | Juveniele vogel |
-| Immatuur | `imm` | Immatuur (niet-adult) |
-| Subadult | `sad` | Bijna adult |
+| adult | `A` | Adult vogel |
+| juveniel | `J` | Juveniel |
+| >1kj | `I` | Meer dan 1 kalenderjaar |
+| 1kj | `1` | Eerste kalenderjaar |
+| 2kj | `2` | Tweede kalenderjaar |
+| 3kj | `3` | Derde kalenderjaar |
+| 4kj | `4` | Vierde kalenderjaar |
+| niet juv. | `Non-Juv` | Niet juveniel |
 
 ### Geslacht (geslacht)
 | Tekst | Code | Betekenis |
 |-------|------|-----------|
-| Man | `m` | Man / male |
-| Vrouw | `f` | Vrouw / female |
-| Onbekend | `u` | Onbekend / unknown |
-| Mix | `x` | Mix van beiden |
+| man | `M` | Man / male |
+| vrouw | `F` | Vrouw / female |
+| vrouwkleed | `FC` | Vrouwkleed |
 
 ### Kleed (kleed)
 | Tekst | Code | Betekenis |
 |-------|------|-----------|
-| Zomerkleed | `B` | Breeding / zomerkleed |
-| Winterkleed | `N` | Non-breeding / winterkleed |
-| Eclipskleed | `E` | Eclipse kleed |
-| Juveniel kleed | `J` | Juveniel kleed |
-| 1e winterkleed | `1W` | Eerste winter |
-| 1e zomerkleed | `1S` | Eerste zomer |
-| 2e winterkleed | `2W` | Tweede winter |
-| Mix | `X` | Mix |
+| zomerkleed | `B` | Breeding / zomerkleed |
+| winterkleed | `W` | Winterkleed |
+| man | `M` | Man kleed |
+| vrouw | `F` | Vrouw kleed |
+| licht | `L` | Licht kleed |
+| donker | `D` | Donker kleed |
+| eclips | `E` | Eclipse kleed |
+| intermediar | `I` | Intermediair kleed |
 
-### Locatie (location)
+### Teltype
 | Tekst | Code | Betekenis |
 |-------|------|-----------|
-| Hoog | `H` | Hoog vliegend |
-| Middelhoog | `M` | Middelhoog vliegend |
-| Laag | `L` | Laag vliegend |
-| Zee | `Z` | Boven zee |
-| Land | `G` | Boven land (Ground) |
-| Zittend | `S` | Zittend / sitting |
+| Handteller | `C` | Handteller gebruikt |
 
-### Hoogte (height)
+### Hoogte (height → veld: location)
 | Tekst | Code | Betekenis |
 |-------|------|-----------|
-| 0-10m | `0` | 0-10 meter |
-| 10-50m | `1` | 10-50 meter |
-| 50-150m | `2` | 50-150 meter |
-| 150-500m | `3` | 150-500 meter |
-| 500-1000m | `4` | 500-1000 meter |
-| >1000m | `5` | Boven 1000 meter |
-| Variabel | `V` | Variabele hoogte |
-| Onbekend | `U` | Onbekend |
+| <25m | `<25m` | Minder dan 25 meter |
+| <50m | `<50m` | Minder dan 50 meter |
+| 50-100m | `50-100m` | 50-100 meter |
+| 100-200m | `100-200m` | 100-200 meter |
+| >200m | `>200m` | Meer dan 200 meter |
+
+### Locatie (location → veld: height)
+| Tekst | Code | Betekenis |
+|-------|------|-----------|
+| zee | `zee` | Boven zee |
+| branding | `branding` | In/bij branding |
+| duinen | `duinen` | Boven duinen |
+| binnenkant | `binnenkant` | Binnenkant |
+| polders | `polders` | Boven polders |
+| bos | `bos` | Boven bos |
+| over water | `over water` | Over water |
 
 ## Deployment
 
@@ -176,11 +182,11 @@ Om de annotaties te updaten:
 2. Maak een waarneming (bijv. "Koolmees 5")
 3. Tap op de final log entry
 4. Selecteer annotaties:
-   - Leeftijd: "Adult" → code `ad`
-   - Geslacht: "Man" → code `m`
-   - Kleed: "Zomerkleed" → code `B`
-   - Location: "Hoog" → code `H`
-   - Height: "10-50m" → code `1`
+   - Leeftijd: "adult" → code `A`
+   - Geslacht: "man" → code `M`
+   - Kleed: "zomerkleed" → code `B`
+   - Height: "<50m" → code `<50m` (gaat naar location veld!)
+   - Location: "zee" → code `zee` (gaat naar height veld!)
 5. Druk OK
 6. Rond telling af
 7. Check envelope backup JSON
@@ -192,11 +198,11 @@ Om de annotaties te updaten:
     {
       "soortid": "...",
       "aantal": "5",
-      "leeftijd": "ad",    // ✅ CODE niet "Adult"
-      "geslacht": "m",     // ✅ CODE niet "Man"
-      "kleed": "B",        // ✅ CODE niet "Zomerkleed"
-      "location": "H",     // ✅ CODE niet "Hoog"
-      "height": "1",       // ✅ CODE niet "10-50m"
+      "leeftijd": "A",        // ✅ CODE niet "adult"
+      "geslacht": "M",        // ✅ CODE niet "man"
+      "kleed": "B",           // ✅ CODE niet "zomerkleed"
+      "location": "<50m",     // ✅ CODE (van height knop!)
+      "height": "zee",        // ✅ CODE (van location knop!)
       // ... andere velden
     }
   ]
@@ -225,11 +231,11 @@ Het systeem werkt **PERFECT**:
 
 | Gebruiker ziet | Wat opgeslagen wordt | Server ontvangt |
 |----------------|---------------------|-----------------|
-| "Zomerkleed" | `"kleed": "B"` | `"kleed": "B"` ✅ |
-| "Adult" | `"leeftijd": "ad"` | `"leeftijd": "ad"` ✅ |
-| "Man" | `"geslacht": "m"` | `"geslacht": "m"` ✅ |
-| "Hoog" | `"location": "H"` | `"location": "H"` ✅ |
-| "10-50m" | `"height": "1"` | `"height": "1"` ✅ |
+| "zomerkleed" | `"kleed": "B"` | `"kleed": "B"` ✅ |
+| "adult" | `"leeftijd": "A"` | `"leeftijd": "A"` ✅ |
+| "man" | `"geslacht": "M"` | `"geslacht": "M"` ✅ |
+| "<50m" (height knop) | `"location": "<50m"` | `"location": "<50m"` ✅ |
+| "zee" (location knop) | `"height": "zee"` | `"height": "zee"` ✅ |
 
 De **codes** (niet de teksten) worden correct gebruikt in de data records!
 

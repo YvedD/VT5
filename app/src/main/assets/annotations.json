@@ -1,182 +1,174 @@
 {
   "leeftijd": [
     {
-      "tekst": "Adult",
+      "tekst": "adult",
       "veld": "leeftijd",
-      "waarde": "ad"
+      "waarde": "A"
     },
     {
-      "tekst": "1e jaar / juveniel",
+      "tekst": "juveniel",
       "veld": "leeftijd",
-      "waarde": "1j"
+      "waarde": "J"
     },
     {
-      "tekst": "2e jaar",
+      "tekst": ">1kj",
       "veld": "leeftijd",
-      "waarde": "2j"
+      "waarde": "I"
     },
     {
-      "tekst": "3e jaar",
+      "tekst": "1kj",
       "veld": "leeftijd",
-      "waarde": "3j"
+      "waarde": "1"
     },
     {
-      "tekst": "4e jaar",
+      "tekst": "2kj",
       "veld": "leeftijd",
-      "waarde": "4j"
+      "waarde": "2"
     },
     {
-      "tekst": "Juveniel",
+      "tekst": "3kj",
       "veld": "leeftijd",
-      "waarde": "juv"
+      "waarde": "3"
     },
     {
-      "tekst": "Immatuur",
+      "tekst": "4kj",
       "veld": "leeftijd",
-      "waarde": "imm"
+      "waarde": "4"
     },
     {
-      "tekst": "Subadult",
+      "tekst": "niet juv.",
       "veld": "leeftijd",
-      "waarde": "sad"
+      "waarde": "Non-Juv"
     }
   ],
   "geslacht": [
     {
-      "tekst": "Man",
+      "tekst": "man",
       "veld": "geslacht",
-      "waarde": "m"
+      "waarde": "M"
     },
     {
-      "tekst": "Vrouw",
+      "tekst": "vrouw",
       "veld": "geslacht",
-      "waarde": "f"
+      "waarde": "F"
     },
     {
-      "tekst": "Onbekend",
+      "tekst": "vrouwkleed",
       "veld": "geslacht",
-      "waarde": "u"
-    },
-    {
-      "tekst": "Mix",
-      "veld": "geslacht",
-      "waarde": "x"
+      "waarde": "FC"
     }
   ],
   "kleed": [
     {
-      "tekst": "Zomerkleed",
+      "tekst": "zomerkleed",
       "veld": "kleed",
       "waarde": "B"
     },
     {
-      "tekst": "Winterkleed",
+      "tekst": "winterkleed",
       "veld": "kleed",
-      "waarde": "N"
+      "waarde": "W"
     },
     {
-      "tekst": "Eclipskleed",
+      "tekst": "man",
+      "veld": "kleed",
+      "waarde": "M"
+    },
+    {
+      "tekst": "vrouw",
+      "veld": "kleed",
+      "waarde": "F"
+    },
+    {
+      "tekst": "licht",
+      "veld": "kleed",
+      "waarde": "L"
+    },
+    {
+      "tekst": "donker",
+      "veld": "kleed",
+      "waarde": "D"
+    },
+    {
+      "tekst": "eclips",
       "veld": "kleed",
       "waarde": "E"
     },
     {
-      "tekst": "Juveniel kleed",
+      "tekst": "intermediar",
       "veld": "kleed",
-      "waarde": "J"
-    },
-    {
-      "tekst": "1e winterkleed",
-      "veld": "kleed",
-      "waarde": "1W"
-    },
-    {
-      "tekst": "1e zomerkleed",
-      "veld": "kleed",
-      "waarde": "1S"
-    },
-    {
-      "tekst": "2e winterkleed",
-      "veld": "kleed",
-      "waarde": "2W"
-    },
-    {
-      "tekst": "Mix",
-      "veld": "kleed",
-      "waarde": "X"
+      "waarde": "I"
     }
   ],
-  "location": [
+  "teltype": [
     {
-      "tekst": "Hoog",
-      "veld": "location",
-      "waarde": "H"
-    },
-    {
-      "tekst": "Middelhoog",
-      "veld": "location",
-      "waarde": "M"
-    },
-    {
-      "tekst": "Laag",
-      "veld": "location",
-      "waarde": "L"
-    },
-    {
-      "tekst": "Zee",
-      "veld": "location",
-      "waarde": "Z"
-    },
-    {
-      "tekst": "Land",
-      "veld": "location",
-      "waarde": "G"
-    },
-    {
-      "tekst": "Zittend",
-      "veld": "location",
-      "waarde": "S"
+      "tekst": "Handteller",
+      "veld": "teltype_C",
+      "waarde": "C"
     }
   ],
   "height": [
     {
-      "tekst": "0-10m",
-      "veld": "height",
-      "waarde": "0"
+      "tekst": "<25m",
+      "veld": "location",
+      "waarde": "<25m"
     },
     {
-      "tekst": "10-50m",
-      "veld": "height",
-      "waarde": "1"
+      "tekst": "<50m",
+      "veld": "location",
+      "waarde": "<50m"
     },
     {
-      "tekst": "50-150m",
-      "veld": "height",
-      "waarde": "2"
+      "tekst": "50-100m",
+      "veld": "location",
+      "waarde": "50-100m"
     },
     {
-      "tekst": "150-500m",
-      "veld": "height",
-      "waarde": "3"
+      "tekst": "100-200m",
+      "veld": "location",
+      "waarde": "100-200m"
     },
     {
-      "tekst": "500-1000m",
+      "tekst": ">200m",
+      "veld": "location",
+      "waarde": ">200m"
+    }
+  ],
+  "location": [
+    {
+      "tekst": "zee",
       "veld": "height",
-      "waarde": "4"
+      "waarde": "zee"
     },
     {
-      "tekst": ">1000m",
+      "tekst": "branding",
       "veld": "height",
-      "waarde": "5"
+      "waarde": "branding"
     },
     {
-      "tekst": "Variabel",
+      "tekst": "duinen",
       "veld": "height",
-      "waarde": "V"
+      "waarde": "duinen"
     },
     {
-      "tekst": "Onbekend",
+      "tekst": "binnenkant",
       "veld": "height",
-      "waarde": "U"
+      "waarde": "binnenkant"
+    },
+    {
+      "tekst": "polders",
+      "veld": "height",
+      "waarde": "polders"
+    },
+    {
+      "tekst": "bos",
+      "veld": "height",
+      "waarde": "bos"
+    },
+    {
+      "tekst": "over water",
+      "veld": "height",
+      "waarde": "over water"
     }
   ]
 }
