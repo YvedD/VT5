@@ -41,7 +41,7 @@ class TellingAfrondHandler(
         private const val PREF_ONLINE_ID = "pref_online_id"
         private const val PREF_TELLING_ID = "pref_telling_id"
         
-        private val PRETTY_JSON: Json by lazy { Json { prettyPrint = true } }
+        private val PRETTY_JSON: Json by lazy { Json { prettyPrint = true; encodeDefaults = true } }
     }
 
     /**
