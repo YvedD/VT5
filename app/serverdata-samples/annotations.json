@@ -1,1 +1,51 @@
+{
+  "leeftijd": [
+    { "tekst": "adult",        "veld": "leeftijd", "waarde": "A" },
+    { "tekst": "juveniel",     "veld": "leeftijd", "waarde": "J" },
+    { "tekst": ">1kj",         "veld": "leeftijd", "waarde": "I" },
+    { "tekst": "1kj",          "veld": "leeftijd", "waarde": "1" },
+    { "tekst": "2kj",          "veld": "leeftijd", "waarde": "2" },
+    { "tekst": "3kj",          "veld": "leeftijd", "waarde": "3" },
+    { "tekst": "4kj",          "veld": "leeftijd", "waarde": "4" },
+    { "tekst": "niet juv.",    "veld": "leeftijd", "waarde": "Non-Juv" }
+  ],
 
+  "geslacht": [
+    { "tekst": "man",         "veld": "geslacht", "waarde": "M" },
+    { "tekst": "vrouw",       "veld": "geslacht", "waarde": "F" },
+    { "tekst": "vrouwkleed",  "veld": "geslacht", "waarde": "FC" }
+  ],
+
+  "kleed": [
+    { "tekst": "zomerkleed",  "veld": "kleed", "waarde": "B" },
+    { "tekst": "winterkleed", "veld": "kleed", "waarde": "W" },
+    { "tekst": "man",         "veld": "kleed", "waarde": "M" },
+    { "tekst": "vrouw",       "veld": "kleed", "waarde": "F" },
+    { "tekst": "licht",       "veld": "kleed", "waarde": "L" },
+    { "tekst": "donker",      "veld": "kleed", "waarde": "D" },
+    { "tekst": "eclips",      "veld": "kleed", "waarde": "E" },
+    { "tekst": "intermediar", "veld": "kleed", "waarde": "I" }
+  ],
+
+  "teltype": [
+    { "tekst": "Handteller",   "veld": "teltype_C", "waarde": "C" }
+  ],
+
+   "height": [
+    { "tekst": "<25m",    "veld": "location", "waarde": "<25m" },
+    { "tekst": "<50m",    "veld": "location", "waarde": "<50m" },
+    { "tekst": "50-100m", "veld": "location", "waarde": "50-100m" },
+    { "tekst": "100-200m","veld": "location", "waarde": "100-200m" },
+    { "tekst": ">200m",   "veld": "location", "waarde": ">200m" }
+  ],
+
+  "location": [
+    { "tekst": "zee",       "veld": "height", "waarde": "zee" },
+    { "tekst": "branding",  "veld": "height", "waarde": "branding" },
+    { "tekst": "duinen",    "veld": "height", "waarde": "duinen" },
+    { "tekst": "binnenkant","veld": "height", "waarde": "binnenkant" },
+    { "tekst": "polders",   "veld": "height", "waarde": "polders" },
+    { "tekst": "bos",       "veld": "height", "waarde": "bos" },
+    { "tekst": "over water","veld": "height", "waarde": "over water" }
+  ]
+}
