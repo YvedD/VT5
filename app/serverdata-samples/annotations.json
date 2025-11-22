@@ -32,20 +32,20 @@
   ],
 
    "height": [
-    { "tekst": "<25m",    "veld": "location", "waarde": "<25m" },
-    { "tekst": "<50m",    "veld": "location", "waarde": "<50m" },
-    { "tekst": "50-100m", "veld": "location", "waarde": "50-100m" },
-    { "tekst": "100-200m","veld": "location", "waarde": "100-200m" },
-    { "tekst": ">200m",   "veld": "location", "waarde": ">200m" }
+    { "tekst": "<25m",    "veld": "height", "waarde": "<25m" },
+    { "tekst": "<50m",    "veld": "height", "waarde": "<50m" },
+    { "tekst": "50-100m", "veld": "height", "waarde": "50-100m" },
+    { "tekst": "100-200m","veld": "height", "waarde": "100-200m" },
+    { "tekst": ">200m",   "veld": "height", "waarde": ">200m" }
   ],
 
   "location": [
-    { "tekst": "zee",       "veld": "height", "waarde": "zee" },
-    { "tekst": "branding",  "veld": "height", "waarde": "branding" },
-    { "tekst": "duinen",    "veld": "height", "waarde": "duinen" },
-    { "tekst": "binnenkant","veld": "height", "waarde": "binnenkant" },
-    { "tekst": "polders",   "veld": "height", "waarde": "polders" },
-    { "tekst": "bos",       "veld": "height", "waarde": "bos" },
-    { "tekst": "over water","veld": "height", "waarde": "over water" }
+    { "tekst": "zee",       "veld": "location", "waarde": "zee" },
+    { "tekst": "branding",  "veld": "location", "waarde": "branding" },
+    { "tekst": "duinen",    "veld": "location", "waarde": "duinen" },
+    { "tekst": "binnenkant","veld": "location", "waarde": "binnenkant" },
+    { "tekst": "polders",   "veld": "location", "waarde": "polders" },
+    { "tekst": "bos",       "veld": "location", "waarde": "bos" },
+    { "tekst": "over water","veld": "location", "waarde": "over water" }
   ]
 }
