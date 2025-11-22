@@ -81,9 +81,9 @@ class TellingStarter(
             val neerslagCode = formManager.gekozenNeerslagCode ?: ""
             val zichtMeters = binding.etZicht.text?.toString()?.trim().orEmpty()
             val typetellingCode = formManager.gekozenTypeTellingCode ?: ""
-            val tellersFromUi = ""
+            val tellersFromUi = formManager.getTellers()
             val weerOpmerking = binding.etWeerOpmerking.text?.toString()?.trim().orEmpty()
-            val opmerkingen = ""
+            val opmerkingen = formManager.getOpmerkingen()
             val luchtdrukHpaRaw = binding.etLuchtdruk.text?.toString()?.trim().orEmpty()
             
             // Build envelope (live mode = true so eindtijd == "")
