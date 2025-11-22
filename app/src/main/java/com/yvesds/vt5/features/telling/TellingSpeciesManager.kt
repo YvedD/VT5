@@ -186,32 +186,39 @@ class TellingSpeciesManager(
 
                 val idLocal = DataUploader.getAndIncrementRecordId(activity, tellingId)
                 val nowEpoch = (System.currentTimeMillis() / 1000L).toString()
+                
+                // Generate uploadtijdstip in "YYYY-MM-DD HH:MM:SS" format
+                val currentTimestamp = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+                    .format(java.util.Date())
+                
+                // Create complete record with sensible defaults
+                // Annotation system will override these values if user annotates the observation
                 val item = ServerTellingDataItem(
                     idLocal = idLocal,
                     tellingid = tellingId,
                     soortid = soortId,
                     aantal = amount.toString(),
-                    richting = "",
+                    richting = "w",                    // Default SW direction (main migration)
                     aantalterug = "0",
-                    richtingterug = "",
-                    sightingdirection = "",
+                    richtingterug = "",                // Empty until NO direction annotated
+                    sightingdirection = "",            // Empty (not commonly used)
                     lokaal = "0",
                     aantal_plus = "0",
                     aantalterug_plus = "0",
                     lokaal_plus = "0",
-                    markeren = "0",
-                    markerenlokaal = "0",
-                    geslacht = "",
-                    leeftijd = "",
-                    kleed = "",
-                    opmerkingen = "",
-                    trektype = "",
-                    teltype = "",
-                    location = "",
-                    height = "",
+                    markeren = "0",                    // Not marked by default
+                    markerenlokaal = "0",              // Not marked local by default
+                    geslacht = "",                     // Empty until user annotates
+                    leeftijd = "",                     // Empty until user annotates
+                    kleed = "",                        // Empty until user annotates
+                    opmerkingen = "",                  // Empty until user adds remarks
+                    trektype = "",                     // Empty (not used in UI)
+                    teltype = "",                      // Empty until user annotates
+                    location = "",                     // Empty until user annotates (height buttons)
+                    height = "",                       // Empty until user annotates (location buttons)
                     tijdstip = nowEpoch,
                     groupid = idLocal,
-                    uploadtijdstip = "",
+                    uploadtijdstip = currentTimestamp, // Set timestamp immediately!
                     totaalaantal = amount.toString()
                 )
 
