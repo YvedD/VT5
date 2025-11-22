@@ -53,7 +53,7 @@
     <string name="annotatie_opmerkingen_hint">Vrije tekst (optioneel)</string>
 
     <string name="btn_klaar">Klaar</string>
-    
+
     <!-- InstallatieScherm status messages -->
     <string name="status_alias_rebuild_complete">Alias index rebuild voltooid</string>
     <string name="status_alias_rebuild_error">Fout bij rebuild: %1$s</string>
@@ -76,17 +76,17 @@
     <string name="metadata_error_preparing">Fout bij voorbereiden telling: %1$s</string>
     <string name="metadata_dialog_time_title">Tijd kiezen</string>
     <string name="metadata_cloudcover_format">%1$d/8</string>
-    
+
     <!-- HoofdActiviteit -->
     <string name="hoofd_metadata_loading">Metadata laden…</string>
-    
+
     <!-- SoortSelectieScherm -->
     <string name="soort_no_species_download">Geen soorten gevonden. Download eerst serverdata.</string>
     <string name="soort_error_loading">Fout bij laden: %1$s</string>
     <string name="soort_list_not_available">Soortenlijst niet beschikbaar</string>
     <string name="soort_no_preselection">Geen voorselectie. Keer terug en selecteer soorten.</string>
     <string name="soort_error_loading_species">Fout bij laden van soorten</string>
-    
+
     <!-- TellingDialogHelper -->
     <string name="dialog_enter_count">%1$s: voer aantal in</string>
     <string name="dialog_select_species">Selecteer soort</string>
@@ -94,12 +94,12 @@
     <string name="dialog_confirm_finish">Afronden bevestigen</string>
     <string name="dialog_finish_success">Afronden geslaagd</string>
     <string name="dialog_choose_species">Kies soort</string>
-    
+
     <!-- AliasEditor &amp; AddAliasDialog -->
     <string name="alias_reload_complete">Aliassen herladen: klaar</string>
     <string name="alias_reload_failed">Aliassen herladen: mislukt</string>
     <string name="alias_link_to_species">Koppel alias aan soort</string>
-    
+
     <!-- TellingScherm -->
     <string name="telling_added_count">Toegevoegd: %1$d</string>
     <string name="telling_alias_saved_buffer">Alias opgeslagen (buffer).</string>
@@ -108,7 +108,7 @@
     <string name="telling_alias_saved_index_updated">Alias opgeslagen en index bijgewerkt</string>
     <string name="telling_alias_saved_index_later">Alias opgeslagen (index update later)</string>
     <string name="telling_speech_init_error">Kon spraakherkenning niet initialiseren: %1$s</string>
-    
+
     <!-- Layout strings voor XML -->
     <string name="recents_header" formatted="false">Alle recente (%1$d)</string>
     <string name="annotation_age">Leeftijd</string>
@@ -119,32 +119,32 @@
     <string name="annotation_direction_sw">ZW</string>
     <string name="annotation_direction_no">NO</string>
     <string name="annotation_local">Lokaal</string>
-    <string name="annotation_mark">Markeren</string>
-    <string name="annotation_mark_local">Markeren Lokaal</string>
+    <string name="annotation_mark">Trek</string>
+    <string name="annotation_mark_local">Lokaal</string>
     <string name="annotation_manual_counts_title">Manuele aantallen:</string>
     <string name="annotation_count_zw">Aantal ZW :</string>
     <string name="annotation_count_no">Aantal NO :</string>
     <string name="annotation_count_local">Aantal Lokaal :</string>
     <string name="annotation_remarks">Opmerking:</string>
     <string name="annotation_remarks_hint">Opmerkingen bij waarneming</string>
-    
+
     <string name="telling_speech_results">Resultaten spraak- of manuele invoer</string>
     <string name="telling_totals">Totalen</string>
     <string name="telling_add">Toevoegen</string>
     <string name="telling_finish">Afronden</string>
-    
+
     <string name="soort_species_name_placeholder">Soortnaam (id: ...)</string>
     <string name="soort_selection_info">%1$d soorten • geselecteerd: %2$d</string>
     <string name="soort_cancel">Annuleer</string>
     <string name="soort_ok">OK</string>
-    
+
     <string name="huidige_stand_title">Huidige stand van zaken</string>
     <string name="huidige_stand_totals">Σ Totaal: %1$d | ZW: %2$d ex | NO: %3$d ex</string>
     <string name="huidige_stand_ok">OK</string>
-    
+
     <string name="add_alias_partials_label">Geselecteerde partials (kies één):</string>
     <string name="add_alias_search_label">Zoek soort (type om te zoeken):</string>
-    
+
     <string name="tile_species_name">Soortnaam</string>
     <string name="tile_count">0</string>
 </resources>

@@ -10,705 +10,713 @@
         android:id="@+id/title"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:paddingBottom="8dp"
         android:text="@string/annotatie_titel"
-        android:textStyle="bold"
-        android:textSize="20sp"
-        android:paddingBottom="8dp" />
+        android:textSize="12sp"
+        android:textStyle="bold" />
 
     <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="0dp"
+        android:layout_height="wrap_content"
         android:layout_weight="1"
         android:fillViewport="true">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:padding="2dp">
 
-        <!-- row with five equal-width vertical columns -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <!-- Column: leeftijd -->
+            <!-- row with five equal-width vertical columns -->
             <LinearLayout
-                android:id="@+id/col_leeftijd_container"
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:padding="6dp">
+                android:orientation="horizontal">
 
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingBottom="6dp"
-                    android:text="@string/annotation_age"
-                    android:textAlignment="center"
-                    android:textSize="12sp"
-                    android:textStyle="normal" />
-
+                <!-- Column: leeftijd -->
                 <LinearLayout
-                    android:id="@+id/col_leeftijd"
-                    android:layout_width="match_parent"
+                    android:id="@+id/col_leeftijd_container"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical">
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:padding="6dp">
 
-                    <!-- Pre-drawn placeholder toggle buttons (texts will be set from annotations.json) -->
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_leeftijd_1"
-                        style="@style/Widget.VT5.Button.Outlined"
+                    <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
+                        android:paddingBottom="6dp"
+                        android:text="@string/annotation_age"
+                        android:textAlignment="center"
+                        android:textSize="12sp"
+                        android:textStyle="normal" />
 
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_leeftijd_2"
-                        style="@style/Widget.VT5.Button.Outlined"
+                    <LinearLayout
+                        android:id="@+id/col_leeftijd"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
+                        android:orientation="vertical">
 
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_leeftijd_3"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
+                        <!-- Pre-drawn placeholder toggle buttons (texts will be set from annotations.json) -->
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_leeftijd_1"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
 
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_leeftijd_4"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_leeftijd_2"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
 
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_leeftijd_5"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_leeftijd_3"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
 
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_leeftijd_6"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_leeftijd_4"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
 
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_leeftijd_7"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_leeftijd_5"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
 
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_leeftijd_8"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_leeftijd_6"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
 
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_leeftijd_7"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_leeftijd_8"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                    </LinearLayout>
                 </LinearLayout>
+
+                <!-- Column: geslacht -->
+                <LinearLayout
+                    android:id="@+id/col_geslacht_container"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:padding="6dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingBottom="6dp"
+                        android:text="@string/annotation_gender"
+                        android:textAlignment="center"
+                        android:textSize="12sp"
+                        android:textStyle="normal" />
+
+                    <LinearLayout
+                        android:id="@+id/col_geslacht"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_geslacht_1"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_geslacht_2"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_geslacht_3"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_geslacht_4"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Column: kleed -->
+                <LinearLayout
+                    android:id="@+id/col_kleed_container"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:padding="6dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingBottom="6dp"
+                        android:text="@string/annotation_plumage"
+                        android:textAlignment="center"
+                        android:textSize="12sp"
+                        android:textStyle="normal" />
+
+                    <LinearLayout
+                        android:id="@+id/col_kleed"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_kleed_1"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_kleed_2"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_kleed_3"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_kleed_4"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_kleed_5"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_kleed_6"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_kleed_7"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_kleed_8"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Column: location -->
+                <LinearLayout
+                    android:id="@+id/col_location_container"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:padding="6dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingBottom="6dp"
+                        android:text="@string/annotation_location"
+                        android:textAlignment="center"
+                        android:textSize="12sp"
+                        android:textStyle="normal" />
+
+                    <LinearLayout
+                        android:id="@+id/col_location"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_location_1"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_location_2"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_location_3"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_location_4"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_location_5"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_location_6"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Column: height -->
+                <LinearLayout
+                    android:id="@+id/col_height_container"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:padding="6dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingBottom="6dp"
+                        android:text="@string/annotation_height"
+                        android:textAlignment="center"
+                        android:textSize="12sp"
+                        android:textStyle="normal" />
+
+                    <LinearLayout
+                        android:id="@+id/col_height"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_height_1"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_height_2"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_height_3"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_height_4"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_height_5"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_height_6"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_height_7"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_height_8"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+                    </LinearLayout>
+                </LinearLayout>
+
             </LinearLayout>
 
-            <!-- Column: geslacht -->
+            <!-- Checkboxes row -->
             <LinearLayout
-                android:id="@+id/col_geslacht_container"
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:padding="6dp">
+                android:gravity="start"
+                android:orientation="horizontal"
+                android:padding="2dp">
 
-                <TextView
-                    android:layout_width="match_parent"
+                <CheckBox
+                    android:id="@+id/cb_zw"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:paddingBottom="6dp"
-                    android:text="@string/annotation_gender"
-                    android:textAlignment="center"
-                    android:textSize="12sp"
-                    android:textStyle="normal" />
+                    android:padding="1dp"
+                    android:text="@string/annotation_direction_sw"
+                    android:textSize="11sp" />
 
-                <LinearLayout
-                    android:id="@+id/col_geslacht"
-                    android:layout_width="match_parent"
+                <CheckBox
+                    android:id="@+id/cb_no"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical">
+                    android:layout_marginStart="12dp"
+                    android:padding="1dp"
+                    android:text="@string/annotation_direction_no"
+                    android:textSize="11sp" />
 
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_geslacht_1"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
+                <CheckBox
+                    android:id="@+id/cb_markeren"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:padding="1dp"
+                    android:text="@string/annotation_mark"
+                    android:textSize="11sp" />
 
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_geslacht_2"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
-
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_geslacht_3"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
-
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_geslacht_4"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
-
-                </LinearLayout>
+                <CheckBox
+                    android:id="@+id/cb_markeren_lokaal"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:padding="1dp"
+                    android:text="@string/annotation_mark_local"
+                    android:textSize="11sp" />
             </LinearLayout>
 
-            <!-- Column: kleed -->
+            <!-- Manual count inputs section -->
             <LinearLayout
-                android:id="@+id/col_kleed_container"
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
+                android:layout_margin="1dp"
                 android:orientation="vertical"
-                android:padding="6dp">
+                android:padding="2dp">
 
                 <TextView
-                    android:layout_width="match_parent"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:paddingBottom="6dp"
-                    android:text="@string/annotation_plumage"
-                    android:textAlignment="center"
+                    android:paddingBottom="8dp"
+                    android:text="@string/annotation_manual_counts_title"
                     android:textSize="12sp"
-                    android:textStyle="normal" />
+                    android:textStyle="bold" />
 
+                <!-- Aantal ZW -->
                 <LinearLayout
-                    android:id="@+id/col_kleed"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical">
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="1dp">
 
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_kleed_1"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
+                    <TextView
+                        android:layout_width="120dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
+                        android:text="@string/annotation_count_zw"
+                        android:textSize="16sp" />
 
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_kleed_2"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
+                    <EditText
+                        android:id="@+id/et_aantal_zw"
+                        android:layout_width="100dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
+                        android:layout_margin="1dp"
+                        android:contentDescription="@string/annotation_count_zw"
+                        android:hint="0"
+                        android:inputType="number"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:singleLine="false"
+                        android:textSize="16sp" />
+                </LinearLayout>
 
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_kleed_3"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
+                <!-- Aantal NO -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="1dp">
 
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_kleed_4"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
+                    <TextView
+                        android:layout_width="120dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
+                        android:text="@string/annotation_count_no"
+                        android:textSize="16sp" />
 
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_kleed_5"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
+                    <EditText
+                        android:id="@+id/et_aantal_no"
+                        android:layout_width="100dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
+                        android:layout_margin="1dp"
+                        android:contentDescription="@string/annotation_count_no"
+                        android:hint="0"
+                        android:inputType="number"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:singleLine="false"
+                        android:textSize="16sp" />
+                </LinearLayout>
 
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_kleed_6"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
+                <!-- Aantal Lokaal -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="1dp">
 
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_kleed_7"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
+                    <TextView
+                        android:layout_width="120dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
+                        android:text="@string/annotation_count_local"
+                        android:textSize="16sp" />
 
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_kleed_8"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
+                    <EditText
+                        android:id="@+id/et_aantal_lokaal"
+                        android:layout_width="100dp"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
+                        android:layout_margin="1dp"
+                        android:contentDescription="@string/annotation_count_local"
+                        android:hint="0"
+                        android:inputType="number"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:singleLine="false"
+                        android:textSize="16sp" />
+                </LinearLayout>
+
+                <!-- Opmerking -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="start"
+                    android:orientation="horizontal"
+                    android:paddingTop="8dp">
+
+                    <TextView
+                        android:layout_width="120dp"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="top"
+                        android:paddingTop="4dp"
+                        android:text="@string/annotation_remarks"
+                        android:textSize="12sp" />
+
+                    <EditText
+                        android:id="@+id/et_opmerkingen"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:contentDescription="@string/annotation_remarks"
+                        android:hint="@string/annotation_remarks_hint"
+                        android:inputType="textMultiLine"
+                        android:maxLines="4"
+                        android:minLines="2"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:textSize="12sp" />
                 </LinearLayout>
             </LinearLayout>
-
-            <!-- Column: location -->
-            <LinearLayout
-                android:id="@+id/col_location_container"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:padding="6dp">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingBottom="6dp"
-                    android:text="@string/annotation_location"
-                    android:textAlignment="center"
-                    android:textSize="12sp"
-                    android:textStyle="normal" />
-
-                <LinearLayout
-                    android:id="@+id/col_location"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_location_1"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
-
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_location_2"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
-
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_location_3"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
-
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_location_4"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
-
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_location_5"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
-
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_location_6"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
-                </LinearLayout>
-            </LinearLayout>
-
-            <!-- Column: height -->
-            <LinearLayout
-                android:id="@+id/col_height_container"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:orientation="vertical"
-                android:padding="6dp">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:paddingBottom="6dp"
-                    android:text="@string/annotation_height"
-                    android:textAlignment="center"
-                    android:textSize="12sp"
-                    android:textStyle="normal" />
-
-                <LinearLayout
-                    android:id="@+id/col_height"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
-
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_height_1"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
-
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_height_2"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
-
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_height_3"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
-
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_height_4"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
-
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_height_5"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
-
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_height_6"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
-
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_height_7"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
-
-                    <androidx.appcompat.widget.AppCompatToggleButton
-                        android:id="@+id/btn_height_8"
-                        style="@style/Widget.VT5.Button.Outlined"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:layout_marginBottom="3dp"
-                        android:minHeight="20dp"
-                        android:padding="2dp"
-                        android:textSize="8sp" />
-                </LinearLayout>
-            </LinearLayout>
-
-        </LinearLayout>
-
-    <!-- Checkboxes row -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:paddingTop="8dp"
-        android:gravity="start">
-
-        <CheckBox
-            android:id="@+id/cb_zw"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/annotation_direction_sw" />
-
-        <CheckBox
-            android:id="@+id/cb_no"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/annotation_direction_no"
-            android:layout_marginStart="12dp" />
-
-        <CheckBox
-            android:id="@+id/cb_lokaal"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/annotation_local"
-            android:layout_marginStart="12dp" />
-
-        <CheckBox
-            android:id="@+id/cb_markeren"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/annotation_mark"
-            android:layout_marginStart="12dp" />
-
-        <CheckBox
-            android:id="@+id/cb_markeren_lokaal"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/annotation_mark_local"
-            android:layout_marginStart="12dp" />
-    </LinearLayout>
-
-    <!-- Manual count inputs section -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:paddingTop="12dp"
-        android:paddingBottom="8dp">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/annotation_manual_counts_title"
-            android:textStyle="bold"
-            android:textSize="14sp"
-            android:paddingBottom="8dp" />
-
-        <!-- Aantal ZW -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingBottom="4dp">
-
-            <TextView
-                android:layout_width="120dp"
-                android:layout_height="wrap_content"
-                android:text="@string/annotation_count_zw"
-                android:textSize="12sp" />
-
-            <EditText
-                android:id="@+id/et_aantal_zw"
-                android:layout_width="80dp"
-                android:layout_height="wrap_content"
-                android:inputType="number"
-                android:hint="0"
-                android:contentDescription="@string/annotation_count_zw"
-                android:textSize="12sp"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp" />
-        </LinearLayout>
-
-        <!-- Aantal NO -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingBottom="4dp">
-
-            <TextView
-                android:layout_width="120dp"
-                android:layout_height="wrap_content"
-                android:text="@string/annotation_count_no"
-                android:textSize="12sp" />
-
-            <EditText
-                android:id="@+id/et_aantal_no"
-                android:layout_width="80dp"
-                android:layout_height="wrap_content"
-                android:inputType="number"
-                android:hint="0"
-                android:contentDescription="@string/annotation_count_no"
-                android:textSize="12sp"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp" />
-        </LinearLayout>
-
-        <!-- Aantal Lokaal -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingBottom="4dp">
-
-            <TextView
-                android:layout_width="120dp"
-                android:layout_height="wrap_content"
-                android:text="@string/annotation_count_local"
-                android:textSize="12sp" />
-
-            <EditText
-                android:id="@+id/et_aantal_lokaal"
-                android:layout_width="80dp"
-                android:layout_height="wrap_content"
-                android:inputType="number"
-                android:hint="0"
-                android:contentDescription="@string/annotation_count_local"
-                android:textSize="12sp"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp" />
-        </LinearLayout>
-
-        <!-- Opmerking -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="start"
-            android:paddingTop="8dp">
-
-            <TextView
-                android:layout_width="120dp"
-                android:layout_height="wrap_content"
-                android:text="@string/annotation_remarks"
-                android:textSize="12sp"
-                android:layout_gravity="top"
-                android:paddingTop="4dp" />
-
-            <EditText
-                android:id="@+id/et_opmerkingen"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:inputType="textMultiLine"
-                android:hint="@string/annotation_remarks_hint"
-                android:contentDescription="@string/annotation_remarks"
-                android:minLines="2"
-                android:maxLines="4"
-                android:textSize="12sp"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp" />
-        </LinearLayout>
-    </LinearLayout>
 
         </LinearLayout>
     </ScrollView>
