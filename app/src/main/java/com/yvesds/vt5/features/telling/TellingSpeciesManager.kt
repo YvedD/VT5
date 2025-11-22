@@ -195,7 +195,7 @@ class TellingSpeciesManager(
                 // Jan 1 - Jun 30: NO (northeast migration)
                 // Jul 1 - Dec 31: ZW (southwest migration)
                 val currentMonth = java.util.Calendar.getInstance().get(java.util.Calendar.MONTH) + 1 // 1-12
-                val defaultRichting = if (currentMonth in 1..6) "o" else "w"
+                val defaultSightingDirection = if (currentMonth in 1..6) "NO" else "ZW"
                 
                 // Create complete record with sensible defaults
                 // Annotation system will override these values if user annotates the observation
@@ -204,10 +204,10 @@ class TellingSpeciesManager(
                     tellingid = tellingId,
                     soortid = soortId,
                     aantal = amount.toString(),
-                    richting = defaultRichting,        // Seasonal default (NO: Jan-Jun, ZW: Jul-Dec)
+                    richting = "",                     // Empty - only filled via annotation checkboxes
                     aantalterug = "0",
-                    richtingterug = "",                // Empty until NO direction annotated
-                    sightingdirection = "",            // Empty (not commonly used)
+                    richtingterug = "",                // Empty until direction annotated
+                    sightingdirection = defaultSightingDirection,  // Seasonal default (NO: Jan-Jun, ZW: Jul-Dec)
                     lokaal = "0",
                     aantal_plus = "0",
                     aantalterug_plus = "0",
