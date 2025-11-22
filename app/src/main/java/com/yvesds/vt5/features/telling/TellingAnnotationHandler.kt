@@ -180,6 +180,7 @@ class TellingAnnotationHandler(
             val newAantal = map["aantal"] ?: old.aantal
             val newAantalterug = map["aantalterug"] ?: old.aantalterug
             val newOpmerkingen = map["opmerkingen"] ?: map["remarks"] ?: old.opmerkingen
+            val newTeltype = map["teltype_C"] ?: old.teltype
             
             // Handle direction fields based on ZW/NO checkboxes
             var newRichting = old.richting
@@ -219,6 +220,7 @@ class TellingAnnotationHandler(
                 richting = newRichting,
                 richtingterug = newRichtingterug,
                 opmerkingen = newOpmerkingen,
+                teltype = newTeltype,
                 totaalaantal = newTotaalaantal,
                 uploadtijdstip = newUploadtijdstip
             )
