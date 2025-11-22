@@ -563,13 +563,6 @@
             android:layout_marginStart="12dp" />
 
         <CheckBox
-            android:id="@+id/cb_lokaal"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/annotation_local"
-            android:layout_marginStart="12dp" />
-
-        <CheckBox
             android:id="@+id/cb_markeren"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
