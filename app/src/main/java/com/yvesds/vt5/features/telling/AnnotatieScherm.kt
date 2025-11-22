@@ -116,10 +116,6 @@ class AnnotatieScherm : AppCompatActivity() {
                 resultMap["NO"] = "1"
                 selectedLabels.add("NO")
             }
-            findViewById<CheckBox>(R.id.cb_lokaal)?.takeIf { it.isChecked }?.let {
-                resultMap["lokaal_plus"] = "1"
-                selectedLabels.add("Lokaal")
-            }
             findViewById<CheckBox>(R.id.cb_markeren)?.takeIf { it.isChecked }?.let {
                 resultMap["markeren"] = "1"
                 selectedLabels.add("Markeren")
@@ -127,6 +123,10 @@ class AnnotatieScherm : AppCompatActivity() {
             findViewById<CheckBox>(R.id.cb_markeren_lokaal)?.takeIf { it.isChecked }?.let {
                 resultMap["markerenlokaal"] = "1"
                 selectedLabels.add("Markeren Lokaal")
+            }
+            findViewById<CheckBox>(R.id.cb_tally)?.takeIf { it.isChecked }?.let {
+                resultMap["teltype_C"] = "C"
+                selectedLabels.add("Handteller")
             }
 
             // Manual count inputs

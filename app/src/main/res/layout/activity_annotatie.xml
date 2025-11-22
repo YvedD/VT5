@@ -584,6 +584,15 @@
                     android:padding="1dp"
                     android:text="@string/annotation_mark_local"
                     android:textSize="11sp" />
+
+                <CheckBox
+                    android:id="@+id/cb_tally"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:padding="1dp"
+                    android:text="@string/annotation_tally"
+                    android:textSize="11sp" />
             </LinearLayout>
 
             <!-- Manual count inputs section -->
