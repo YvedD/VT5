@@ -167,12 +167,22 @@ class TellingAnnotationHandler(
 
             val old = pendingRecords[idx]
 
+            // DEBUG: Log annotation extraction from map
+            Log.d(TAG, "=== EXTRACTING ANNOTATIONS FROM MAP ===")
+            Log.d(TAG, "Received annotation map: $map")
+            Log.d(TAG, "Applying to record at index $idx (tijdstip=${old.tijdstip})")
+            
             // Update annotation fields from the map
             val newLeeftijd = map["leeftijd"] ?: old.leeftijd
             val newGeslacht = map["geslacht"] ?: old.geslacht
             val newKleed = map["kleed"] ?: old.kleed
             val newLocation = map["location"] ?: old.location
             val newHeight = map["height"] ?: old.height
+            
+            // DEBUG: Log kleed value specifically
+            Log.d(TAG, "map[\"kleed\"] = '${map["kleed"]}'")
+            Log.d(TAG, "old.kleed = '${old.kleed}'")
+            Log.d(TAG, "newKleed (will be applied) = '$newKleed'")
             val newLokaal = map["lokaal"] ?: old.lokaal
             val newLokaalPlus = map["lokaal_plus"] ?: old.lokaal_plus
             val newMarkeren = map["markeren"] ?: old.markeren
@@ -224,6 +234,14 @@ class TellingAnnotationHandler(
                 totaalaantal = newTotaalaantal,
                 uploadtijdstip = newUploadtijdstip
             )
+
+            // DEBUG: Log updated record fields
+            Log.d(TAG, "=== UPDATED RECORD AFTER COPY ===")
+            Log.d(TAG, "updated.kleed = '${updated.kleed}'")
+            Log.d(TAG, "updated.leeftijd = '${updated.leeftijd}'")
+            Log.d(TAG, "updated.geslacht = '${updated.geslacht}'")
+            Log.d(TAG, "updated.teltype = '${updated.teltype}'")
+            Log.d(TAG, "=== END UPDATED RECORD ===")
 
             // Update in-memory pending record via callback
             onUpdatePendingRecord?.invoke(idx, updated)
