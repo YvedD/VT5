@@ -28,12 +28,17 @@ interface TegelUi {
 
 /**
  * Lokaal model voor één tegel (soort).
+ * Houdt nu ZW (aantal) en NO (aantalterug) gescheiden bij.
  */
 data class SoortTile(
     val soortId: String,
     val naam: String,
-    val count: Int = 0
-)
+    val countZW: Int = 0,
+    val countNO: Int = 0
+) {
+    // Backwards compatible total count property
+    val count: Int get() = countZW + countNO
+}
 
 /**
  * TegelBeheer: beheer van de lijst met SoortTile objecten en eenvoudige mutatie-API.
@@ -62,11 +67,11 @@ class TegelBeheer(private val ui: TegelUi) {
         synchronized(lock) {
             val exists = tiles.any { it.soortId == soortId }
             if (exists) return false
-            val new = SoortTile(soortId = soortId, naam = naam, count = initialCount)
+            val new = SoortTile(soortId = soortId, naam = naam, countZW = initialCount, countNO = 0)
             tiles.add(new)
             tiles.sortBy { it.naam.lowercase() }
             ui.submitTiles(tiles.map { it.copy() })
-            Log.d(TAG, "voegSoortToeIndienNodig: toegevoegd $soortId / $naam ($initialCount)")
+            Log.d(TAG, "voegSoortToeIndienNodig: toegevoegd $soortId / $naam (ZW=$initialCount)")
             return true
         }
     }
@@ -77,17 +82,17 @@ class TegelBeheer(private val ui: TegelUi) {
             if (idx >= 0) {
                 if (mergeIfExists) {
                     val current = tiles[idx]
-                    val updated = current.copy(count = current.count + initialCount)
+                    val updated = current.copy(countZW = current.countZW + initialCount)
                     tiles[idx] = updated
                     ui.onTileCountUpdated(soortId, updated.count)
                     ui.submitTiles(tiles.map { it.copy() })
                 }
                 return
             }
-            tiles.add(SoortTile(soortId = soortId, naam = naam, count = initialCount))
+            tiles.add(SoortTile(soortId = soortId, naam = naam, countZW = initialCount, countNO = 0))
             tiles.sortBy { it.naam.lowercase() }
             ui.submitTiles(tiles.map { it.copy() })
-            Log.d(TAG, "voegSoortToe: $soortId / $naam ($initialCount)")
+            Log.d(TAG, "voegSoortToe: $soortId / $naam (ZW=$initialCount)")
         }
     }
 
@@ -100,11 +105,11 @@ class TegelBeheer(private val ui: TegelUi) {
                 return false
             }
             val cur = tiles[idx]
-            val updated = cur.copy(count = cur.count + delta)
+            val updated = cur.copy(countZW = cur.countZW + delta)
             tiles[idx] = updated
             ui.onTileCountUpdated(soortId, updated.count)
             ui.submitTiles(tiles.map { it.copy() })
-            Log.d(TAG, "verhoogSoortAantal: $soortId -> ${updated.count} (delta $delta)")
+            Log.d(TAG, "verhoogSoortAantal: $soortId -> ZW=${updated.countZW}+NO=${updated.countNO} (delta $delta)")
             return true
         }
     }
@@ -114,18 +119,18 @@ class TegelBeheer(private val ui: TegelUi) {
             val idx = tiles.indexOfFirst { it.soortId == soortId }
             if (idx == -1) {
                 val initial = if (delta >= 0) delta else 0
-                tiles.add(SoortTile(soortId = soortId, naam = naamFallback, count = initial))
+                tiles.add(SoortTile(soortId = soortId, naam = naamFallback, countZW = initial, countNO = 0))
                 tiles.sortBy { it.naam.lowercase() }
                 ui.submitTiles(tiles.map { it.copy() })
-                Log.d(TAG, "verhoogSoortAantalOfVoegToe: soort niet gevonden. Toegevoegd $soortId met $initial")
+                Log.d(TAG, "verhoogSoortAantalOfVoegToe: soort niet gevonden. Toegevoegd $soortId met ZW=$initial")
                 return initial
             } else {
                 val cur = tiles[idx]
-                val updated = cur.copy(count = cur.count + delta)
+                val updated = cur.copy(countZW = cur.countZW + delta)
                 tiles[idx] = updated
                 ui.onTileCountUpdated(soortId, updated.count)
                 ui.submitTiles(tiles.map { it.copy() })
-                Log.d(TAG, "verhoogSoortAantalOfVoegToe: $soortId -> ${updated.count}")
+                Log.d(TAG, "verhoogSoortAantalOfVoegToe: $soortId -> ZW=${updated.countZW}+NO=${updated.countNO}")
                 return updated.count
             }
         }
@@ -153,8 +158,44 @@ class TegelBeheer(private val ui: TegelUi) {
 
     fun logTilesState(prefix: String = "tiles") {
         synchronized(lock) {
-            val summary = tiles.joinToString(", ") { "${it.soortId}:${it.naam}:${it.count}" }
+            val summary = tiles.joinToString(", ") { "${it.soortId}:${it.naam}:ZW=${it.countZW}+NO=${it.countNO}" }
             Log.d(TAG, "$prefix (${tiles.size}): $summary")
+        }
+    }
+    
+    /**
+     * Recalculate tile counts from pending records.
+     * This aggregates aantal into countZW and aantalterug into countNO.
+     */
+    fun recalculateCountsFromRecords(records: List<com.yvesds.vt5.net.ServerTellingDataItem>) {
+        synchronized(lock) {
+            // Create map of soortId -> (totalZW, totalNO)
+            val countMap = mutableMapOf<String, Pair<Int, Int>>()
+            
+            for (record in records) {
+                val soortId = record.soortid
+                val aantal = record.aantal.toIntOrNull() ?: 0
+                val aantalterug = record.aantalterug.toIntOrNull() ?: 0
+                
+                val current = countMap[soortId] ?: Pair(0, 0)
+                countMap[soortId] = Pair(current.first + aantal, current.second + aantalterug)
+            }
+            
+            // Update tiles with new counts
+            var changed = false
+            for (i in tiles.indices) {
+                val tile = tiles[i]
+                val counts = countMap[tile.soortId] ?: Pair(0, 0)
+                if (tile.countZW != counts.first || tile.countNO != counts.second) {
+                    tiles[i] = tile.copy(countZW = counts.first, countNO = counts.second)
+                    changed = true
+                }
+            }
+            
+            if (changed) {
+                ui.submitTiles(tiles.map { it.copy() })
+                Log.d(TAG, "recalculateCountsFromRecords: updated counts from ${records.size} records")
+            }
         }
     }
 }

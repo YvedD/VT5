@@ -173,7 +173,15 @@ class TellingScherm : AppCompatActivity() {
     }
 
     // Data models
-    data class SoortRow(val soortId: String, val naam: String, val count: Int = 0)
+    data class SoortRow(
+        val soortId: String, 
+        val naam: String, 
+        val countZW: Int = 0,
+        val countNO: Int = 0
+    ) {
+        // Backwards compatible total count property
+        val count: Int get() = countZW + countNO
+    }
     data class SpeechLogRow(val ts: Long, val tekst: String, val bron: String)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -190,7 +198,7 @@ class TellingScherm : AppCompatActivity() {
         // Initialize TegelBeheer early
         tegelBeheer = TegelBeheer(object : TegelUi {
             override fun submitTiles(list: List<SoortTile>) {
-                val rows = list.map { SoortRow(it.soortId, it.naam, it.count) }
+                val rows = list.map { SoortRow(it.soortId, it.naam, it.countZW, it.countNO) }
                 tilesAdapter.submitList(rows)
                 if (::viewModel.isInitialized) {
                     viewModel.setTiles(rows)
@@ -356,6 +364,9 @@ class TellingScherm : AppCompatActivity() {
                 if (idx in pendingRecords.indices) {
                     pendingRecords[idx] = updated
                     if (::viewModel.isInitialized) viewModel.setPendingRecords(pendingRecords.toList())
+                    
+                    // Recalculate tile counts from all pending records
+                    tegelBeheer.recalculateCountsFromRecords(pendingRecords.toList())
                 }
             }
         }
@@ -489,17 +500,20 @@ class TellingScherm : AppCompatActivity() {
     private fun handleSaveClose(tiles: List<SoortRow>) {
         val ids = ArrayList<String>(tiles.size)
         val names = ArrayList<String>(tiles.size)
-        val counts = ArrayList<String>(tiles.size)
+        val countsZW = ArrayList<String>(tiles.size)
+        val countsNO = ArrayList<String>(tiles.size)
         for (row in tiles) {
             ids.add(row.soortId)
             names.add(row.naam)
-            counts.add(row.count.toString())
+            countsZW.add(row.countZW.toString())
+            countsNO.add(row.countNO.toString())
         }
 
         val intent = Intent(this, HuidigeStandScherm::class.java).apply {
             putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_IDS, ids)
             putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_NAMEN, names)
-            putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_AANTALLEN, counts)
+            putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_AANTALLEN_ZW, countsZW)
+            putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_AANTALLEN_NO, countsNO)
         }
         startActivity(intent)
     }
