@@ -204,6 +204,17 @@ class TellingAnnotationHandler(
             val newOpmerkingen = map["opmerkingen"] ?: map["remarks"] ?: old.opmerkingen
             val newTeltype = map["teltype_C"] ?: old.teltype
             
+            // DEBUG: Log count overrides
+            if (map.containsKey("aantal")) {
+                Log.d(TAG, "COUNT OVERRIDE: aantal changed from '${old.aantal}' to '$newAantal'")
+            }
+            if (map.containsKey("aantalterug")) {
+                Log.d(TAG, "COUNT OVERRIDE: aantalterug changed from '${old.aantalterug}' to '$newAantalterug'")
+            }
+            if (map.containsKey("lokaal")) {
+                Log.d(TAG, "COUNT OVERRIDE: lokaal changed from '${old.lokaal}' to '$newLokaal'")
+            }
+            
             // Handle direction fields based on ZW/NO checkboxes
             var newRichting = old.richting
             var newRichtingterug = old.richtingterug
@@ -222,6 +233,9 @@ class TellingAnnotationHandler(
             val aantalterugInt = newAantalterug.toIntOrZero()
             val lokaalInt = newLokaal.toIntOrZero()
             val newTotaalaantal = (aantalInt + aantalterugInt + lokaalInt).toString()
+            
+            // DEBUG: Log totaalaantal calculation
+            Log.d(TAG, "TOTAAL CALCULATION: $aantalInt + $aantalterugInt + $lokaalInt = $newTotaalaantal")
             
             // Set uploadtijdstip to current timestamp in "YYYY-MM-DD HH:MM:SS" format
             val newUploadtijdstip = getCurrentTimestamp()
@@ -253,6 +267,11 @@ class TellingAnnotationHandler(
             Log.d(TAG, "updated.leeftijd = '${updated.leeftijd}'")
             Log.d(TAG, "updated.geslacht = '${updated.geslacht}'")
             Log.d(TAG, "updated.teltype = '${updated.teltype}'")
+            Log.d(TAG, "updated.aantal = '${updated.aantal}' (speech: ${old.aantal})")
+            Log.d(TAG, "updated.aantalterug = '${updated.aantalterug}' (speech: ${old.aantalterug})")
+            Log.d(TAG, "updated.lokaal = '${updated.lokaal}' (speech: ${old.lokaal})")
+            Log.d(TAG, "updated.totaalaantal = '${updated.totaalaantal}'")
+            Log.d(TAG, "updated.sightingdirection = '${updated.sightingdirection}'")
             Log.d(TAG, "=== END UPDATED RECORD ===")
 
             // Update in-memory pending record via callback
