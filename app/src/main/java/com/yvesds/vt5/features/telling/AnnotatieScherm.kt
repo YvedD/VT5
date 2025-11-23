@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
@@ -98,7 +99,7 @@ class AnnotatieScherm : AppCompatActivity() {
             val resultMap = mutableMapOf<String, String?>()
             val selectedLabels = mutableListOf<String>()
 
-            android.util.Log.d("AnnotatieScherm", "=== OK BUTTON PRESSED ===")
+            Log.d("AnnotatieScherm", "=== OK BUTTON PRESSED ===")
             
             // For each group collect the selected option and label for summary
             for ((group, btns) in groupButtons) {
@@ -109,7 +110,7 @@ class AnnotatieScherm : AppCompatActivity() {
                     selectedLabels.add(selectedOpt.tekst)
                     
                     // DEBUG: Log each selected option
-                    android.util.Log.d("AnnotatieScherm", "  Group '$group': storeKey='$storeKey', waarde='${selectedOpt.waarde}'")
+                    Log.d("AnnotatieScherm", "  Group '$group': storeKey='$storeKey', waarde='${selectedOpt.waarde}'")
                 }
             }
             // Checkboxes
@@ -157,17 +158,17 @@ class AnnotatieScherm : AppCompatActivity() {
             val payload = json.encodeToString(resultMap)
 
             // DEBUG: Log complete resultMap
-            android.util.Log.d("AnnotatieScherm", "=== COMPLETE RESULT MAP ===")
+            Log.d("AnnotatieScherm", "=== COMPLETE RESULT MAP ===")
             resultMap.forEach { (key, value) ->
-                android.util.Log.d("AnnotatieScherm", "  '$key' = '$value'")
+                Log.d("AnnotatieScherm", "  '$key' = '$value'")
             }
             if (resultMap.containsKey("kleed")) {
-                android.util.Log.d("AnnotatieScherm", "*** resultMap contains kleed = '${resultMap["kleed"]}' ***")
+                Log.d("AnnotatieScherm", "*** resultMap contains kleed = '${resultMap["kleed"]}' ***")
             } else {
-                android.util.Log.w("AnnotatieScherm", "*** WARNING: resultMap does NOT contain 'kleed' key! ***")
+                Log.w("AnnotatieScherm", "*** WARNING: resultMap does NOT contain 'kleed' key! ***")
             }
-            android.util.Log.d("AnnotatieScherm", "Payload JSON: $payload")
-            android.util.Log.d("AnnotatieScherm", "=== END RESULT MAP ===")
+            Log.d("AnnotatieScherm", "Payload JSON: $payload")
+            Log.d("AnnotatieScherm", "=== END RESULT MAP ===")
 
             // Build legacy summary text and timestamp for backward compatibility
             val summaryText = if (selectedLabels.isEmpty()) "" else selectedLabels.joinToString(", ")
@@ -260,9 +261,9 @@ class AnnotatieScherm : AppCompatActivity() {
             // DEBUG: Log button click with value from tag
             val selectedOpt = clicked.tag as? AnnotationOption
             if (selectedOpt != null) {
-                android.util.Log.d("AnnotatieScherm", "Button $group selected: ${selectedOpt.waarde} (tekst='${selectedOpt.tekst}', veld='${selectedOpt.veld}')")
+                Log.d("AnnotatieScherm", "Button $group selected: ${selectedOpt.waarde} (tekst='${selectedOpt.tekst}', veld='${selectedOpt.veld}')")
             } else {
-                android.util.Log.w("AnnotatieScherm", "Button $group clicked but tag is null or not AnnotationOption!")
+                Log.w("AnnotatieScherm", "Button $group clicked but tag is null or not AnnotationOption!")
             }
             
             for (btn in list) {
@@ -275,7 +276,7 @@ class AnnotatieScherm : AppCompatActivity() {
             }
         } else {
             // toggled off
-            android.util.Log.d("AnnotatieScherm", "Button $group toggled off")
+            Log.d("AnnotatieScherm", "Button $group toggled off")
             setToggleColor(clicked)
         }
     }
