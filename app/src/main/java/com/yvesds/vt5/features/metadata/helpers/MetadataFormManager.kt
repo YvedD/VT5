@@ -309,4 +309,20 @@ class MetadataFormManager(
         val items = snapshot.codesByCategory[field].orEmpty()
         return items.sortedBy { it.text.lowercase(Locale.getDefault()) }
     }
+    
+    /**
+     * Get the Tellers field value from UI.
+     * Returns trimmed text or empty string if null/blank.
+     */
+    fun getTellers(): String {
+        return binding.etTellers.text?.toString()?.trim().orEmpty()
+    }
+    
+    /**
+     * Get the Opmerkingen field value from UI.
+     * Returns trimmed text or empty string if null/blank.
+     */
+    fun getOpmerkingen(): String {
+        return binding.etOpmerkingen.text?.toString()?.trim().orEmpty()
+    }
 }

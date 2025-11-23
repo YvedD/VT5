@@ -160,11 +160,12 @@ class VT5App : Application() {
         }
 
         // ====== Shared singletons ======
-        /** Lenient JSON decoder (ignoreUnknownKeys/explicitNulls=false) */
+        /** Lenient JSON decoder (ignoreUnknownKeys/explicitNulls=false/encodeDefaults=true) */
         val json: Json by lazy {
             Json {
                 ignoreUnknownKeys = true
                 explicitNulls = false
+                encodeDefaults = true  // Always include all fields, even empty strings
             }
         }
 
