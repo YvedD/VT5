@@ -324,22 +324,22 @@ class AnnotatieScherm : AppCompatActivity() {
     }
 
     /**
-     * Add a tag to the remarks field in format "[ text ]"
+     * Add a tag to the remarks field in format "[text]"
      */
     private fun addTagToRemarks(tag: String) {
         val current = etOpmerkingen.text.toString()
-        val formattedTag = "[ $tag ]"
+        val formattedTag = "[$tag]"
         
         // Check if tag already exists
         if (current.contains(formattedTag)) {
             return
         }
         
-        // Add tag with space separator if text already exists
+        // Add tag without separator (tags are adjacent)
         val newText = if (current.isBlank()) {
             formattedTag
         } else {
-            "$current $formattedTag"
+            "$current$formattedTag"
         }
         
         etOpmerkingen.setText(newText)
@@ -351,13 +351,10 @@ class AnnotatieScherm : AppCompatActivity() {
      */
     private fun removeTagFromRemarks(tag: String) {
         val current = etOpmerkingen.text.toString()
-        val formattedTag = "[ $tag ]"
+        val formattedTag = "[$tag]"
         
-        // Remove the tag and clean up extra spaces
-        var newText = current.replace(formattedTag, "")
-        
-        // Clean up multiple spaces and trim
-        newText = newText.replace(Regex("\\s+"), " ").trim()
+        // Remove the tag
+        val newText = current.replace(formattedTag, "")
         
         etOpmerkingen.setText(newText)
         Log.d("AnnotatieScherm", "Removed tag from remarks: $formattedTag")
