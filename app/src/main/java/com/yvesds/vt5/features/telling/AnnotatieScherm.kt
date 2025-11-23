@@ -49,6 +49,9 @@ class AnnotatieScherm : AppCompatActivity() {
 
     // Map groupName -> list of ToggleButtons (including dynamically created ones)
     private val groupButtons = mutableMapOf<String, MutableList<AppCompatToggleButton>>()
+    
+    // Reference to remarks EditText for location/height auto-tagging
+    private lateinit var etOpmerkingen: EditText
 
     // Pre-drawn button IDs per column (layout contains these)
     private val leeftijdBtnIds = listOf(
@@ -74,6 +77,9 @@ class AnnotatieScherm : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_annotatie)
+
+        // Initialize remarks EditText for location/height auto-tagging
+        etOpmerkingen = findViewById(R.id.et_opmerkingen)
 
         // DEBUG: Log incoming Intent extras
         val rowPosition = intent.getIntExtra("extra_row_pos", -1)
@@ -265,6 +271,7 @@ class AnnotatieScherm : AppCompatActivity() {
     /**
      * Called when any toggle in a group is clicked.
      * Enforces single-select within the group and updates colouring.
+     * For location/height groups, also manages tags in remarks field.
      */
     private fun onGroupButtonClicked(group: String, clicked: AppCompatToggleButton) {
         val list = groupButtons[group] ?: return
@@ -273,23 +280,87 @@ class AnnotatieScherm : AppCompatActivity() {
             val selectedOpt = clicked.tag as? AnnotationOption
             if (selectedOpt != null) {
                 Log.d("AnnotatieScherm", "Button $group selected: ${selectedOpt.waarde} (tekst='${selectedOpt.tekst}', veld='${selectedOpt.veld}')")
+                
+                // For location and height groups, add tag to remarks
+                if (group == "location" || group == "height") {
+                    addTagToRemarks(selectedOpt.tekst)
+                }
             } else {
                 Log.w("AnnotatieScherm", "Button $group clicked but tag is null or not AnnotationOption!")
             }
             
+            // Single-select: uncheck other buttons in the group
             for (btn in list) {
                 if (btn === clicked) {
                     setToggleColor(btn)
                 } else {
-                    if (btn.isChecked) btn.isChecked = false
+                    if (btn.isChecked) {
+                        // Remove tag from remarks if this was a location/height button
+                        if (group == "location" || group == "height") {
+                            val oldOpt = btn.tag as? AnnotationOption
+                            if (oldOpt != null) {
+                                removeTagFromRemarks(oldOpt.tekst)
+                            }
+                        }
+                        btn.isChecked = false
+                    }
                     setToggleColor(btn)
                 }
             }
         } else {
             // toggled off
             Log.d("AnnotatieScherm", "Button $group toggled off")
+            
+            // Remove tag from remarks if this is a location/height button
+            if (group == "location" || group == "height") {
+                val opt = clicked.tag as? AnnotationOption
+                if (opt != null) {
+                    removeTagFromRemarks(opt.tekst)
+                }
+            }
+            
             setToggleColor(clicked)
         }
+    }
+
+    /**
+     * Add a tag to the remarks field in format "[ text ]"
+     */
+    private fun addTagToRemarks(tag: String) {
+        val current = etOpmerkingen.text.toString()
+        val formattedTag = "[ $tag ]"
+        
+        // Check if tag already exists
+        if (current.contains(formattedTag)) {
+            return
+        }
+        
+        // Add tag with space separator if text already exists
+        val newText = if (current.isBlank()) {
+            formattedTag
+        } else {
+            "$current $formattedTag"
+        }
+        
+        etOpmerkingen.setText(newText)
+        Log.d("AnnotatieScherm", "Added tag to remarks: $formattedTag")
+    }
+    
+    /**
+     * Remove a tag from the remarks field
+     */
+    private fun removeTagFromRemarks(tag: String) {
+        val current = etOpmerkingen.text.toString()
+        val formattedTag = "[ $tag ]"
+        
+        // Remove the tag and clean up extra spaces
+        var newText = current.replace(formattedTag, "")
+        
+        // Clean up multiple spaces and trim
+        newText = newText.replace(Regex("\\s+"), " ").trim()
+        
+        etOpmerkingen.setText(newText)
+        Log.d("AnnotatieScherm", "Removed tag from remarks: $formattedTag")
     }
 
     private fun setToggleColor(btn: AppCompatToggleButton?) {
