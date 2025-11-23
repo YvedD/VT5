@@ -75,6 +75,11 @@ class AnnotatieScherm : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_annotatie)
 
+        // DEBUG: Log incoming Intent extras
+        val rowPosition = intent.getIntExtra("extra_row_pos", -1)
+        Log.d("AnnotatieScherm", "=== ANNOTATIESCHERM OPENED ===")
+        Log.d("AnnotatieScherm", "Received extra_row_pos: $rowPosition")
+
         // Show progress while loading cache and populating UI
         lifecycleScope.launch {
             val progress = ProgressDialogHelper.show(this@AnnotatieScherm, getString(R.string.msg_loading_annotations))
@@ -178,7 +183,13 @@ class AnnotatieScherm : AppCompatActivity() {
                 putExtra(EXTRA_ANNOTATIONS_JSON, payload)
                 putExtra(EXTRA_TEXT, summaryText)
                 putExtra(EXTRA_TS, tsSeconds)
+                // CRITICAL FIX: Preserve row position so handler can match the correct record
+                putExtra("extra_row_pos", rowPosition)
             }
+            
+            // DEBUG: Log outgoing Intent extras
+            Log.d("AnnotatieScherm", "Returning extra_row_pos: $rowPosition")
+            
             setResult(Activity.RESULT_OK, out)
             finish()
         }

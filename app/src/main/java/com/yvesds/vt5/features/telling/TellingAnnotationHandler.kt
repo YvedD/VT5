@@ -144,19 +144,31 @@ class TellingAnnotationHandler(
             var idx = -1
             if (rowPos >= 0) {
                 val finalsList = onGetFinalsList?.invoke() ?: emptyList()
+                Log.d(TAG, "rowPos=$rowPos, finalsList.size=${finalsList.size}")
                 val finalRowTs = finalsList.getOrNull(rowPos)?.ts
+                Log.d(TAG, "finalRowTs at position $rowPos: $finalRowTs")
                 if (finalRowTs != null) {
                     idx = pendingRecords.indexOfFirst { it.tijdstip == finalRowTs.toString() }
+                    Log.d(TAG, "Found record at index $idx matching timestamp $finalRowTs")
                 }
+            } else {
+                Log.w(TAG, "!!! CRITICAL: rowPos is -1, cannot match record by position !!!")
             }
 
             // Fallback: try by explicit rowTs if provided
             if (idx == -1 && rowTs > 0L) {
+                Log.d(TAG, "Trying fallback match by timestamp: $rowTs")
                 idx = pendingRecords.indexOfFirst { it.tijdstip == rowTs.toString() }
+                if (idx >= 0) {
+                    Log.d(TAG, "Found record at index $idx by fallback timestamp match")
+                }
             }
 
             if (idx == -1) {
-                Log.w(TAG, "no matching pending record found (rowPos=$rowPos, rowTs=$rowTs)")
+                Log.e(TAG, "!!! CRITICAL ERROR: no matching pending record found !!!")
+                Log.e(TAG, "rowPos=$rowPos, rowTs=$rowTs")
+                Log.e(TAG, "pendingRecords.size=${pendingRecords.size}")
+                Log.e(TAG, "This means annotations will NOT be applied to any record!")
                 return
             }
 
