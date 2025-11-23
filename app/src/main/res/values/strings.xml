@@ -120,6 +120,7 @@
     <string name="annotation_direction_no">NO</string>
     <string name="annotation_local">Lokaal</string>
     <string name="annotation_mark">Trek</string>
+    <string name="annotation_tally">Tally</string>
     <string name="annotation_mark_local">Lokaal</string>
     <string name="annotation_manual_counts_title">Manuele aantallen:</string>
     <string name="annotation_count_zw">Aantal ZW :</string>

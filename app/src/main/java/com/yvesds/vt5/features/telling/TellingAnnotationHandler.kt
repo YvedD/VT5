@@ -144,19 +144,31 @@ class TellingAnnotationHandler(
             var idx = -1
             if (rowPos >= 0) {
                 val finalsList = onGetFinalsList?.invoke() ?: emptyList()
+                Log.d(TAG, "rowPos=$rowPos, finalsList.size=${finalsList.size}")
                 val finalRowTs = finalsList.getOrNull(rowPos)?.ts
+                Log.d(TAG, "finalRowTs at position $rowPos: $finalRowTs")
                 if (finalRowTs != null) {
                     idx = pendingRecords.indexOfFirst { it.tijdstip == finalRowTs.toString() }
+                    Log.d(TAG, "Found record at index $idx matching timestamp $finalRowTs")
                 }
+            } else {
+                Log.w(TAG, "!!! CRITICAL: rowPos is -1, cannot match record by position !!!")
             }
 
             // Fallback: try by explicit rowTs if provided
             if (idx == -1 && rowTs > 0L) {
+                Log.d(TAG, "Trying fallback match by timestamp: $rowTs")
                 idx = pendingRecords.indexOfFirst { it.tijdstip == rowTs.toString() }
+                if (idx >= 0) {
+                    Log.d(TAG, "Found record at index $idx by fallback timestamp match")
+                }
             }
 
             if (idx == -1) {
-                Log.w(TAG, "no matching pending record found (rowPos=$rowPos, rowTs=$rowTs)")
+                Log.e(TAG, "!!! CRITICAL ERROR: no matching pending record found !!!")
+                Log.e(TAG, "rowPos=$rowPos, rowTs=$rowTs")
+                Log.e(TAG, "pendingRecords.size=${pendingRecords.size}")
+                Log.e(TAG, "This means annotations will NOT be applied to any record!")
                 return
             }
 
@@ -167,12 +179,22 @@ class TellingAnnotationHandler(
 
             val old = pendingRecords[idx]
 
+            // DEBUG: Log annotation extraction from map
+            Log.d(TAG, "=== EXTRACTING ANNOTATIONS FROM MAP ===")
+            Log.d(TAG, "Received annotation map: $map")
+            Log.d(TAG, "Applying to record at index $idx (tijdstip=${old.tijdstip})")
+            
             // Update annotation fields from the map
             val newLeeftijd = map["leeftijd"] ?: old.leeftijd
             val newGeslacht = map["geslacht"] ?: old.geslacht
             val newKleed = map["kleed"] ?: old.kleed
             val newLocation = map["location"] ?: old.location
             val newHeight = map["height"] ?: old.height
+            
+            // DEBUG: Log kleed value specifically
+            Log.d(TAG, "map[\"kleed\"] = '${map["kleed"]}'")
+            Log.d(TAG, "old.kleed = '${old.kleed}'")
+            Log.d(TAG, "newKleed (will be applied) = '$newKleed'")
             val newLokaal = map["lokaal"] ?: old.lokaal
             val newLokaalPlus = map["lokaal_plus"] ?: old.lokaal_plus
             val newMarkeren = map["markeren"] ?: old.markeren
@@ -181,6 +203,17 @@ class TellingAnnotationHandler(
             val newAantalterug = map["aantalterug"] ?: old.aantalterug
             val newOpmerkingen = map["opmerkingen"] ?: map["remarks"] ?: old.opmerkingen
             val newTeltype = map["teltype_C"] ?: old.teltype
+            
+            // DEBUG: Log count overrides
+            if (map.containsKey("aantal")) {
+                Log.d(TAG, "COUNT OVERRIDE: aantal changed from '${old.aantal}' to '$newAantal'")
+            }
+            if (map.containsKey("aantalterug")) {
+                Log.d(TAG, "COUNT OVERRIDE: aantalterug changed from '${old.aantalterug}' to '$newAantalterug'")
+            }
+            if (map.containsKey("lokaal")) {
+                Log.d(TAG, "COUNT OVERRIDE: lokaal changed from '${old.lokaal}' to '$newLokaal'")
+            }
             
             // Handle direction fields based on ZW/NO checkboxes
             var newRichting = old.richting
@@ -200,6 +233,9 @@ class TellingAnnotationHandler(
             val aantalterugInt = newAantalterug.toIntOrZero()
             val lokaalInt = newLokaal.toIntOrZero()
             val newTotaalaantal = (aantalInt + aantalterugInt + lokaalInt).toString()
+            
+            // DEBUG: Log totaalaantal calculation
+            Log.d(TAG, "TOTAAL CALCULATION: $aantalInt + $aantalterugInt + $lokaalInt = $newTotaalaantal")
             
             // Set uploadtijdstip to current timestamp in "YYYY-MM-DD HH:MM:SS" format
             val newUploadtijdstip = getCurrentTimestamp()
@@ -224,6 +260,19 @@ class TellingAnnotationHandler(
                 totaalaantal = newTotaalaantal,
                 uploadtijdstip = newUploadtijdstip
             )
+
+            // DEBUG: Log updated record fields
+            Log.d(TAG, "=== UPDATED RECORD AFTER COPY ===")
+            Log.d(TAG, "updated.kleed = '${updated.kleed}'")
+            Log.d(TAG, "updated.leeftijd = '${updated.leeftijd}'")
+            Log.d(TAG, "updated.geslacht = '${updated.geslacht}'")
+            Log.d(TAG, "updated.teltype = '${updated.teltype}'")
+            Log.d(TAG, "updated.aantal = '${updated.aantal}' (speech: ${old.aantal})")
+            Log.d(TAG, "updated.aantalterug = '${updated.aantalterug}' (speech: ${old.aantalterug})")
+            Log.d(TAG, "updated.lokaal = '${updated.lokaal}' (speech: ${old.lokaal})")
+            Log.d(TAG, "updated.totaalaantal = '${updated.totaalaantal}'")
+            Log.d(TAG, "updated.sightingdirection = '${updated.sightingdirection}'")
+            Log.d(TAG, "=== END UPDATED RECORD ===")
 
             // Update in-memory pending record via callback
             onUpdatePendingRecord?.invoke(idx, updated)

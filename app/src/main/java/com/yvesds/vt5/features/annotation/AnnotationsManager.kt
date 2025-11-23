@@ -199,6 +199,20 @@ object AnnotationsManager {
             // Cache it
             cachedMap = out.toMap()
             Log.i(TAG, "Annotations loaded and cached: ${cachedMap?.keys?.size ?: 0} groups")
+            
+            // DEBUG: Log kleed options specifically
+            val kleedOptions = out["kleed"]
+            if (kleedOptions != null && kleedOptions.isNotEmpty()) {
+                Log.d(TAG, "=== KLEED OPTIONS LOADED ===")
+                Log.d(TAG, "Total kleed options: ${kleedOptions.size}")
+                kleedOptions.forEachIndexed { idx, opt ->
+                    Log.d(TAG, "  kleed[$idx]: tekst='${opt.tekst}', veld='${opt.veld}', waarde='${opt.waarde}'")
+                }
+                Log.d(TAG, "=== END KLEED OPTIONS ===")
+            } else {
+                Log.w(TAG, "WARNING: No kleed options found in annotations!")
+            }
+            
             return@withContext cachedMap!!
         } catch (ex: Exception) {
             Log.w(TAG, "loadCache failed: ${ex.message}", ex)

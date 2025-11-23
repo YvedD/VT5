@@ -25,7 +25,8 @@ class HuidigeStandScherm : AppCompatActivity() {
     companion object {
         const val EXTRA_SOORT_IDS = "extra_soort_ids"
         const val EXTRA_SOORT_NAMEN = "extra_soort_namen"
-        const val EXTRA_SOORT_AANTALLEN = "extra_soort_aantallen"
+        const val EXTRA_SOORT_AANTALLEN_ZW = "extra_soort_aantallen_zw"
+        const val EXTRA_SOORT_AANTALLEN_NO = "extra_soort_aantallen_no"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,21 +52,25 @@ class HuidigeStandScherm : AppCompatActivity() {
         // Read extras
         val ids = intent.getStringArrayListExtra(EXTRA_SOORT_IDS) ?: arrayListOf()
         val names = intent.getStringArrayListExtra(EXTRA_SOORT_NAMEN) ?: arrayListOf()
-        val countsRaw = intent.getStringArrayListExtra(EXTRA_SOORT_AANTALLEN) ?: arrayListOf()
+        val countsZW = intent.getStringArrayListExtra(EXTRA_SOORT_AANTALLEN_ZW) ?: arrayListOf()
+        val countsNO = intent.getStringArrayListExtra(EXTRA_SOORT_AANTALLEN_NO) ?: arrayListOf()
 
         // Safety: ensure sizes match; otherwise use shortest
-        val n = listOf(ids.size, names.size, countsRaw.size).minOrNull() ?: 0
+        val n = listOf(ids.size, names.size, countsZW.size, countsNO.size).minOrNull() ?: 0
 
         var totalSum = 0
         var zwSum = 0
-        var noSum = 0 // currently 0, but kept for future use
+        var noSum = 0
 
         for (i in 0 until n) {
             val name = names[i]
-            val count = countsRaw[i].toIntOrNull() ?: 0
-            totalSum += count
-            zwSum += count // for now assign all to ZW
-            // noSum unchanged (0)
+            val countZW = countsZW[i].toIntOrNull() ?: 0
+            val countNO = countsNO[i].toIntOrNull() ?: 0
+            val total = countZW + countNO
+            
+            totalSum += total
+            zwSum += countZW
+            noSum += countNO
 
             val row = TableRow(this).apply {
                 val lp = TableLayout.LayoutParams(TableLayout.LayoutParams.MATCH_PARENT, TableLayout.LayoutParams.WRAP_CONTENT)
@@ -74,11 +79,9 @@ class HuidigeStandScherm : AppCompatActivity() {
             }
 
             row.addView(makeCellTextView(name))
-            row.addView(makeCellTextView(count.toString()))
-            // For now place total into ZW column
-            row.addView(makeCellTextView(count.toString()))
-            // NO column empty for now
-            row.addView(makeCellTextView(""))
+            row.addView(makeCellTextView(total.toString()))
+            row.addView(makeCellTextView(countZW.toString()))
+            row.addView(makeCellTextView(countNO.toString()))
 
             table.addView(row)
         }

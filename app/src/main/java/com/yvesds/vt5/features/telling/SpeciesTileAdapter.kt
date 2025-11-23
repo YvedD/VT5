@@ -32,17 +32,18 @@ class SpeciesTileAdapter(
             newItem: TellingScherm.SoortRow
         ): Boolean = oldItem.soortId == newItem.soortId &&
                 oldItem.naam == newItem.naam &&
-                oldItem.count == newItem.count
+                oldItem.countZW == newItem.countZW &&
+                oldItem.countNO == newItem.countNO
 
         override fun getChangePayload(
             oldItem: TellingScherm.SoortRow,
             newItem: TellingScherm.SoortRow
         ): Any? {
-            // Als alleen het aantal is veranderd, geef dan een payload terug
+            // Als alleen de aantallen zijn veranderd, geef dan de nieuwe counts terug
             if (oldItem.soortId == newItem.soortId &&
                 oldItem.naam == newItem.naam &&
-                oldItem.count != newItem.count) {
-                return newItem.count
+                (oldItem.countZW != newItem.countZW || oldItem.countNO != newItem.countNO)) {
+                return Pair(newItem.countZW, newItem.countNO)
             }
             return null
         }
@@ -58,7 +59,8 @@ class SpeciesTileAdapter(
     override fun onBindViewHolder(holder: VH, position: Int) {
         val row = getItem(position)
         holder.vb.tvName.text = row.naam
-        holder.vb.tvCount.text = row.count.toString()
+        holder.vb.tvCountZW.text = row.countZW.toString()
+        holder.vb.tvCountNO.text = row.countNO.toString()
 
         holder.vb.tileRoot.setOnClickListener {
             val pos = holder.bindingAdapterPosition
@@ -70,11 +72,16 @@ class SpeciesTileAdapter(
 
     override fun onBindViewHolder(holder: VH, position: Int, payloads: MutableList<Any>) {
         if (payloads.isNotEmpty()) {
-            // Als er een payload is, update dan alleen het aantal
-            val newCount = payloads[0] as? Int
-            if (newCount != null) {
-                holder.vb.tvCount.text = newCount.toString()
-                return
+            // Als er een payload is, update dan alleen de aantallen
+            val payload = payloads[0]
+            if (payload is Pair<*, *>) {
+                val countZW = payload.first as? Int
+                val countNO = payload.second as? Int
+                if (countZW != null && countNO != null) {
+                    holder.vb.tvCountZW.text = countZW.toString()
+                    holder.vb.tvCountNO.text = countNO.toString()
+                    return
+                }
             }
         }
 

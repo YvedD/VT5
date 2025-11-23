@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import android.widget.*
@@ -48,6 +49,9 @@ class AnnotatieScherm : AppCompatActivity() {
 
     // Map groupName -> list of ToggleButtons (including dynamically created ones)
     private val groupButtons = mutableMapOf<String, MutableList<AppCompatToggleButton>>()
+    
+    // Reference to remarks EditText for location/height auto-tagging
+    private lateinit var etOpmerkingen: EditText
 
     // Pre-drawn button IDs per column (layout contains these)
     private val leeftijdBtnIds = listOf(
@@ -74,6 +78,14 @@ class AnnotatieScherm : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_annotatie)
 
+        // Initialize remarks EditText for location/height auto-tagging
+        etOpmerkingen = findViewById(R.id.et_opmerkingen)
+
+        // DEBUG: Log incoming Intent extras
+        val rowPosition = intent.getIntExtra("extra_row_pos", -1)
+        Log.d("AnnotatieScherm", "=== ANNOTATIESCHERM OPENED ===")
+        Log.d("AnnotatieScherm", "Received extra_row_pos: $rowPosition")
+
         // Show progress while loading cache and populating UI
         lifecycleScope.launch {
             val progress = ProgressDialogHelper.show(this@AnnotatieScherm, getString(R.string.msg_loading_annotations))
@@ -98,6 +110,8 @@ class AnnotatieScherm : AppCompatActivity() {
             val resultMap = mutableMapOf<String, String?>()
             val selectedLabels = mutableListOf<String>()
 
+            Log.d("AnnotatieScherm", "=== OK BUTTON PRESSED ===")
+            
             // For each group collect the selected option and label for summary
             for ((group, btns) in groupButtons) {
                 val selectedOpt = btns.firstOrNull { it.isChecked }?.tag as? AnnotationOption
@@ -105,6 +119,9 @@ class AnnotatieScherm : AppCompatActivity() {
                     val storeKey = if (selectedOpt.veld.isNotBlank()) selectedOpt.veld else group
                     resultMap[storeKey] = selectedOpt.waarde
                     selectedLabels.add(selectedOpt.tekst)
+                    
+                    // DEBUG: Log each selected option
+                    Log.d("AnnotatieScherm", "  Group '$group': storeKey='$storeKey', waarde='${selectedOpt.waarde}'")
                 }
             }
             // Checkboxes
@@ -151,6 +168,19 @@ class AnnotatieScherm : AppCompatActivity() {
 
             val payload = json.encodeToString(resultMap)
 
+            // DEBUG: Log complete resultMap
+            Log.d("AnnotatieScherm", "=== COMPLETE RESULT MAP ===")
+            resultMap.forEach { (key, value) ->
+                Log.d("AnnotatieScherm", "  '$key' = '$value'")
+            }
+            if (resultMap.containsKey("kleed")) {
+                Log.d("AnnotatieScherm", "*** resultMap contains kleed = '${resultMap["kleed"]}' ***")
+            } else {
+                Log.w("AnnotatieScherm", "*** WARNING: resultMap does NOT contain 'kleed' key! ***")
+            }
+            Log.d("AnnotatieScherm", "Payload JSON: $payload")
+            Log.d("AnnotatieScherm", "=== END RESULT MAP ===")
+
             // Build legacy summary text and timestamp for backward compatibility
             val summaryText = if (selectedLabels.isEmpty()) "" else selectedLabels.joinToString(", ")
             val tsSeconds = System.currentTimeMillis() / 1000L
@@ -159,7 +189,13 @@ class AnnotatieScherm : AppCompatActivity() {
                 putExtra(EXTRA_ANNOTATIONS_JSON, payload)
                 putExtra(EXTRA_TEXT, summaryText)
                 putExtra(EXTRA_TS, tsSeconds)
+                // CRITICAL FIX: Preserve row position so handler can match the correct record
+                putExtra("extra_row_pos", rowPosition)
             }
+            
+            // DEBUG: Log outgoing Intent extras
+            Log.d("AnnotatieScherm", "Returning extra_row_pos: $rowPosition")
+            
             setResult(Activity.RESULT_OK, out)
             finish()
         }
@@ -235,22 +271,93 @@ class AnnotatieScherm : AppCompatActivity() {
     /**
      * Called when any toggle in a group is clicked.
      * Enforces single-select within the group and updates colouring.
+     * For location/height groups, also manages tags in remarks field.
      */
     private fun onGroupButtonClicked(group: String, clicked: AppCompatToggleButton) {
         val list = groupButtons[group] ?: return
         if (clicked.isChecked) {
+            // DEBUG: Log button click with value from tag
+            val selectedOpt = clicked.tag as? AnnotationOption
+            if (selectedOpt != null) {
+                Log.d("AnnotatieScherm", "Button $group selected: ${selectedOpt.waarde} (tekst='${selectedOpt.tekst}', veld='${selectedOpt.veld}')")
+                
+                // For location and height groups, add tag to remarks
+                if (group == "location" || group == "height") {
+                    addTagToRemarks(selectedOpt.tekst)
+                }
+            } else {
+                Log.w("AnnotatieScherm", "Button $group clicked but tag is null or not AnnotationOption!")
+            }
+            
+            // Single-select: uncheck other buttons in the group
             for (btn in list) {
                 if (btn === clicked) {
                     setToggleColor(btn)
                 } else {
-                    if (btn.isChecked) btn.isChecked = false
+                    if (btn.isChecked) {
+                        // Remove tag from remarks if this was a location/height button
+                        if (group == "location" || group == "height") {
+                            val oldOpt = btn.tag as? AnnotationOption
+                            if (oldOpt != null) {
+                                removeTagFromRemarks(oldOpt.tekst)
+                            }
+                        }
+                        btn.isChecked = false
+                    }
                     setToggleColor(btn)
                 }
             }
         } else {
             // toggled off
+            Log.d("AnnotatieScherm", "Button $group toggled off")
+            
+            // Remove tag from remarks if this is a location/height button
+            if (group == "location" || group == "height") {
+                val opt = clicked.tag as? AnnotationOption
+                if (opt != null) {
+                    removeTagFromRemarks(opt.tekst)
+                }
+            }
+            
             setToggleColor(clicked)
         }
+    }
+
+    /**
+     * Add a tag to the remarks field in format "[text]"
+     */
+    private fun addTagToRemarks(tag: String) {
+        val current = etOpmerkingen.text.toString()
+        val formattedTag = "[$tag]"
+        
+        // Check if tag already exists
+        if (current.contains(formattedTag)) {
+            return
+        }
+        
+        // Add tag without separator (tags are adjacent)
+        val newText = if (current.isBlank()) {
+            formattedTag
+        } else {
+            "$current$formattedTag"
+        }
+        
+        etOpmerkingen.setText(newText)
+        Log.d("AnnotatieScherm", "Added tag to remarks: $formattedTag")
+    }
+    
+    /**
+     * Remove a tag from the remarks field
+     */
+    private fun removeTagFromRemarks(tag: String) {
+        val current = etOpmerkingen.text.toString()
+        val formattedTag = "[$tag]"
+        
+        // Remove the tag
+        val newText = current.replace(formattedTag, "")
+        
+        etOpmerkingen.setText(newText)
+        Log.d("AnnotatieScherm", "Removed tag from remarks: $formattedTag")
     }
 
     private fun setToggleColor(btn: AppCompatToggleButton?) {
