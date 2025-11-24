@@ -77,8 +77,18 @@ object AlarmTestHelper {
             issues.add("❌ Kan package info niet ophalen")
         }
         
-        // Altijd systeem notificatie geluid gebruiken (geen custom alarm geluid)
-        issues.add("ℹ️ Gebruikt systeem notificatie geluid voor alarm")
+        // Check of bell.mp3 beschikbaar is
+        try {
+            val resources = context.resources
+            val bellId = resources.getIdentifier("bell", "raw", context.packageName)
+            if (bellId != 0) {
+                issues.add("ℹ️ Gebruikt bell.mp3 voor alarm geluid")
+            } else {
+                issues.add("ℹ️ bell.mp3 niet gevonden, gebruikt systeem notificatie geluid")
+            }
+        } catch (e: Exception) {
+            issues.add("ℹ️ Kan raw resources niet controleren, gebruikt systeem notificatie geluid")
+        }
         
         return if (issues.isEmpty()) {
             listOf("✅ Alarm systeem is correct geconfigureerd")

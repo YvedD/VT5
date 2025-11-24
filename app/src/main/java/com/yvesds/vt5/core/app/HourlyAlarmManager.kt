@@ -158,14 +158,31 @@ object HourlyAlarmManager {
         }
         
         /**
-         * Speelt het alarm geluid af (gebruikt systeem notificatie geluid)
+         * Speelt het alarm geluid af
+         * Gebruikt bell.mp3 uit res/raw, met fallback naar systeem notificatie geluid
          */
         private fun playAlarmSound(context: Context) {
             try {
-                val mediaPlayer = MediaPlayer.create(
-                    context,
-                    android.provider.Settings.System.DEFAULT_NOTIFICATION_URI
-                )
+                // Probeer eerst bell.mp3 uit res/raw
+                var mediaPlayer: MediaPlayer? = null
+                try {
+                    val bellResourceId = context.resources.getIdentifier("bell", "raw", context.packageName)
+                    if (bellResourceId != 0) {
+                        mediaPlayer = MediaPlayer.create(context, bellResourceId)
+                        Log.d(TAG, "Gebruik bell.mp3 voor alarm geluid")
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "bell.mp3 niet gevonden, gebruik systeem notificatie: ${e.message}")
+                }
+                
+                // Fallback naar systeem notificatie geluid als bell.mp3 niet beschikbaar is
+                if (mediaPlayer == null) {
+                    mediaPlayer = MediaPlayer.create(
+                        context,
+                        android.provider.Settings.System.DEFAULT_NOTIFICATION_URI
+                    )
+                    Log.d(TAG, "Gebruik systeem notificatie geluid")
+                }
                 
                 mediaPlayer?.apply {
                     setOnCompletionListener { mp ->
@@ -173,7 +190,7 @@ object HourlyAlarmManager {
                     }
                     start()
                 }
-                Log.d(TAG, "Alarm geluid afgespeeld (systeem notificatie)")
+                Log.d(TAG, "Alarm geluid afgespeeld")
             } catch (e: Exception) {
                 Log.e(TAG, "Fout bij afspelen alarm geluid: ${e.message}", e)
             }
