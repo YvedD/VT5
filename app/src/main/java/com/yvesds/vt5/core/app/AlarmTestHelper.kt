@@ -77,21 +77,8 @@ object AlarmTestHelper {
             issues.add("❌ Kan package info niet ophalen")
         }
         
-        // Check of raw resource directory bestaat
-        try {
-            val resources = context.resources
-            val rawId = try {
-                resources.getIdentifier("hourly_alarm", "raw", context.packageName)
-            } catch (e: Exception) {
-                0
-            }
-            
-            if (rawId == 0) {
-                issues.add("ℹ️ Custom alarm geluid niet gevonden (gebruikt systeem notificatie)")
-            }
-        } catch (e: Exception) {
-            issues.add("ℹ️ Kan raw resources niet controleren: ${e.message}")
-        }
+        // Altijd systeem notificatie geluid gebruiken (geen custom alarm geluid)
+        issues.add("ℹ️ Gebruikt systeem notificatie geluid voor alarm")
         
         return if (issues.isEmpty()) {
             listOf("✅ Alarm systeem is correct geconfigureerd")

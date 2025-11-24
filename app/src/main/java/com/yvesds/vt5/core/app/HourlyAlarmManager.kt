@@ -167,25 +167,14 @@ object HourlyAlarmManager {
         }
         
         /**
-         * Speelt het alarm geluid af
+         * Speelt het alarm geluid af (gebruikt systeem notificatie geluid)
          */
         private fun playAlarmSound(context: Context) {
             try {
-                // Probeer eerst custom alarm geluid
-                var mediaPlayer: MediaPlayer? = null
-                try {
-                    mediaPlayer = MediaPlayer.create(context, R.raw.hourly_alarm)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Custom alarm geluid niet gevonden, gebruik systeem notificatie: ${e.message}")
-                }
-                
-                // Fallback naar systeem notificatie geluid
-                if (mediaPlayer == null) {
-                    mediaPlayer = MediaPlayer.create(
-                        context,
-                        android.provider.Settings.System.DEFAULT_NOTIFICATION_URI
-                    )
-                }
+                val mediaPlayer = MediaPlayer.create(
+                    context,
+                    android.provider.Settings.System.DEFAULT_NOTIFICATION_URI
+                )
                 
                 mediaPlayer?.apply {
                     setOnCompletionListener { mp ->
@@ -193,7 +182,7 @@ object HourlyAlarmManager {
                     }
                     start()
                 }
-                Log.d(TAG, "Alarm geluid afgespeeld")
+                Log.d(TAG, "Alarm geluid afgespeeld (systeem notificatie)")
             } catch (e: Exception) {
                 Log.e(TAG, "Fout bij afspelen alarm geluid: ${e.message}", e)
             }

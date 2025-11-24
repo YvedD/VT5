@@ -9,7 +9,6 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
-import com.yvesds.vt5.BuildConfig
 import com.yvesds.vt5.R
 import com.yvesds.vt5.core.app.AppShutdown
 import com.yvesds.vt5.core.app.HourlyAlarmManager
@@ -112,7 +111,9 @@ class HoofdActiviteit : AppCompatActivity() {
      * Alleen zichtbaar in debug builds
      */
     private fun setupDebugSection() {
-        if (!BuildConfig.DEBUG) {
+        // Check if app is debuggable
+        val isDebuggable = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (!isDebuggable) {
             return
         }
         
@@ -156,7 +157,9 @@ class HoofdActiviteit : AppCompatActivity() {
      * Update de alarm status tekst
      */
     private fun updateAlarmStatus() {
-        if (!BuildConfig.DEBUG) {
+        // Check if app is debuggable
+        val isDebuggable = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (!isDebuggable) {
             return
         }
         
@@ -179,7 +182,8 @@ class HoofdActiviteit : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         // Update status wanneer we terugkomen naar dit scherm
-        if (BuildConfig.DEBUG) {
+        val isDebuggable = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (isDebuggable) {
             updateAlarmStatus()
         }
     }

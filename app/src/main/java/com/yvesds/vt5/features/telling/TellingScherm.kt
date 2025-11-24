@@ -525,7 +525,16 @@ class TellingScherm : AppCompatActivity() {
             // Show HuidigeStandScherm with current data
             if (::tegelBeheer.isInitialized) {
                 val tiles = tegelBeheer.getTiles()
-                handleSaveClose(tiles)
+                // Convert SoortTile to SoortRow
+                val rows = tiles.map { tile ->
+                    SoortRow(
+                        soortId = tile.soortId,
+                        naam = tile.naam,
+                        countZW = tile.countZW,
+                        countNO = tile.countNO
+                    )
+                }
+                handleSaveClose(rows)
             }
         }
     }
