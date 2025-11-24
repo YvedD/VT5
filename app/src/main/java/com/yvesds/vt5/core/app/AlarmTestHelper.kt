@@ -51,4 +51,52 @@ object AlarmTestHelper {
             Log.e(TAG, "Fout bij resetten alarm: ${e.message}", e)
         }
     }
+    
+    /**
+     * Verificatie functie om te controleren of alles correct is ingesteld.
+     * Returns een lijst met potentiële problemen, of een lege lijst als alles OK is.
+     */
+    fun verifySetup(context: Context): List<String> {
+        val issues = mutableListOf<String>()
+        
+        // Check alarm status
+        val enabled = HourlyAlarmManager.isEnabled(context)
+        if (!enabled) {
+            issues.add("⚠️ Alarm is momenteel uitgeschakeld")
+        }
+        
+        // Check permissies
+        val manifestExists = try {
+            context.packageManager.getPackageInfo(context.packageName, 0)
+            true
+        } catch (e: Exception) {
+            false
+        }
+        
+        if (!manifestExists) {
+            issues.add("❌ Kan package info niet ophalen")
+        }
+        
+        // Check of raw resource directory bestaat
+        try {
+            val resources = context.resources
+            val rawId = try {
+                resources.getIdentifier("hourly_alarm", "raw", context.packageName)
+            } catch (e: Exception) {
+                0
+            }
+            
+            if (rawId == 0) {
+                issues.add("ℹ️ Custom alarm geluid niet gevonden (gebruikt systeem notificatie)")
+            }
+        } catch (e: Exception) {
+            issues.add("ℹ️ Kan raw resources niet controleren: ${e.message}")
+        }
+        
+        return if (issues.isEmpty()) {
+            listOf("✅ Alarm systeem is correct geconfigureerd")
+        } else {
+            issues
+        }
+    }
 }

@@ -161,7 +161,19 @@ class HoofdActiviteit : AppCompatActivity() {
         }
         
         val tvAlarmStatus = findViewById<TextView>(R.id.tvAlarmStatus)
-        tvAlarmStatus?.text = AlarmTestHelper.getAlarmStatus(this)
+        val status = AlarmTestHelper.getAlarmStatus(this)
+        val verification = AlarmTestHelper.verifySetup(this)
+        
+        val fullStatus = buildString {
+            append(status)
+            append("\n\n")
+            append("Setup verificatie:\n")
+            verification.forEach { issue ->
+                append("$issue\n")
+            }
+        }
+        
+        tvAlarmStatus?.text = fullStatus
     }
     
     override fun onResume() {
