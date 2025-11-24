@@ -518,6 +518,18 @@ class TellingScherm : AppCompatActivity() {
         startActivity(intent)
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // Check if this is triggered by the hourly alarm
+        if (intent.getBooleanExtra("SHOW_HUIDIGE_STAND", false)) {
+            // Show HuidigeStandScherm with current data
+            if (::tegelBeheer.isInitialized) {
+                val tiles = tegelBeheer.getTiles()
+                handleSaveClose(tiles)
+            }
+        }
+    }
+
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (::initializer.isInitialized) {
