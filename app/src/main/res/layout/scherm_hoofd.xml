@@ -43,4 +43,64 @@
         android:text="@string/btn_afsluiten"
         android:textSize="16sp" />
 
+    <!-- Debug sectie voor alarm testen -->
+    <View
+        android:id="@+id/divider_debug"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="24dp"
+        android:layout_marginBottom="12dp"
+        android:background="@color/vt5_on_surface"
+        android:alpha="0.3"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/tvDebugTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Debug / Testen"
+        android:textColor="@color/vt5_on_surface"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:paddingBottom="8dp"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/tvAlarmStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Alarm status wordt geladen..."
+        android:textColor="@color/vt5_on_surface"
+        android:textSize="12sp"
+        android:paddingBottom="8dp"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:id="@+id/layoutDebugButtons"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnTestAlarm"
+            style="@style/Widget.VT5.Button.Outlined"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginEnd="6dp"
+            android:text="Test Alarm"
+            android:textSize="12sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnToggleAlarm"
+            style="@style/Widget.VT5.Button.Outlined"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="6dp"
+            android:text="Toggle Alarm"
+            android:textSize="12sp" />
+    </LinearLayout>
+
 </LinearLayout>

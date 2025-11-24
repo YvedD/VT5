@@ -7,6 +7,11 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+    
+    <!-- Permissies voor uurlijks alarm -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- Declare microphone as required hardware feature (prevents install on devices without a mic).
          Remove or set android:required="false" if you want to allow install on devices without mic. -->
@@ -53,6 +58,7 @@
         <activity
             android:name=".features.telling.TellingScherm"
             android:exported="false"
+            android:launchMode="singleTop"
             android:windowSoftInputMode="stateHidden|adjustResize"
             android:screenOrientation="sensorPortrait" />
 
@@ -68,5 +74,22 @@
             android:exported="false"
             android:windowSoftInputMode="stateHidden|adjustResize"
             android:screenOrientation="sensorPortrait" />
+        
+        <!-- Uurlijks alarm receivers -->
+        <receiver
+            android:name=".core.app.HourlyAlarmManager$HourlyAlarmReceiver"
+            android:enabled="true"
+            android:exported="false" />
+        
+        <receiver
+            android:name=".core.app.HourlyAlarmManager$BootReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

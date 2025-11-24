@@ -44,6 +44,14 @@ class VT5App : Application() {
         }
         instance = this
         Log.d(TAG, "VT5App onCreate - initiating background data preload")
+        
+        // Initialiseer uurlijks alarm
+        try {
+            com.yvesds.vt5.core.app.HourlyAlarmManager.scheduleNextAlarm(this)
+            Log.d(TAG, "Uurlijks alarm geïnitialiseerd")
+        } catch (ex: Exception) {
+            Log.w(TAG, "Failed to initialize hourly alarm: ${ex.message}", ex)
+        }
 
         // Preload data in de achtergrond - verhoogt app responsiviteit
         preloadDataAsync()
