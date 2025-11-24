@@ -57,7 +57,7 @@
         android:id="@+id/tvAlarmStatus"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/hoofd_alarm_disabled"
+        android:text=""
         android:textColor="@color/vt5_on_surface"
         android:textSize="14sp"
         android:paddingBottom="12dp" />
