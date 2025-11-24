@@ -7,9 +7,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.media.MediaPlayer
-import android.os.Build
 import android.os.VibrationEffect
-import android.os.Vibrator
+import android.os.VibratorManager
 import android.util.Log
 import androidx.core.content.edit
 import com.yvesds.vt5.R
@@ -98,21 +97,13 @@ object HourlyAlarmManager {
         
         val triggerTime = calendar.timeInMillis
         
-        // Gebruik exact alarm voor betrouwbare timing
+        // Gebruik exact alarm voor betrouwbare timing (minSdk = 33, dus altijd setExactAndAllowWhileIdle)
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerTime,
-                    pendingIntent
-                )
-            } else {
-                alarmManager.setExact(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerTime,
-                    pendingIntent
-                )
-            }
+            alarmManager.setExactAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                triggerTime,
+                pendingIntent
+            )
             
             Log.i(TAG, "Volgend alarm gepland voor: ${calendar.time}")
         } catch (e: SecurityException) {
@@ -190,16 +181,13 @@ object HourlyAlarmManager {
         
         /**
          * Laat het apparaat vibreren
+         * Gebruikt VibratorManager (API 31+) aangezien minSdk = 33
          */
         private fun vibrate(context: Context) {
             try {
-                val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
-                } else {
-                    @Suppress("DEPRECATION")
-                    vibrator.vibrate(500)
-                }
+                val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                val vibrator = vibratorManager.defaultVibrator
+                vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
                 Log.d(TAG, "Vibratie uitgevoerd")
             } catch (e: Exception) {
                 Log.e(TAG, "Fout bij vibreren: ${e.message}", e)
