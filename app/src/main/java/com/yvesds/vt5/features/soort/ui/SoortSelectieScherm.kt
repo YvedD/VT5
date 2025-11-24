@@ -217,7 +217,6 @@ class SoortSelectieScherm : AppCompatActivity() {
                 val cachedData = ServerDataCache.getCachedOrNull()
                 if (cachedData != null) {
                     // Cache hit - process immediately without dialog
-                    Log.d(TAG, "Using cached data (fast-path)")
                     snapshot = cachedData
                     
                     // Process data synchronously (it's fast with cached data)
@@ -232,7 +231,6 @@ class SoortSelectieScherm : AppCompatActivity() {
                     updateCounter()
                     
                     val elapsed = System.currentTimeMillis() - startTime
-                    Log.d(TAG, "Data processed from cache in ${elapsed}ms")
                     return@launch
                 }
 
@@ -240,7 +238,6 @@ class SoortSelectieScherm : AppCompatActivity() {
                 val dialog = ProgressDialogHelper.show(this@SoortSelectieScherm, "Soorten laden...")
 
                 try {
-                    Log.d(TAG, "Loading data from storage (cache miss)")
                     snapshot = withContext(Dispatchers.IO) {
                         ServerDataCache.getOrLoad(this@SoortSelectieScherm)
                     }
@@ -260,7 +257,6 @@ class SoortSelectieScherm : AppCompatActivity() {
                     updateCounter()
 
                     val elapsed = System.currentTimeMillis() - startTime
-                    Log.d(TAG, "Data loaded and processed in ${elapsed}ms")
 
                     if (baseAlphaRows.isEmpty()) {
                         Toast.makeText(this@SoortSelectieScherm, getString(R.string.soort_no_species_download), Toast.LENGTH_LONG).show()
@@ -296,7 +292,6 @@ class SoortSelectieScherm : AppCompatActivity() {
         
         // If alias index has species, use that as the source of truth
         val base = if (aliasSpecies.isNotEmpty()) {
-            Log.d(TAG, "Using ${aliasSpecies.size} species from alias index (complete list)")
             ArrayList<Row>(aliasSpecies.size).apply {
                 aliasSpecies.forEach { (sid, naam) ->
                     add(Row(sid, naam))
@@ -304,7 +299,6 @@ class SoortSelectieScherm : AppCompatActivity() {
             }
         } else {
             // Fallback to snapshot.speciesById (all species, no filtering)
-            Log.d(TAG, "Fallback: using ${snapshot.speciesById.size} species from snapshot")
             ArrayList<Row>(snapshot.speciesById.size).apply {
                 snapshot.speciesById.values.forEach { 
                     add(Row(it.soortid, it.soortnaam)) 

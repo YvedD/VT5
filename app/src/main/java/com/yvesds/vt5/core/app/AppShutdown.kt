@@ -35,7 +35,6 @@ object AppShutdown {
         // Prevent concurrent shutdown attempts
         synchronized(this) {
             if (isShuttingDown) {
-                Log.d(TAG, "Shutdown already in progress, skipping")
                 return
             }
             isShuttingDown = true
@@ -47,7 +46,6 @@ object AppShutdown {
             // 1. Stop any pending logs/writes
             try {
                 MatchLogWriter.stop()
-                Log.d(TAG, "MatchLogWriter stopped")
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to stop MatchLogWriter: ${e.message}", e)
             }
@@ -55,14 +53,12 @@ object AppShutdown {
             // 2. Shutdown network clients (closes connection pools, stops executors)
             try {
                 TrektellenAuth.shutdown()
-                Log.d(TAG, "TrektellenAuth shutdown complete")
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to shutdown TrektellenAuth: ${e.message}", e)
             }
 
             try {
                 ServerJsonDownloader.shutdown()
-                Log.d(TAG, "ServerJsonDownloader shutdown complete")
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to shutdown ServerJsonDownloader: ${e.message}", e)
             }
@@ -72,7 +68,6 @@ object AppShutdown {
                 VT5App.http.dispatcher.executorService.shutdown()
                 VT5App.http.connectionPool.evictAll()
                 VT5App.http.cache?.close()
-                Log.d(TAG, "VT5App.http client shutdown complete")
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to shutdown VT5App.http: ${e.message}", e)
             }

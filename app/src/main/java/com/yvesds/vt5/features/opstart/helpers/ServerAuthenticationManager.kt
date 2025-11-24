@@ -84,7 +84,6 @@ class ServerAuthenticationManager(
         versie: String = "1845"
     ): AuthResult = withContext(Dispatchers.IO) {
         try {
-            Log.d(TAG, "Testing login for user: $username")
             
             val result = TrektellenAuth.checkUser(
                 username = username,
@@ -95,7 +94,6 @@ class ServerAuthenticationManager(
             
             result.fold(
                 onSuccess = { response ->
-                    Log.d(TAG, "Login test successful")
                     AuthResult.Success(response)
                 },
                 onFailure = { error ->
@@ -136,7 +134,6 @@ class ServerAuthenticationManager(
             
             context.contentResolver.openOutputStream(file.uri)?.use { outputStream ->
                 outputStream.write(response.toByteArray())
-                Log.d(TAG, "checkuser.json saved successfully")
                 true
             } ?: run {
                 Log.w(TAG, "Failed to open output stream for checkuser.json")
@@ -164,7 +161,6 @@ class ServerAuthenticationManager(
                 VT5App.prefs().edit {
                     putString(PREF_USER_FULLNAME, fullname)
                 }
-                Log.d(TAG, "Fullname saved to SharedPreferences")
             } else {
                 Log.w(TAG, "No fullname found in checkuser response")
             }

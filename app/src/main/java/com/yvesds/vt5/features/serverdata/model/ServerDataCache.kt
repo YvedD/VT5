@@ -39,7 +39,6 @@ object ServerDataCache {
     private val loaderScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     fun invalidate() {
-        Log.d(TAG, "Cache invalidated")
         cached = null
     }
 
@@ -56,20 +55,17 @@ object ServerDataCache {
     fun preload(context: Context) {
         // Fast-path: already cached -> nothing to do
         if (cached != null) {
-            Log.d(TAG, "Preload skipped - data already cached")
             return
         }
 
         // If there's already a loader, don't spawn another
         if (loadingDeferred != null && loadingDeferred?.isActive == true) {
-            Log.d(TAG, "Preload skipped - loader already running")
             return
         }
 
         // Phase 1: Load ONLY codes immediately (ultra-fast)
         synchronized(this) {
             if (loadingDeferred == null || loadingDeferred?.isCompleted == true) {
-                Log.d(TAG, "Starting FAST preload: codes only (phase 1)")
                 loadingDeferred = loaderScope.async {
                     loadCodesOnly(context)
                 }
@@ -78,7 +74,6 @@ object ServerDataCache {
                 loaderScope.launch {
                     delay(500) // Wait 500ms to ensure app is idle
                     try {
-                        Log.d(TAG, "Starting background preload: full data (phase 2)")
                         val fullSnapshot = loadFromSaf(context)
                         cached = fullSnapshot
                         Log.i(TAG, "Phase 2 complete: all data loaded in background")
@@ -87,7 +82,6 @@ object ServerDataCache {
                     }
                 }
             } else {
-                Log.d(TAG, "Preload: loader already present")
             }
         }
     }
@@ -99,7 +93,6 @@ object ServerDataCache {
     private suspend fun loadCodesOnly(context: Context): DataSnapshot = withContext(Dispatchers.IO) {
         val start = System.currentTimeMillis()
         try {
-            Log.d(TAG, "loadCodesOnly: loading just codes for instant startup")
             val repo = ServerDataRepository(context.applicationContext)
             val codesByCategory = repo.loadCodesOnly()
             
@@ -128,7 +121,6 @@ object ServerDataCache {
      */
     suspend fun getOrLoad(context: Context): DataSnapshot = coroutineScope {
         cached?.let {
-            Log.d(TAG, "getOrLoad - returning cached data")
             return@coroutineScope it
         }
 
@@ -136,7 +128,6 @@ object ServerDataCache {
         val existing = loadingDeferred
         if (existing != null) {
             try {
-                Log.d(TAG, "getOrLoad - awaiting active loader")
                 val snap = existing.await()
                 return@coroutineScope snap
             } catch (ex: CancellationException) {
@@ -182,7 +173,6 @@ object ServerDataCache {
     private suspend fun loadFromSaf(context: Context): DataSnapshot = withContext(Dispatchers.IO) {
         val start = System.currentTimeMillis()
         try {
-            Log.d(TAG, "loadFromSaf: loading snapshot from SAF via ServerDataRepository")
             val repo = ServerDataRepository(context.applicationContext)
             val snap = repo.loadAllFromSaf()
             cached = snap

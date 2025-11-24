@@ -75,9 +75,7 @@ class AliasEditor(private val context: Context, private val saf: SaFStorageHelpe
         val set = buffer.getOrPut(soortId) { mutableSetOf() }
         val added = set.add(alias)
         if (added) {
-            Log.d(TAG, "Buffered alias [$soortId] -> '$alias'")
         } else {
-            Log.d(TAG, "Alias duplicate or unchanged: [$soortId] -> '$alias'")
         }
         return added
     }

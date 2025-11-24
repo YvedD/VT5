@@ -78,7 +78,6 @@ class AliasSpeechParser(
         val rawLowerNoPunct = TextUtils.normalizeLowerNoDiacritics(rawTrim)
 
         if (rawLowerNoPunct.isBlank() || TextUtils.isFilterWord(rawLowerNoPunct)) {
-            Log.d(TAG, "parseSpokenWithContext ignored system prompt: '$rawAsr'")
             return@withContext MatchResult.NoMatch(rawAsr, "filtered-prompt")
         }
 

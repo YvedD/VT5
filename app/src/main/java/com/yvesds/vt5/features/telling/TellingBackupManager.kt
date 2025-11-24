@@ -68,7 +68,6 @@ class TellingBackupManager(
                 out.write(content.toByteArray(Charsets.UTF_8))
             }
 
-            Log.d(TAG, "Record backup written via SAF: ${doc.uri}")
             return doc
         } catch (e: Exception) {
             Log.w(TAG, "writeRecordBackupSaf failed: ${e.message}", e)
@@ -94,7 +93,6 @@ class TellingBackupManager(
             val content = buildRecordBackupContent(tellingId, item)
             file.writeText(content, Charsets.UTF_8)
 
-            Log.d(TAG, "Record backup written internally: ${file.absolutePath}")
             return file.absolutePath
         } catch (e: Exception) {
             Log.w(TAG, "writeRecordBackupInternal failed: ${e.message}", e)
@@ -140,7 +138,6 @@ class TellingBackupManager(
                 out.write(prettyJson.toByteArray(Charsets.UTF_8))
             }
 
-            Log.d(TAG, "Envelope written via SAF: ${doc.uri}")
             return "saf:${doc.uri}"
         } catch (e: Exception) {
             Log.w(TAG, "writePrettyEnvelopeToSaf failed: ${e.message}", e)
@@ -165,7 +162,6 @@ class TellingBackupManager(
 
             file.writeText(prettyJson, Charsets.UTF_8)
 
-            Log.d(TAG, "Envelope written internally: ${file.absolutePath}")
             return "internal:${file.absolutePath}"
         } catch (e: Exception) {
             Log.w(TAG, "writePrettyEnvelopeInternal failed: ${e.message}", e)
@@ -216,7 +212,6 @@ class TellingBackupManager(
                 out.write(content.toByteArray(Charsets.UTF_8))
             }
 
-            Log.d(TAG, "Audit written via SAF: ${doc.uri}")
             return "saf:${doc.uri}"
         } catch (e: Exception) {
             Log.w(TAG, "writeEnvelopeResponseToSaf failed: ${e.message}", e)
@@ -246,7 +241,6 @@ class TellingBackupManager(
             val content = buildAuditContent(envelopeJson, responseText)
             file.writeText(content, Charsets.UTF_8)
 
-            Log.d(TAG, "Audit written internally: ${file.absolutePath}")
             return "internal:${file.absolutePath}"
         } catch (e: Exception) {
             Log.w(TAG, "writeEnvelopeResponseInternal failed: ${e.message}", e)

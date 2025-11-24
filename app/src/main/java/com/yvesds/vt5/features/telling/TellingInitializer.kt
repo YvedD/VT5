@@ -87,7 +87,6 @@ class TellingInitializer(
                             val t0 = System.currentTimeMillis()
                             val mc = buildMatchContext(initial.map { it.soortId }.toSet())
                             onMatchContextBuilt?.invoke(mc)
-                            Log.d(TAG, "Initial cached MatchContext built (ms=${System.currentTimeMillis() - t0})")
                         } catch (ex: Exception) {
                             Log.w(TAG, "Failed to build initial cached MatchContext: ${ex.message}", ex)
                         }

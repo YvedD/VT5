@@ -120,7 +120,6 @@ class MetadataScherm : AppCompatActivity() {
                 // Check eerst of we al volledige data in cache hebben
                 val cachedData = ServerDataCache.getCachedOrNull()
                 if (cachedData != null) {
-                    Log.d(TAG, "Using fully cached data")
                     snapshot = cachedData
                     initializeDropdowns()
                     
@@ -191,7 +190,6 @@ class MetadataScherm : AppCompatActivity() {
                         if (isActive) {
                             withContext(Dispatchers.Main) {
                                 snapshot = fullData
-                                Log.d(TAG, "Background data loading complete - cache warmed for next screen")
                                 
                                 // Prefill Tellers field with user's fullname from checkuser.json
                                 formManager.prefillTellersFromSnapshot(fullData)
@@ -203,7 +201,6 @@ class MetadataScherm : AppCompatActivity() {
                         if (isActive) {
                             try {
                                 AliasManager.ensureIndexLoadedSuspend(this@MetadataScherm, saf)
-                                Log.d(TAG, "Alias index preloaded in background - ready for species selection")
                             } catch (ex: Exception) {
                                 Log.w(TAG, "Alias index preload failed (non-critical): ${ex.message}")
                             }

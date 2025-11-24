@@ -70,7 +70,6 @@ object HourlyAlarmManager {
      */
     fun scheduleNextAlarm(context: Context) {
         if (!isEnabled(context)) {
-            Log.d(TAG, "Alarm is uitgeschakeld, overslaan scheduling")
             return
         }
         
@@ -169,7 +168,6 @@ object HourlyAlarmManager {
                     val bellResourceId = context.resources.getIdentifier("bell", "raw", context.packageName)
                     if (bellResourceId != 0) {
                         mediaPlayer = MediaPlayer.create(context, bellResourceId)
-                        Log.d(TAG, "Gebruik bell.mp3 voor alarm geluid")
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "bell.mp3 niet gevonden, gebruik systeem notificatie: ${e.message}")
@@ -181,7 +179,6 @@ object HourlyAlarmManager {
                         context,
                         android.provider.Settings.System.DEFAULT_NOTIFICATION_URI
                     )
-                    Log.d(TAG, "Gebruik systeem notificatie geluid")
                 }
                 
                 mediaPlayer?.apply {
@@ -190,7 +187,6 @@ object HourlyAlarmManager {
                     }
                     start()
                 }
-                Log.d(TAG, "Alarm geluid afgespeeld")
             } catch (e: Exception) {
                 Log.e(TAG, "Fout bij afspelen alarm geluid: ${e.message}", e)
             }
@@ -205,7 +201,6 @@ object HourlyAlarmManager {
                 val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
                 val vibrator = vibratorManager.defaultVibrator
                 vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
-                Log.d(TAG, "Vibratie uitgevoerd")
             } catch (e: Exception) {
                 Log.e(TAG, "Fout bij vibreren: ${e.message}", e)
             }

@@ -161,7 +161,6 @@ class TellingScherm : AppCompatActivity() {
                     val tiles = tegelBeheer.getTiles().map { it.soortId }.toSet()
                     val mc = initializer.buildMatchContext(tiles)
                     speechHandler.updateCachedMatchContext(mc)
-                    Log.d(TAG, "cached MatchContext rebuilt after alias reload (ms=${System.currentTimeMillis() - t0})")
                 } catch (ex: Exception) {
                     Log.w(TAG, "Failed rebuilding cachedMatchContext after alias reload: ${ex.message}", ex)
                 }
@@ -239,7 +238,6 @@ class TellingScherm : AppCompatActivity() {
                         val tilesIds = tiles.map { it.soortId }.toSet()
                         val mc = initializer.buildMatchContext(tilesIds)
                         speechHandler.updateCachedMatchContext(mc)
-                        Log.d(TAG, "cachedMatchContext refreshed after tiles change (ms=${System.currentTimeMillis() - t0})")
                     } catch (ex: Exception) {
                         Log.w(TAG, "Failed rebuilding cachedMatchContext after tiles change: ${ex.message}", ex)
                     }
@@ -260,7 +258,6 @@ class TellingScherm : AppCompatActivity() {
             val filter = IntentFilter(AliasRepository.ACTION_ALIAS_RELOAD_COMPLETED)
             // minSdk is Android 13+, so use the API-33 overload and explicitly mark NOT_EXPORTED
             registerReceiver(aliasReloadReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-            Log.d(TAG, "Registered aliasReloadReceiver (NOT_EXPORTED)")
         } catch (ex: Exception) {
             Log.w(TAG, "Failed to register aliasReloadReceiver: ${ex.message}", ex)
         }
@@ -591,7 +588,6 @@ class TellingScherm : AppCompatActivity() {
             speechHandler.initialize()
             updateSelectedSpeciesMap()
             addLog("Spraakherkenning geactiveerd - protocol: 'Soortnaam Aantal'", "systeem")
-            Log.d(TAG, "Speech recognition initialized successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing speech recognition", e)
             Toast.makeText(this, getString(R.string.telling_speech_init_error, e.message ?: ""), Toast.LENGTH_SHORT).show()
@@ -605,20 +601,17 @@ class TellingScherm : AppCompatActivity() {
         val receivedAt = System.currentTimeMillis()
         lifecycleScope.launch(Dispatchers.Default) {
             val parseStartAt = System.currentTimeMillis()
-            Log.d(TAG, "Hypotheses received at $receivedAt, starting parse at $parseStartAt (hypotheses=${hypotheses.size}, partials=${partials.size})")
             try {
                 val matchContext = speechHandler.getCachedMatchContext() ?: run {
                     val t0 = System.currentTimeMillis()
                     val tiles = tegelBeheer.getTiles().map { it.soortId }.toSet()
                     val mc = initializer.buildMatchContext(tiles)
                     speechHandler.updateCachedMatchContext(mc)
-                    Log.d(TAG, "buildMatchContext (on-the-fly) ms=${System.currentTimeMillis() - t0}")
                     mc
                 }
 
                 val result = speechHandler.parseSpokenWithHypotheses(hypotheses, matchContext, partials, asrWeight = 0.4)
                 val parseEndAt = System.currentTimeMillis()
-                Log.d(TAG, "Parse finished at $parseEndAt (parseDuration=${parseEndAt - parseStartAt} ms)")
 
                 withContext(Dispatchers.Main) {
                     val uiStartAt = System.currentTimeMillis()
@@ -628,7 +621,6 @@ class TellingScherm : AppCompatActivity() {
                         Log.w(TAG, "Hypotheses handling (UI) failed: ${ex.message}", ex)
                     } finally {
                         val uiEndAt = System.currentTimeMillis()
-                        Log.d(TAG, "UI handling finished at $uiEndAt (uiDuration=${uiEndAt - uiStartAt} ms)")
                     }
                 }
             } catch (ex: Exception) {

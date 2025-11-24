@@ -68,7 +68,6 @@ object MatchLogWriter {
                     performCleanupIfNeeded(dir, context)
                     // log last cleanup metadata for visibility
                     val (lastDate, deleted) = getLastCleanupInfo(context)
-                    Log.d(TAG, "match_logs last cleanup: date=$lastDate deleted=${deleted.size}")
                 } catch (ex: Exception) {
                     Log.w(TAG, "match_logs cleanup failed: ${ex.message}", ex)
                 }

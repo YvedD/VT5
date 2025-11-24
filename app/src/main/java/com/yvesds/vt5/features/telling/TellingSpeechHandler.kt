@@ -89,7 +89,6 @@ class TellingSpeechHandler(
             }
 
             speechInitialized = true
-            Log.d(TAG, "Speech recognition initialized successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing speech recognition", e)
             throw e
@@ -106,7 +105,6 @@ class TellingSpeechHandler(
                 startListening()
             }
             volumeKeyHandler.register()
-            Log.d(TAG, "Volume key handler initialized successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Error initializing volume key handler", e)
         }
@@ -141,7 +139,6 @@ class TellingSpeechHandler(
             withContext(Dispatchers.IO) {
                 try {
                     speechRecognitionManager.loadAliases()
-                    Log.d(TAG, "speechRecognitionManager.loadAliases executed")
                 } catch (ex: Exception) {
                     Log.w(TAG, "speechRecognitionManager.loadAliases failed: ${ex.message}", ex)
                 }
@@ -208,7 +205,6 @@ class TellingSpeechHandler(
         }
 
         if (speechInitialized) {
-            Log.d(TAG, "Selected species map updated (${speciesMap.size} species)")
         }
         
         return selectedSpeciesMap

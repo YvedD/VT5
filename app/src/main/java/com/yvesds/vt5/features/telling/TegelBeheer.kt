@@ -67,7 +67,6 @@ class TegelBeheer(private val ui: TegelUi) {
             tiles.clear()
             tiles.addAll(list)
             ui.submitTiles(tiles.map { it.copy() })
-            Log.d(TAG, "setTiles: ${tiles.size} tegels gezet")
         }
     }
 
@@ -93,7 +92,6 @@ class TegelBeheer(private val ui: TegelUi) {
             tiles.add(new)
             tiles.sortBy { it.naam.lowercase() }
             ui.submitTiles(tiles.map { it.copy() })
-            Log.d(TAG, "voegSoortToeIndienNodig: toegevoegd $soortId / $naam (${if (isZw) "ZW" else "NO"}=$initialCount, seizoen=${if (isZw) "ZW" else "NO"})")
             return true
         }
     }
@@ -129,7 +127,6 @@ class TegelBeheer(private val ui: TegelUi) {
             tiles.add(new)
             tiles.sortBy { it.naam.lowercase() }
             ui.submitTiles(tiles.map { it.copy() })
-            Log.d(TAG, "voegSoortToe: $soortId / $naam (${if (isZw) "ZW" else "NO"}=$initialCount)")
         }
     }
 
@@ -154,7 +151,6 @@ class TegelBeheer(private val ui: TegelUi) {
             tiles[idx] = updated
             ui.onTileCountUpdated(soortId, updated.count)
             ui.submitTiles(tiles.map { it.copy() })
-            Log.d(TAG, "verhoogSoortAantal: $soortId -> ZW=${updated.countZW}+NO=${updated.countNO} (delta $delta, seizoen=${if (isZw) "ZW" else "NO"})")
             return true
         }
     }
@@ -176,7 +172,6 @@ class TegelBeheer(private val ui: TegelUi) {
                 tiles.add(new)
                 tiles.sortBy { it.naam.lowercase() }
                 ui.submitTiles(tiles.map { it.copy() })
-                Log.d(TAG, "verhoogSoortAantalOfVoegToe: soort niet gevonden. Toegevoegd $soortId met ${if (isZw) "ZW" else "NO"}=$initial")
                 return initial
             } else {
                 val cur = tiles[idx]
@@ -191,7 +186,6 @@ class TegelBeheer(private val ui: TegelUi) {
                 tiles[idx] = updated
                 ui.onTileCountUpdated(soortId, updated.count)
                 ui.submitTiles(tiles.map { it.copy() })
-                Log.d(TAG, "verhoogSoortAantalOfVoegToe: $soortId -> ZW=${updated.countZW}+NO=${updated.countNO} (seizoen=${if (isZw) "ZW" else "NO"})")
                 return updated.count
             }
         }
@@ -200,7 +194,6 @@ class TegelBeheer(private val ui: TegelUi) {
     fun buildSelectedSpeciesMap(): Map<String, String> {
         synchronized(lock) {
             val map = tiles.associate { it.soortId to it.naam }
-            Log.d(TAG, "buildSelectedSpeciesMap: ${map.size} entries")
             return map
         }
     }
@@ -220,7 +213,6 @@ class TegelBeheer(private val ui: TegelUi) {
     fun logTilesState(prefix: String = "tiles") {
         synchronized(lock) {
             val summary = tiles.joinToString(", ") { "${it.soortId}:${it.naam}:ZW=${it.countZW}+NO=${it.countNO}" }
-            Log.d(TAG, "$prefix (${tiles.size}): $summary")
         }
     }
     
@@ -255,7 +247,6 @@ class TegelBeheer(private val ui: TegelUi) {
             
             if (changed) {
                 ui.submitTiles(tiles.map { it.copy() })
-                Log.d(TAG, "recalculateCountsFromRecords: updated counts from ${records.size} records")
             }
         }
     }

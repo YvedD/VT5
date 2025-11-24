@@ -303,10 +303,8 @@ class InstallatieScherm : AppCompatActivity() {
                             
                             when (regenResult) {
                                 is AliasIndexManager.RegenerationResult.Success -> {
-                                    Log.d(TAG, "Alias index regenerated successfully")
                                 }
                                 is AliasIndexManager.RegenerationResult.AlreadyUpToDate -> {
-                                    Log.d(TAG, "Alias index already up to date")
                                 }
                                 is AliasIndexManager.RegenerationResult.Failure -> {
                                     Log.w(TAG, "Alias regeneration failed: ${regenResult.error}")
@@ -397,12 +395,10 @@ class InstallatieScherm : AppCompatActivity() {
         
         lifecycleScope.launch {
             try {
-                Log.d(TAG, "Preloading data in background")
                 withContext(Dispatchers.IO) {
                     ServerDataCache.preload(applicationContext)
                 }
                 dataPreloaded = true
-                Log.d(TAG, "Data preloading complete")
             } catch (e: Exception) {
                 Log.e(TAG, "Error during data preloading: ${e.message}")
             } finally {

@@ -43,12 +43,10 @@ class VT5App : Application() {
             Log.w(TAG, "Failed to start MatchLogWriter in Application.onCreate: ${ex.message}", ex)
         }
         instance = this
-        Log.d(TAG, "VT5App onCreate - initiating background data preload")
         
         // Initialiseer uurlijks alarm
         try {
             com.yvesds.vt5.core.app.HourlyAlarmManager.scheduleNextAlarm(this)
-            Log.d(TAG, "Uurlijks alarm geïnitialiseerd")
         } catch (ex: Exception) {
             Log.w(TAG, "Failed to initialize hourly alarm: ${ex.message}", ex)
         }
@@ -72,7 +70,6 @@ class VT5App : Application() {
                 withContext(Dispatchers.Default) {
                     try {
                         AliasMatcher.ensureLoaded(applicationContext, saf)
-                        Log.d(TAG, "AliasMatcher.ensureLoaded: background preload complete")
                     } catch (ex: Exception) {
                         Log.w(TAG, "AliasMatcher.ensureLoaded failed (background): ${ex.message}", ex)
                     }
@@ -80,7 +77,6 @@ class VT5App : Application() {
                     try {
                         // AliasManager.ensureIndexLoadedSuspend does IO & CPU; calling from Default lets its CPU parts run there.
                         AliasManager.ensureIndexLoadedSuspend(applicationContext, saf)
-                        Log.d(TAG, "AliasManager.ensureIndexLoadedSuspend: background preload complete")
                     } catch (ex: Exception) {
                         Log.w(TAG, "AliasManager.ensureIndexLoadedSuspend failed (background): ${ex.message}", ex)
                     }
@@ -88,7 +84,6 @@ class VT5App : Application() {
 
                 // If vt5 wasn't present we still tried the safe preloads; nothing to block startup on.
                 if (!vt5Exists) {
-                    Log.d(TAG, "VT5 SAF root not present during preload; preloads attempted best-effort")
                 }
             } catch (ex: Exception) {
                 Log.w(TAG, "Background alias index preload skipped: ${ex.message}", ex)
@@ -103,9 +98,7 @@ class VT5App : Application() {
     private fun preloadDataAsync() {
         appScope.launch {
             try {
-                Log.d(TAG, "Starting background data preload - coroutine active")
                 ServerDataCache.preload(applicationContext)
-                Log.d(TAG, "Background data preload complete")
             } catch (e: Exception) {
                 Log.e(TAG, "Error during data preloading: ${e.message}", e)
             }
@@ -113,7 +106,6 @@ class VT5App : Application() {
     }
 
     override fun onTerminate() {
-        Log.d(TAG, "VT5App onTerminate - cleaning up resources")
         try {
             // Cancel all background coroutines
             appScope.cancel()
@@ -138,7 +130,6 @@ class VT5App : Application() {
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        Log.d(TAG, "VT5App onTrimMemory level=$level")
         // Additional memory cleanup based on level if needed
     }
 
