@@ -79,6 +79,10 @@
 
     <!-- HoofdActiviteit -->
     <string name="hoofd_metadata_loading">Metadata laden…</string>
+    <string name="hoofd_alarm_enabled">Uurlijks alarm is ingeschakeld</string>
+    <string name="hoofd_alarm_disabled">Uurlijks alarm is uitgeschakeld</string>
+    <string name="hoofd_alarm_test">Test Alarm</string>
+    <string name="hoofd_alarm_toggle">Toggle Alarm</string>
 
     <!-- SoortSelectieScherm -->
     <string name="soort_no_species_download">Geen soorten gevonden. Download eerst serverdata.</string>

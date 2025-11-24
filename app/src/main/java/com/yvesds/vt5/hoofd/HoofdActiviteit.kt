@@ -40,8 +40,8 @@ class HoofdActiviteit : AppCompatActivity() {
         val btnVerder    = findViewById<MaterialButton>(R.id.btnVerder)
         val btnAfsluiten = findViewById<MaterialButton>(R.id.btnAfsluiten)
         
-        // Debug sectie - alleen zichtbaar in debug builds
-        setupDebugSection()
+        // Alarm sectie - altijd zichtbaar
+        setupAlarmSection()
 
         btnInstall.setOnClickListener {
             it.isEnabled = false
@@ -107,22 +107,10 @@ class HoofdActiviteit : AppCompatActivity() {
     }
     
     /**
-     * Setup debug sectie voor alarm testing
-     * Alleen zichtbaar in debug builds
+     * Setup alarm sectie
+     * Altijd zichtbaar, niet alleen in debug builds
      */
-    private fun setupDebugSection() {
-        // Check if app is debuggable
-        val isDebuggable = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
-        if (!isDebuggable) {
-            return
-        }
-        
-        // Maak debug elementen zichtbaar
-        findViewById<View>(R.id.divider_debug)?.visibility = View.VISIBLE
-        findViewById<TextView>(R.id.tvDebugTitle)?.visibility = View.VISIBLE
-        findViewById<TextView>(R.id.tvAlarmStatus)?.visibility = View.VISIBLE
-        findViewById<View>(R.id.layoutDebugButtons)?.visibility = View.VISIBLE
-        
+    private fun setupAlarmSection() {
         val tvAlarmStatus = findViewById<TextView>(R.id.tvAlarmStatus)
         val btnTestAlarm = findViewById<MaterialButton>(R.id.btnTestAlarm)
         val btnToggleAlarm = findViewById<MaterialButton>(R.id.btnToggleAlarm)
@@ -155,36 +143,22 @@ class HoofdActiviteit : AppCompatActivity() {
     
     /**
      * Update de alarm status tekst
+     * Toont eenvoudig "Uurlijks alarm is ingeschakeld/uitgeschakeld"
      */
     private fun updateAlarmStatus() {
-        // Check if app is debuggable
-        val isDebuggable = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
-        if (!isDebuggable) {
-            return
-        }
-        
         val tvAlarmStatus = findViewById<TextView>(R.id.tvAlarmStatus)
-        val status = AlarmTestHelper.getAlarmStatus(this)
-        val verification = AlarmTestHelper.verifySetup(this)
+        val enabled = HourlyAlarmManager.isEnabled(this)
         
-        val fullStatus = buildString {
-            append(status)
-            append("\n\n")
-            append("Setup verificatie:\n")
-            verification.forEach { issue ->
-                append("$issue\n")
-            }
+        tvAlarmStatus?.text = if (enabled) {
+            getString(R.string.hoofd_alarm_enabled)
+        } else {
+            getString(R.string.hoofd_alarm_disabled)
         }
-        
-        tvAlarmStatus?.text = fullStatus
     }
     
     override fun onResume() {
         super.onResume()
         // Update status wanneer we terugkomen naar dit scherm
-        val isDebuggable = (applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
-        if (isDebuggable) {
-            updateAlarmStatus()
-        }
+        updateAlarmStatus()
     }
 }
