@@ -105,7 +105,7 @@ Zie `HOURLY_ALARM_USAGE.md` voor complete voorbeeldcode met:
 ## 📁 Belangrijke Bestanden
 
 ### Nieuwe Bestanden
-- `app/src/main/java/com/yvesds/vt5/core/app/HourlyAlarmManager.kt` - Het alarm systeem
+- `app/src/main/java/com/yvesds/vt5/core/app/HourlyAlarmManager.kt` - Het alarm systeem (gebruikt systeem geluid)
 - `app/src/main/java/com/yvesds/vt5/core/app/AlarmTestHelper.kt` - Test utilities
 - `HOURLY_ALARM_USAGE.md` - Complete technische documentatie
 - `GIT_COMMANDS_ALARM_FEATURE.md` - Git instructies
@@ -113,22 +113,22 @@ Zie `HOURLY_ALARM_USAGE.md` voor complete voorbeeldcode met:
 ### Gewijzigde Bestanden
 - `AndroidManifest.xml` - Permissies toegevoegd
 - `VT5App.kt` - Alarm initialisatie
-- `TellingScherm.kt` - Integratie met alarm
-- `HoofdActiviteit.kt` - Debug UI
+- `TellingScherm.kt` - Integratie met alarm (type conversie fix)
+- `HoofdActiviteit.kt` - Debug UI (zonder BuildConfig)
 - `res/layout/scherm_hoofd.xml` - Debug UI layout
 
-## 🎨 Custom Alarm Geluid (Optioneel)
+## 🔊 Alarm Geluid
 
-Wil je een ander geluid? Plaats een audio bestand:
+Het systeem gebruikt het **standaard Android notificatie geluid**.
 
-**Locatie:** `app/src/main/res/raw/hourly_alarm.mp3` (of `.ogg`)
+**Waarom systeem geluid?**
+- ✅ Altijd beschikbaar op elk apparaat
+- ✅ Respecteert notificatie volume instellingen
+- ✅ Herkenbaar voor gebruikers
+- ✅ Geen extra bestanden nodig
+- ✅ Betrouwbaar en simpel
 
-**Eigenschappen:**
-- Kort (1-3 seconden)
-- Duidelijk hoorbaar
-- MP3 of OGG formaat
-
-Als je geen custom geluid toevoegt, gebruikt het systeem automatisch het standaard Android notificatie geluid.
+**Geen custom geluid:** Dit is bewust zo gekozen voor eenvoud en betrouwbaarheid.
 
 ## 🔍 Verificatie
 

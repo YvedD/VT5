@@ -7,12 +7,11 @@ Het uurlijkse alarm systeem speelt elk uur op de 59ste minuut een geluid af en b
 ## Features
 
 - ✅ Exacte alarm scheduling op de 59ste minuut van elk uur
-- ✅ Geluid + vibratie notificatie
+- ✅ Systeem notificatie geluid + vibratie
 - ✅ Automatische integratie met actieve tellingen (TellingScherm)
 - ✅ In-/uitschakelbaar via SharedPreferences
 - ✅ Herstart automatisch na device reboot
 - ✅ Werkt volledig in de achtergrond
-- ✅ Fallback naar systeem notificatie geluid
 
 ## Technische Implementatie
 
@@ -182,20 +181,17 @@ class InstellingenScherm : AppCompatActivity() {
 </LinearLayout>
 ```
 
-## Alarm Geluid Aanpassen
+## Alarm Geluid
 
-### Custom geluid toevoegen
+Het systeem gebruikt het **standaard Android notificatie geluid** (`Settings.System.DEFAULT_NOTIFICATION_URI`).
 
-1. Plaats een audio bestand in `app/src/main/res/raw/`
-2. Naam het bestand `hourly_alarm.mp3` of `hourly_alarm.ogg`
-3. Het geluid moet:
-   - Kort zijn (1-3 seconden)
-   - Duidelijk hoorbaar maar niet te luid
-   - In MP3 of OGG formaat
+Dit geluid:
+- Is altijd beschikbaar op elk Android apparaat
+- Respecteert de notificatie volume instellingen van het apparaat
+- Is herkenbaar voor de gebruiker
+- Vereist geen extra audio bestanden
 
-### Fallback gedrag
-
-Als geen custom geluid aanwezig is, gebruikt het systeem automatisch het standaard notificatie geluid van Android.
+**Geen custom geluid support:** De implementatie gebruikt bewust alleen het systeem geluid voor eenvoud en betrouwbaarheid.
 
 ## Hoe het werkt
 
@@ -277,10 +273,10 @@ Dit simuleert een alarm zonder te wachten op de 59ste minuut.
 ### Geluid wordt niet afgespeeld
 
 **Oplossingen:**
-1. Check volume instellingen van het apparaat
-2. Verify dat `hourly_alarm.mp3/.ogg` bestaat in `res/raw/`
-3. Check logs voor MediaPlayer errors
-4. Fallback zou systeem geluid moeten gebruiken
+1. Check notificatie volume instellingen van het apparaat
+2. Check logs voor MediaPlayer errors
+3. Verify dat Do Not Disturb mode niet actief is
+4. Test met andere apps of notificaties geluid werken
 
 ### TellingScherm wordt niet geopend
 
