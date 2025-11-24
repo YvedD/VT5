@@ -165,14 +165,6 @@ class TellingAfrondHandler(
         val language = "dutch"
         val versie = "1845"
 
-        // Log the complete envelope being sent for debugging
-        finalEnv.data.forEachIndexed { idx, record ->
-                      "markeren=${record.markeren}, markerenlokaal=${record.markerenlokaal}, " +
-                      "leeftijd=${record.leeftijd}, geslacht=${record.geslacht}, kleed=${record.kleed}")
-        }
-        if (prettyJson != null) {
-        }
-
         val (ok, resp) = try {
             TrektellenApi.postCountsSave(baseUrl, language, versie, user, pass, envelopeToSend)
         } catch (ex: Exception) {

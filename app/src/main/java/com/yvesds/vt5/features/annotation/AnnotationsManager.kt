@@ -175,7 +175,8 @@ object AnnotationsManager {
             }
 
             // Parse JSON into map
-            val root = json.parseToJsonElement(rawJson).jsonObject
+            val jsonText = rawJson // Create non-null local copy for smart cast
+            val root = json.parseToJsonElement(jsonText).jsonObject
             val out = mutableMapOf<String, List<AnnotationOption>>()
             for ((k, v) in root) {
                 try {
