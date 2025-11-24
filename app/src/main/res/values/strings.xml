@@ -3,7 +3,7 @@
     <string name="app_name">VT5</string>
 
     <!-- Hoofdscherm -->
-    <string name="titel_hoofd">VoiceTally - 5.0</string>
+    <string name="titel_hoofd">VoiceTally - spraakinvoer</string>
     <string name="btn_install_start">((Her)Installatie starten</string>
     <string name="btn_verder_metadata">Invullen telpostgegevens</string>
     <string name="btn_afsluiten">Afsluiten</string>
