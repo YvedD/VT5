@@ -53,7 +53,6 @@ class FastPathMatcher(
             val t1 = System.currentTimeMillis()
 
             if (t1 - t0 > SLOW_LOOKUP_THRESHOLD_MS) {
-                Log.d(TAG, "Slow findExact for '$normalized' timeMs=${t1 - t0}")
             }
 
             if (records.isEmpty()) return null
@@ -83,7 +82,6 @@ class FastPathMatcher(
                 source = source
             )
 
-            Log.d(TAG, "FASTPATH accept: species=$chosenSpeciesId source=$source amount=$amount hyp='$hypothesis' asrConf=$asrConf")
 
             return MatchResult.AutoAccept(candidate, hypothesis, "fastpath", amount)
         } catch (ex: Exception) {

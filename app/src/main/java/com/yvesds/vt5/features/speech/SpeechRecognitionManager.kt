@@ -125,7 +125,6 @@ class SpeechRecognitionManager(private val activity: Activity) {
                 loadAliases()
             }
 
-            Log.d(TAG, "Speech recognizer initialized")
         } else {
             Log.e(TAG, "Speech recognition is not available on this device")
         }
@@ -134,7 +133,6 @@ class SpeechRecognitionManager(private val activity: Activity) {
     suspend fun loadAliases() {
         if (!aliasesLoaded) {
             aliasesLoaded = aliasRepository.loadAliasData()
-            Log.d(TAG, "Aliases loaded: $aliasesLoaded")
         }
     }
 
@@ -197,7 +195,6 @@ class SpeechRecognitionManager(private val activity: Activity) {
      */
     fun forceStopNow() {
         try {
-            Log.d(TAG, "forceStopNow: cancelling recognizer and parse jobs")
             try { speechRecognizer?.cancel() } catch (_: Exception) {}
             try { speechRecognizer?.stopListening() } catch (_: Exception) {}
             currentParseJob?.cancel()
@@ -269,11 +266,9 @@ class SpeechRecognitionManager(private val activity: Activity) {
     private fun createRecognitionListener(): RecognitionListener {
         return object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
-                Log.d(TAG, "Ready for speech")
             }
 
             override fun onBeginningOfSpeech() {
-                Log.d(TAG, "Beginning of speech")
             }
 
             override fun onRmsChanged(rmsdB: Float) {
@@ -283,7 +278,6 @@ class SpeechRecognitionManager(private val activity: Activity) {
             override fun onBufferReceived(buffer: ByteArray?) {}
 
             override fun onEndOfSpeech() {
-                Log.d(TAG, "End of speech")
             }
 
             override fun onError(error: Int) {
@@ -414,7 +408,6 @@ class SpeechRecognitionManager(private val activity: Activity) {
                             Log.w(TAG, "Background parsing failed: ${ex.message}", ex)
                         } finally {
                             val tEnd = System.currentTimeMillis()
-                            Log.d(TAG, "Background parsing took ${tEnd - tStart} ms (session=$mySession)")
                         }
                     }
                 }
@@ -568,7 +561,6 @@ class SpeechRecognitionManager(private val activity: Activity) {
             val aliasId = aliasRepository.findSpeciesIdByAlias(text)
             if (aliasId != null && availableSpecies.containsValue(aliasId)) {
                 val originalName = availableSpecies.entries.firstOrNull { it.value == aliasId }?.key ?: text
-                Log.d(TAG, "Found match via alias: '$text' -> $aliasId ($originalName)")
                 return aliasId to originalName
             }
         }

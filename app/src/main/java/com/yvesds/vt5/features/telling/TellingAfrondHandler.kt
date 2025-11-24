@@ -166,19 +166,12 @@ class TellingAfrondHandler(
         val versie = "1845"
 
         // Log the complete envelope being sent for debugging
-        Log.d(TAG, "=== ENVELOPE TO SERVER ===")
-        Log.d(TAG, "OnlineId: ${finalEnv.onlineid}")
-        Log.d(TAG, "TellingId: ${finalEnv.tellingid}")
-        Log.d(TAG, "Number of records: ${finalEnv.data.size}")
         finalEnv.data.forEachIndexed { idx, record ->
-            Log.d(TAG, "Record $idx: soortid=${record.soortid}, aantal=${record.aantal}, " +
                       "markeren=${record.markeren}, markerenlokaal=${record.markerenlokaal}, " +
                       "leeftijd=${record.leeftijd}, geslacht=${record.geslacht}, kleed=${record.kleed}")
         }
         if (prettyJson != null) {
-            Log.d(TAG, "Complete envelope JSON:\n$prettyJson")
         }
-        Log.d(TAG, "=== END ENVELOPE ===")
 
         val (ok, resp) = try {
             TrektellenApi.postCountsSave(baseUrl, language, versie, user, pass, envelopeToSend)

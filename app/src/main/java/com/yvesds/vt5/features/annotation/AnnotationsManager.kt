@@ -82,7 +82,6 @@ object AnnotationsManager {
             // See if already present
             val existing = assetsDir.findFile(outFileName)
             if (existing != null && !overwrite) {
-                Log.d(TAG, "Annotations file already present in SAF: ${existing.name}")
                 return@withContext existing
             }
 
@@ -143,7 +142,6 @@ object AnnotationsManager {
                         context.contentResolver.openInputStream(file.uri)?.bufferedReader(Charsets.UTF_8).use { r ->
                             rawJson = r?.readText()
                         }
-                        Log.d(TAG, "Loaded annotations from SAF: ${file.name}")
                     } catch (ex: Exception) {
                         Log.w(TAG, "Failed reading annotations from SAF: ${ex.message}", ex)
                     }
@@ -154,7 +152,6 @@ object AnnotationsManager {
             if (rawJson.isNullOrBlank()) {
                 try {
                     rawJson = context.assets.open(assetName).bufferedReader(Charsets.UTF_8).use { it.readText() }
-                    Log.d(TAG, "Loaded annotations from app assets: $assetName")
                 } catch (ex: Exception) {
                     Log.w(TAG, "Failed loading annotations from assets: ${ex.message}")
                 }
@@ -165,7 +162,6 @@ object AnnotationsManager {
                 try {
                     val f = File(fallbackLocalPath)
                     if (f.exists()) rawJson = f.readText(Charsets.UTF_8)
-                    Log.d(TAG, "Loaded annotations from fallback local path: $fallbackLocalPath")
                 } catch (ex: Exception) {
                     Log.w(TAG, "Failed loading annotations from fallback path: ${ex.message}")
                 }
@@ -173,8 +169,9 @@ object AnnotationsManager {
 
             if (rawJson.isNullOrBlank()) {
                 Log.w(TAG, "No annotations JSON available (SAF, assets or fallback).")
-                cachedMap = emptyMap()
-                return@withContext cachedMap!!
+                val emptyCache = emptyMap<String, List<AnnotationOption>>()
+                cachedMap = emptyCache
+                return@withContext emptyCache
             }
 
             // Parse JSON into map
@@ -197,27 +194,25 @@ object AnnotationsManager {
             }
 
             // Cache it
-            cachedMap = out.toMap()
-            Log.i(TAG, "Annotations loaded and cached: ${cachedMap?.keys?.size ?: 0} groups")
+            val finalCache = out.toMap()
+            cachedMap = finalCache
+            Log.i(TAG, "Annotations loaded and cached: ${finalCache.keys.size} groups")
             
             // DEBUG: Log kleed options specifically
             val kleedOptions = out["kleed"]
             if (kleedOptions != null && kleedOptions.isNotEmpty()) {
-                Log.d(TAG, "=== KLEED OPTIONS LOADED ===")
-                Log.d(TAG, "Total kleed options: ${kleedOptions.size}")
                 kleedOptions.forEachIndexed { idx, opt ->
-                    Log.d(TAG, "  kleed[$idx]: tekst='${opt.tekst}', veld='${opt.veld}', waarde='${opt.waarde}'")
                 }
-                Log.d(TAG, "=== END KLEED OPTIONS ===")
             } else {
                 Log.w(TAG, "WARNING: No kleed options found in annotations!")
             }
             
-            return@withContext cachedMap!!
+            return@withContext finalCache
         } catch (ex: Exception) {
             Log.w(TAG, "loadCache failed: ${ex.message}", ex)
-            cachedMap = emptyMap()
-            return@withContext cachedMap!!
+            val emptyCache = emptyMap<String, List<AnnotationOption>>()
+            cachedMap = emptyCache
+            return@withContext emptyCache
         }
     }
 

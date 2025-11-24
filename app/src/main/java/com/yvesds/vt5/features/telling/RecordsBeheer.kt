@@ -82,7 +82,6 @@ class RecordsBeheer(
             mutex.withLock {
                 _pendingRecordsFlow.value = list.toList()
             }
-            Log.d(TAG, "restorePendingIndex: restored ${list.size} pending records")
         } catch (ex: Exception) {
             Log.w(TAG, "restorePendingIndex failed: ${ex.message}", ex)
         }
@@ -99,7 +98,6 @@ class RecordsBeheer(
             withContext(Dispatchers.IO) {
                 idxFile.writeText(text, Charsets.UTF_8)
             }
-            Log.d(TAG, "persistIndex: wrote ${snapshot.size} records to ${idxFile.absolutePath}")
         } catch (ex: Exception) {
             Log.w(TAG, "persistIndex failed: ${ex.message}", ex)
         }
@@ -292,6 +290,5 @@ class RecordsBeheer(
     fun logPendingState(prefix: String = "pending") {
         val snapshot = _pendingRecordsFlow.value
         val summary = snapshot.joinToString(", ") { "${it.idLocal}:${it.soortid}:${it.aantal}" }
-        Log.d(TAG, "$prefix (${snapshot.size}): $summary")
     }
 }

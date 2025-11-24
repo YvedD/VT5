@@ -92,7 +92,6 @@ class PendingMatchBuffer(
         ensureWorkerRunning()
 
         return if (pendingBuffer.add(pending)) {
-            Log.d(TAG, "Enqueued pending id=${pending.id} text='${pending.text}'")
             pending.id
         } else {
             Log.w(TAG, "Buffer full, dropped pending text='$text'")
@@ -156,7 +155,6 @@ class PendingMatchBuffer(
         if (item.attempts < MAX_RETRY_ATTEMPTS) {
             val retryItem = item.copy(attempts = item.attempts + 1)
             pendingBuffer.add(retryItem)
-            Log.d(TAG, "Retrying pending id=${item.id} attempts=${retryItem.attempts}")
         } else {
             val result = MatchResult.NoMatch(item.text, "pending_timed_out")
             logger.logMatchResult(

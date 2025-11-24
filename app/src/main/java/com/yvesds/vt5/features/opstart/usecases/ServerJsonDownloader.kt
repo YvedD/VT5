@@ -177,13 +177,15 @@ object ServerJsonDownloader {
 
     private fun writeText(cr: ContentResolver, uri: Uri, text: String): Boolean =
         try {
-            cr.openOutputStream(uri, "w")!!.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+            val stream = cr.openOutputStream(uri, "w") ?: return false
+            stream.use { it.write(text.toByteArray(Charsets.UTF_8)) }
             true
         } catch (_: Throwable) { false }
 
     private fun writeBin(cr: ContentResolver, uri: Uri, header: ByteBuffer, payload: ByteArray): Boolean =
         try {
-            cr.openOutputStream(uri, "w")!!.use { out ->
+            val stream = cr.openOutputStream(uri, "w") ?: return false
+            stream.use { out ->
                 out.write(header.array(), 0, header.limit())
                 out.write(payload)
                 out.flush()

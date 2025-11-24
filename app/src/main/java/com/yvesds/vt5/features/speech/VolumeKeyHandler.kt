@@ -53,7 +53,6 @@ class VolumeKeyHandler(private val activity: Activity) {
                 // alleen DOWN events en geen repeats
                 if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
                     if (handleKeyCodes(event)) {
-                        Log.d(TAG, "Handled media button via broadcast: ${event.keyCode}")
                         if (isOrderedBroadcast) abortBroadcast()
                     }
                 }
@@ -81,7 +80,6 @@ class VolumeKeyHandler(private val activity: Activity) {
                 )
             }
             isRegistered = true
-            Log.d(TAG, "VolumeKeyHandler registered (broadcast fallback)")
         } catch (ex: Exception) {
             Log.e(TAG, "Error registering media button receiver: ${ex.message}", ex)
         }
@@ -99,7 +97,6 @@ class VolumeKeyHandler(private val activity: Activity) {
             Log.w(TAG, "unregister receiver failed: ${ex.message}", ex)
         } finally {
             isRegistered = false
-            Log.d(TAG, "VolumeKeyHandler unregistered")
         }
     }
 
@@ -141,7 +138,6 @@ class VolumeKeyHandler(private val activity: Activity) {
 
         val now = System.currentTimeMillis()
         if (now - lastTriggerAt < DEBOUNCE_MS) {
-            Log.d(TAG, "Ignored duplicate trigger (debounce)")
             return true
         }
         lastTriggerAt = now

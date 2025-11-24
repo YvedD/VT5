@@ -126,7 +126,6 @@ class AliasRepository(private val context: Context) {
                             loadFromAliasIndex(idx)
                             buildReverseMapping()
                             isDataLoaded = true
-                            Log.d(TAG, "Loaded aliases from binaries/$ALIASES_CBOR_GZ: ${aliasCache.size} species")
                             return@withContext true
                         }
                     }
@@ -141,7 +140,6 @@ class AliasRepository(private val context: Context) {
                     if (loaded) {
                         buildReverseMapping()
                         isDataLoaded = true
-                        Log.d(TAG, "Loaded aliases from binaries/$ALIAS_MASTER_FILE: ${aliasCache.size} species")
                         return@withContext true
                     }
                 }
@@ -155,7 +153,6 @@ class AliasRepository(private val context: Context) {
                 if (loaded) {
                     buildReverseMapping()
                     isDataLoaded = true
-                    Log.d(TAG, "Loaded aliases from serverdata/$ALIAS_JSON_FILE: ${aliasCache.size} species")
                     return@withContext true
                 }
             }
@@ -340,7 +337,6 @@ class AliasRepository(private val context: Context) {
         }
         aliasToSpeciesIdMap.clear()
         aliasToSpeciesIdMap.putAll(localMap)
-        Log.d(TAG, "Built reverse mapping with ${aliasToSpeciesIdMap.size} entries")
     }
 
     /**
@@ -420,7 +416,6 @@ class AliasRepository(private val context: Context) {
                 }
             }
 
-            Log.d(TAG, "addAliasInMemory: added alias '$alias' for species $soortId (hotpatched & queued)")
             return true
         } catch (ex: Exception) {
             Log.w(TAG, "addAliasInMemory failed: ${ex.message}", ex)

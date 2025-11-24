@@ -242,7 +242,6 @@ internal object AliasMatcher {
         if (tokens.isNotEmpty()) {
             val anyTokenMatches = tokens.any { token -> token.hashCode().toLong() in bloom }
             if (!anyTokenMatches) {
-                Log.d(TAG, "Bloom filter rejected: $q")
                 return@withContext emptyList()
             }
         }
@@ -263,7 +262,6 @@ internal object AliasMatcher {
             .toList()
 
         if (bucket.size > SHORTLIST_CAP) {
-            Log.d(TAG, "Shortlist capped for '$q' originalBucket=${bucket.size} capped=${SHORTLIST_CAP}")
         }
 
         val scored = mutableListOf<Pair<AliasRecord, Double>>()
@@ -295,7 +293,6 @@ internal object AliasMatcher {
         scored.sortByDescending { it.second }
         val result = scored.take(topN)
         val t1 = System.nanoTime()
-        Log.d(TAG, "findFuzzyCandidates: phrase='$q' shortlist=${shortlistList.size} scored=${scored.size} topN=$topN timeMs=${(t1 - t0) / 1_000_000}")
         return@withContext result
     }
 
@@ -354,7 +351,6 @@ internal object AliasMatcher {
                 bloomFilter = currentBloom.toSet()
             }
 
-            Log.d(TAG, "Hot-patched alias into aliasMap: '$aliasRaw' -> $speciesId")
         } catch (ex: Exception) {
             Log.w(TAG, "addAliasHotpatch failed: ${ex.message}", ex)
         }

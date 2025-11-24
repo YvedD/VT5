@@ -86,7 +86,6 @@ class ServerDataDownloadManager(
                 return@withContext DownloadResult.Failure("Serverdata directory niet gevonden")
             }
             
-            Log.d(TAG, "Starting server data download")
             onProgress("JSONs downloaden...")
             
             // Download alle JSON files
@@ -100,7 +99,6 @@ class ServerDataDownloadManager(
                 versie = versie
             )
             
-            Log.d(TAG, "Server data download complete, starting parallel operations")
             
             // Parallel operations voor betere performance
             val (annotationsSuccess, _) = coroutineScope {
@@ -130,7 +128,6 @@ class ServerDataDownloadManager(
                 Log.w(TAG, "Annotations file could not be ensured")
             }
             
-            Log.d(TAG, "All operations complete")
             DownloadResult.Success(messages)
             
         } catch (e: Exception) {
@@ -155,10 +152,8 @@ class ServerDataDownloadManager(
             
             val existingFile = assetsDir.findFile("annotations.json")
             if (existingFile != null) {
-                Log.d(TAG, "annotations.json already exists")
                 try {
                     AnnotationsManager.loadCache(context)
-                    Log.d(TAG, "Annotations cache loaded")
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to load annotations cache: ${e.message}", e)
                 }
@@ -191,13 +186,11 @@ class ServerDataDownloadManager(
             
             context.contentResolver.openOutputStream(newFile.uri)?.use { outputStream ->
                 outputStream.write(jsonContent.toByteArray())
-                Log.d(TAG, "annotations.json created successfully")
             }
             
             // Load into cache
             try {
                 AnnotationsManager.loadCache(context)
-                Log.d(TAG, "Annotations cache loaded after creation")
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to load annotations cache after creation: ${e.message}", e)
             }

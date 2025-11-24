@@ -154,13 +154,11 @@ object AliasManager {
      */
     suspend fun ensureIndexLoadedSuspend(context: Context, saf: SaFStorageHelper) = withContext(Dispatchers.IO) {
         if (indexLoaded && loadedIndex != null) {
-            Log.d(TAG, "ensureIndexLoadedSuspend: already loaded")
             return@withContext
         }
 
         indexLoadMutex.withLock {
             if (indexLoaded && loadedIndex != null) {
-                Log.d(TAG, "ensureIndexLoadedSuspend: already loaded (inside lock)")
                 return@withLock
             }
 
@@ -212,7 +210,6 @@ object AliasManager {
                 }
             }
             
-            Log.d(TAG, "getAllSpeciesFromIndex: returning ${speciesMap.size} unique species")
             speciesMap
         } catch (ex: Exception) {
             Log.e(TAG, "getAllSpeciesFromIndex failed: ${ex.message}", ex)

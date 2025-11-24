@@ -158,7 +158,6 @@ class ServerDataRepository(
             )
 
             val elapsed = System.currentTimeMillis() - startTime
-            Log.d(TAG, "Loaded all data in ${elapsed}ms - ${speciesById.size} species, ${sitesById.size} sites")
 
             snapshotState.value = snap
             snap

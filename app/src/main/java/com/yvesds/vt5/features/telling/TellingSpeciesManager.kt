@@ -285,7 +285,6 @@ class TellingSpeciesManager(
                 withContext(Dispatchers.IO) {
                     try {
                         com.yvesds.vt5.features.speech.AliasMatcher.reloadIndex(activity, safHelper)
-                        Log.d(TAG, "AliasMatcher.reloadIndex executed (post addAlias)")
                     } catch (ex: Exception) {
                         Log.w(TAG, "AliasMatcher.reloadIndex failed (post addAlias): ${ex.message}", ex)
                     }
@@ -315,7 +314,6 @@ class TellingSpeciesManager(
                             speciesById = speciesById
                         )
                         onContextRebuilt?.invoke(mc)
-                        Log.d(TAG, "cachedMatchContext refreshed after user alias add")
                     } catch (ex: Exception) {
                         Log.w(TAG, "buildMatchContext failed (post addAlias): ${ex.message}", ex)
                     }

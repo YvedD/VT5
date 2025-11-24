@@ -155,7 +155,6 @@ class SpeechMatchLogger(
                 os.write(bytes)
                 os.flush()
             }
-            Log.d(TAG, "Match log written to SAF: ${newFile.uri}")
         } catch (ex: Exception) {
             Log.w(TAG, "createNewLogFile failed: ${ex.message}", ex)
         }
@@ -200,7 +199,6 @@ class SpeechMatchLogger(
                 os.write(newContent.toByteArray(Charsets.UTF_8))
                 os.flush()
             }
-            Log.d(TAG, "Match log rewritten to SAF (in-memory tail)")
         } catch (ex: Exception) {
             Log.w(TAG, "SAF fallback rewrite failed: ${ex.message}", ex)
         }

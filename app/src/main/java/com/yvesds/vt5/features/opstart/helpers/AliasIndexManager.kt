@@ -96,7 +96,6 @@ class AliasIndexManager(
             // - Index files missing
             val needsRegen = (oldChecksum == null) || (oldChecksum != newChecksum) || !indexPresent
             
-            Log.d(TAG, "Regeneration check: oldChecksum=$oldChecksum, newChecksum=$newChecksum, indexPresent=$indexPresent, needsRegen=$needsRegen")
             
             needsRegen
         } catch (e: Exception) {
@@ -124,12 +123,10 @@ class AliasIndexManager(
         
         try {
             if (!needsRegeneration(vt5Dir)) {
-                Log.d(TAG, "Alias index up-to-date, geen regeneratie nodig")
                 return@withContext RegenerationResult.AlreadyUpToDate
             }
             
             onProgress("Alias index regenereren...")
-            Log.d(TAG, "Starting alias index regeneration")
             
             // Remove existing files to force regeneration
             removeExistingIndexFiles(vt5Dir)
@@ -146,7 +143,6 @@ class AliasIndexManager(
             )
             writeMetadata(vt5Dir, meta)
             
-            Log.d(TAG, "Alias index regeneration complete")
             RegenerationResult.Success
             
         } catch (e: Exception) {
@@ -171,7 +167,6 @@ class AliasIndexManager(
         }
         
         try {
-            Log.d(TAG, "Force rebuilding alias index")
             
             // Remove existing files
             removeExistingIndexFiles(vt5Dir)
@@ -188,7 +183,6 @@ class AliasIndexManager(
             )
             writeMetadata(vt5Dir, meta)
             
-            Log.d(TAG, "Force rebuild complete")
             RegenerationResult.Success
             
         } catch (e: Exception) {
@@ -287,7 +281,6 @@ class AliasIndexManager(
                 outputStream.flush()
             }
             
-            Log.d(TAG, "Metadata written: checksum=${meta.sourceChecksum}")
         } catch (e: Exception) {
             Log.w(TAG, "writeMetadata failed: ${e.message}")
         }
@@ -305,7 +298,6 @@ class AliasIndexManager(
             val binaries = vt5Dir.findFile("binaries")?.takeIf { it.isDirectory }
             binaries?.findFile("aliases_optimized.cbor.gz")?.delete()
             
-            Log.d(TAG, "Existing alias files removed")
         } catch (e: Exception) {
             Log.w(TAG, "removeExistingIndexFiles failed: ${e.message}")
         }
