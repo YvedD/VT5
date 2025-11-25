@@ -34,7 +34,7 @@
 - L421: `writeStringToSaFOverwrite()` - Hulpfunctie
 
 ### features/alias/AliasManager.kt
-- L553: `scheduleBatchWrite()` - **ENIGE REF = DEFINITIE - NIET GEBRUIKT**
+- L553: `scheduleBatchWrite()` - **Potentieel ongebruikte legacy code** - Mogelijk bewust behouden voor toekomstig gebruik
 
 ### features/alias/helpers/AliasSeedGenerator.kt
 - L135: `parseSiteSpeciesIds()` - Intern helper
@@ -295,7 +295,7 @@ Na grondige analyse zijn de volgende items **echt ongebruikt**:
 
 | Type | Bestand | Item | Veilig te verwijderen? |
 |------|---------|------|------------------------|
-| Kotlin | `AliasManager.kt` | `scheduleBatchWrite()` | ✅ Ja |
+| Kotlin | `AliasManager.kt` | `scheduleBatchWrite()` | ⚠️ Controleren |
 | Kotlin | `AliasPrecomputeWorker.kt` | Hele bestand | ⚠️ Controleren |
 | Kotlin | `MetadataModels.kt` | `MetadataHeader` | ⚠️ Controleren |
 | XML | `item_speech_log_secondary.xml` | Hele bestand | ⚠️ Controleren |
@@ -359,13 +359,16 @@ private fun scheduleBatchWrite(context: Context, saf: SaFStorageHelper) {
     // Functie is gedefinieerd maar wordt nergens aangeroepen
 }
 ```
-**Conclusie:** ✅ Veilig te verwijderen - functie wordt niet aangeroepen.
+**Conclusie:** ⚠️ Potentieel ongebruikte legacy code - Controleer of dit bewust is behouden voor toekomstig gebruik of rollback scenarios voordat je verwijdert.
 
 ### 2. `AliasPrecomputeWorker.kt`
 Dit is een WorkManager worker class die:
 - Wel gedefinieerd is
 - Nergens wordt gequeued via `WorkManager.enqueue()`
+- Niet geconfigureerd in AndroidManifest.xml
 - Mogelijk was bedoeld voor background alias precomputing
+
+**Let op:** WorkManager workers kunnen ook worden getriggerd door systeemcondities of constraints. Een volledige analyse vereist ook controle van WorkManager configuraties.
 
 **Conclusie:** ⚠️ Controleren met ontwikkelaar - was dit gepland voor toekomstige functionaliteit?
 
@@ -408,10 +411,12 @@ Een layout voor een secundaire speech log item:
 
 ## Actieplan
 
-### Fase 1: Veilige Verwijderingen (Low Risk)
-1. Verwijder `vt5_btn_shape_normal.xml`
-2. Verwijder `vt5_btn_shape_pressed.xml`
-3. Verwijder `scheduleBatchWrite()` uit `AliasManager.kt`
+### Fase 1: Laag Risico Verwijderingen
+1. Verwijder `vt5_btn_shape_normal.xml` (legacy drawable, niet gerefereerd)
+2. Verwijder `vt5_btn_shape_pressed.xml` (legacy drawable, niet gerefereerd)
+
+### Fase 1b: Nader Beoordelen voor Verwijdering
+3. `scheduleBatchWrite()` in `AliasManager.kt` - Controleer of dit legacy code is
 
 ### Fase 2: Nader Onderzoek Vereist
 1. Controleer of `AliasPrecomputeWorker.kt` nog nodig is
