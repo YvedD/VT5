@@ -338,16 +338,19 @@ class SoortSelectieScherm : AppCompatActivity() {
      * Performance: O(n) filter but cached in memory for fast search.
      */
     private fun buildWorldSpeciesRows(): List<Row> {
-        // Filter species.json to exclude those already in site_species
-        val worldSpecies = ArrayList<Row>()
-        snapshot.speciesById.values.forEach { species ->
-            if (species.soortid !in siteSpeciesIds) {
-                worldSpecies.add(Row(species.soortid, species.soortnaam))
-            }
-        }
-        
-        // Sort alphabetically
-        return worldSpecies.sortedBy { it.naam.lowercase() }
+        // Filter species.json to exclude those already in site_species, map to Row and sort
+        return snapshot.speciesById.values
+            .filter { it.soortid !in siteSpeciesIds }
+            .map { Row(it.soortid, it.soortnaam) }
+            .sortedBy { it.naam.lowercase() }
+    }
+
+    /**
+     * Check if a row matches the normalized search query.
+     */
+    private fun matchesQuery(row: Row, normalizedQuery: String): Boolean {
+        return row.normalizedName.contains(normalizedQuery) || 
+               row.soortId.lowercase().contains(normalizedQuery)
     }
 
     private fun computeRecents(baseAlpha: List<Row>): List<Row> {
@@ -433,8 +436,7 @@ class SoortSelectieScherm : AppCompatActivity() {
         
         // Eerst zoeken in site_species (baseAlphaRows)
         for (row in baseAlphaRows) {
-            if (row.normalizedName.contains(normalizedQuery) || 
-                row.soortId.lowercase().contains(normalizedQuery)) {
+            if (matchesQuery(row, normalizedQuery)) {
                 filtered.add(row)
                 if (filtered.size >= max) break
             }
@@ -442,14 +444,10 @@ class SoortSelectieScherm : AppCompatActivity() {
         
         // Als er niet genoeg resultaten zijn, ook zoeken in de wereldlijst (species.json)
         if (filtered.size < max) {
-            val remaining = max - filtered.size
-            var added = 0
             for (row in worldSpeciesRows) {
-                if (row.normalizedName.contains(normalizedQuery) || 
-                    row.soortId.lowercase().contains(normalizedQuery)) {
+                if (matchesQuery(row, normalizedQuery)) {
                     filtered.add(row)
-                    added++
-                    if (added >= remaining) break
+                    if (filtered.size >= max) break
                 }
             }
         }
