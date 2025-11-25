@@ -61,7 +61,11 @@ class SoortSelectieScherm : AppCompatActivity() {
 
     // Alfabetische basislijst (site-filter toegepast indien beschikbaar)
     private var baseAlphaRows: List<Row> = emptyList()
-    // Cache voor snelle lookup op ID
+    // Wereldwijde soortenlijst (alle soorten uit species.json, voor uitgebreide zoekfunctie)
+    private var worldSpeciesRows: List<Row> = emptyList()
+    // Set van site species IDs voor snelle lookup
+    private var siteSpeciesIds: Set<String> = emptySet()
+    // Cache voor snelle lookup op ID (inclusief wereldwijde soorten)
     private var rowsByIdCache = ConcurrentHashMap<String, Row>()
 
     // Recents (subset van baseAlphaRows, meest recent eerst)
@@ -222,9 +226,16 @@ class SoortSelectieScherm : AppCompatActivity() {
                     // Process data synchronously (it's fast with cached data)
                     baseAlphaRows = buildAlphaRowsForTelpost()
                     
-                    // Build ID cache for O(1) lookups
+                    // Build site species ID set for quick lookup
+                    siteSpeciesIds = baseAlphaRows.map { it.soortId }.toSet()
+                    
+                    // Build world species list (alle species.json soorten die NIET in site_species zitten)
+                    worldSpeciesRows = buildWorldSpeciesRows()
+                    
+                    // Build ID cache for O(1) lookups (inclusief wereldwijde soorten)
                     rowsByIdCache.clear()
                     baseAlphaRows.forEach { row -> rowsByIdCache[row.soortId] = row }
+                    worldSpeciesRows.forEach { row -> rowsByIdCache[row.soortId] = row }
                     
                     recentRows = computeRecents(baseAlphaRows)
                     submitGrid(recents = recentRows, restAlpha = baseAlphaRows.filterNot { it.soortId in recentIds })
@@ -244,10 +255,17 @@ class SoortSelectieScherm : AppCompatActivity() {
 
                     // Basislijst opbouwen en sorteren
                     baseAlphaRows = buildAlphaRowsForTelpost()
+                    
+                    // Build site species ID set for quick lookup
+                    siteSpeciesIds = baseAlphaRows.map { it.soortId }.toSet()
+                    
+                    // Build world species list (alle species.json soorten die NIET in site_species zitten)
+                    worldSpeciesRows = buildWorldSpeciesRows()
 
-                    // ID cache opbouwen voor snelle lookup (reuse existing map)
+                    // ID cache opbouwen voor snelle lookup (inclusief wereldwijde soorten)
                     rowsByIdCache.clear()
                     baseAlphaRows.forEach { row -> rowsByIdCache[row.soortId] = row }
+                    worldSpeciesRows.forEach { row -> rowsByIdCache[row.soortId] = row }
 
                     // Recents berekenen
                     recentRows = computeRecents(baseAlphaRows)
@@ -308,6 +326,28 @@ class SoortSelectieScherm : AppCompatActivity() {
 
         // Sort by pre-computed lowercase to avoid repeated lowercase() calls
         return@withContext base.sortedBy { it.naam.lowercase() }
+    }
+
+    /**
+     * Build world species list from species.json (snapshot.speciesById).
+     * 
+     * Contains ONLY species that are NOT in the site species list (siteSpeciesIds).
+     * This allows the search function to extend beyond site-specific species
+     * when no match is found in the site species list.
+     * 
+     * Performance: O(n) filter but cached in memory for fast search.
+     */
+    private fun buildWorldSpeciesRows(): List<Row> {
+        // Filter species.json to exclude those already in site_species
+        val worldSpecies = ArrayList<Row>()
+        snapshot.speciesById.values.forEach { species ->
+            if (species.soortid !in siteSpeciesIds) {
+                worldSpecies.add(Row(species.soortid, species.soortnaam))
+            }
+        }
+        
+        // Sort alphabetically
+        return worldSpecies.sortedBy { it.naam.lowercase() }
     }
 
     private fun computeRecents(baseAlpha: List<Row>): List<Row> {
@@ -390,11 +430,27 @@ class SoortSelectieScherm : AppCompatActivity() {
         val max = 12
         // Pre-allocate result list to avoid resizing
         val filtered = ArrayList<Row>(max)
+        
+        // Eerst zoeken in site_species (baseAlphaRows)
         for (row in baseAlphaRows) {
             if (row.normalizedName.contains(normalizedQuery) || 
                 row.soortId.lowercase().contains(normalizedQuery)) {
                 filtered.add(row)
                 if (filtered.size >= max) break
+            }
+        }
+        
+        // Als er niet genoeg resultaten zijn, ook zoeken in de wereldlijst (species.json)
+        if (filtered.size < max) {
+            val remaining = max - filtered.size
+            var added = 0
+            for (row in worldSpeciesRows) {
+                if (row.normalizedName.contains(normalizedQuery) || 
+                    row.soortId.lowercase().contains(normalizedQuery)) {
+                    filtered.add(row)
+                    added++
+                    if (added >= remaining) break
+                }
             }
         }
 
