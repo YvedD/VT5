@@ -611,7 +611,7 @@
                     android:textSize="12sp"
                     android:textStyle="bold" />
 
-                <!-- Aantal ZW -->
+                <!-- Aantal (hoofdrichting - seizoensafhankelijk label) -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -620,17 +620,18 @@
                     android:paddingStart="1dp">
 
                     <TextView
+                        android:id="@+id/tv_label_aantal"
                         android:layout_width="120dp"
                         android:layout_height="wrap_content"
-                        android:text="@string/annotation_count_zw"
+                        android:text="@string/annotation_count_main"
                         android:textSize="16sp" />
 
                     <EditText
-                        android:id="@+id/et_aantal_zw"
+                        android:id="@+id/et_aantal"
                         android:layout_width="100dp"
                         android:layout_height="wrap_content"
                         android:layout_margin="1dp"
-                        android:contentDescription="@string/annotation_count_zw"
+                        android:contentDescription="@string/annotation_count_main"
                         android:hint="0"
                         android:inputType="number"
                         android:paddingStart="8dp"
@@ -639,7 +640,7 @@
                         android:textSize="16sp" />
                 </LinearLayout>
 
-                <!-- Aantal NO -->
+                <!-- Aantal terug (tegengestelde richting - seizoensafhankelijk label) -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -648,17 +649,18 @@
                     android:paddingStart="1dp">
 
                     <TextView
+                        android:id="@+id/tv_label_aantalterug"
                         android:layout_width="120dp"
                         android:layout_height="wrap_content"
-                        android:text="@string/annotation_count_no"
+                        android:text="@string/annotation_count_return"
                         android:textSize="16sp" />
 
                     <EditText
-                        android:id="@+id/et_aantal_no"
+                        android:id="@+id/et_aantalterug"
                         android:layout_width="100dp"
                         android:layout_height="wrap_content"
                         android:layout_margin="1dp"
-                        android:contentDescription="@string/annotation_count_no"
+                        android:contentDescription="@string/annotation_count_return"
                         android:hint="0"
                         android:inputType="number"
                         android:paddingStart="8dp"

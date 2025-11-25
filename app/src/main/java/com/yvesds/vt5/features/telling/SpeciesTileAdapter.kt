@@ -32,8 +32,8 @@ class SpeciesTileAdapter(
             newItem: TellingScherm.SoortRow
         ): Boolean = oldItem.soortId == newItem.soortId &&
                 oldItem.naam == newItem.naam &&
-                oldItem.countZW == newItem.countZW &&
-                oldItem.countNO == newItem.countNO
+                oldItem.countMain == newItem.countMain &&
+                oldItem.countReturn == newItem.countReturn
 
         override fun getChangePayload(
             oldItem: TellingScherm.SoortRow,
@@ -42,8 +42,8 @@ class SpeciesTileAdapter(
             // Als alleen de aantallen zijn veranderd, geef dan de nieuwe counts terug
             if (oldItem.soortId == newItem.soortId &&
                 oldItem.naam == newItem.naam &&
-                (oldItem.countZW != newItem.countZW || oldItem.countNO != newItem.countNO)) {
-                return Pair(newItem.countZW, newItem.countNO)
+                (oldItem.countMain != newItem.countMain || oldItem.countReturn != newItem.countReturn)) {
+                return Pair(newItem.countMain, newItem.countReturn)
             }
             return null
         }
@@ -59,8 +59,8 @@ class SpeciesTileAdapter(
     override fun onBindViewHolder(holder: VH, position: Int) {
         val row = getItem(position)
         holder.vb.tvName.text = row.naam
-        holder.vb.tvCountZW.text = row.countZW.toString()
-        holder.vb.tvCountNO.text = row.countNO.toString()
+        holder.vb.tvCountMain.text = row.countMain.toString()
+        holder.vb.tvCountReturn.text = row.countReturn.toString()
 
         holder.vb.tileRoot.setOnClickListener {
             val pos = holder.bindingAdapterPosition
@@ -75,11 +75,11 @@ class SpeciesTileAdapter(
             // Als er een payload is, update dan alleen de aantallen
             val payload = payloads[0]
             if (payload is Pair<*, *>) {
-                val countZW = payload.first as? Int
-                val countNO = payload.second as? Int
-                if (countZW != null && countNO != null) {
-                    holder.vb.tvCountZW.text = countZW.toString()
-                    holder.vb.tvCountNO.text = countNO.toString()
+                val countMain = payload.first as? Int
+                val countReturn = payload.second as? Int
+                if (countMain != null && countReturn != null) {
+                    holder.vb.tvCountMain.text = countMain.toString()
+                    holder.vb.tvCountReturn.text = countReturn.toString()
                     return
                 }
             }

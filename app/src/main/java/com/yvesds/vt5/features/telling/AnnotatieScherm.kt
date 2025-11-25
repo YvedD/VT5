@@ -102,6 +102,9 @@ class AnnotatieScherm : AppCompatActivity() {
                 // populate the pre-drawn buttons and possibly append dynamic ones
                 populateAllColumnsFromCache()
                 
+                // Update count field labels based on current season
+                updateCountFieldLabels()
+                
                 // Prefill count fields with existing record values if provided
                 prefillCountFields()
             } finally {
@@ -152,36 +155,21 @@ class AnnotatieScherm : AppCompatActivity() {
                 selectedLabels.add("Handteller")
             }
 
-            // Manual count inputs - mapping depends on season
-            // In ZW seizoen (Jul-Dec): et_aantal_zw -> aantal, et_aantal_no -> aantalterug
-            // In NO seizoen (Jan-Jun): et_aantal_no -> aantal, et_aantal_zw -> aantalterug
+            // Manual count inputs - direct mapping (labels are adjusted based on season)
+            // et_aantal always maps to record.aantal (main direction)
+            // et_aantalterug always maps to record.aantalterug (opposite direction)
             val isZwSeizoen = isZwSeizoen()
+            val mainLabel = if (isZwSeizoen) "ZW" else "NO"
+            val returnLabel = if (isZwSeizoen) "NO" else "ZW"
             
-            val valueZw = findViewById<EditText>(R.id.et_aantal_zw)?.text?.toString()?.trim() ?: ""
-            val valueNo = findViewById<EditText>(R.id.et_aantal_no)?.text?.toString()?.trim() ?: ""
-            
-            if (isZwSeizoen) {
-                // ZW seizoen: ZW is hoofdrichting, NO is terug
-                if (valueZw.isNotEmpty()) {
-                    resultMap["aantal"] = valueZw
-                    selectedLabels.add("ZW: $valueZw")
-                }
-                if (valueNo.isNotEmpty()) {
-                    resultMap["aantalterug"] = valueNo
-                    selectedLabels.add("NO: $valueNo")
-                }
-            } else {
-                // NO seizoen: NO is hoofdrichting, ZW is terug
-                if (valueNo.isNotEmpty()) {
-                    resultMap["aantal"] = valueNo
-                    selectedLabels.add("NO: $valueNo")
-                }
-                if (valueZw.isNotEmpty()) {
-                    resultMap["aantalterug"] = valueZw
-                    selectedLabels.add("ZW: $valueZw")
-                }
+            findViewById<EditText>(R.id.et_aantal)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                resultMap["aantal"] = it
+                selectedLabels.add("$mainLabel: $it")
             }
-            
+            findViewById<EditText>(R.id.et_aantalterug)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                resultMap["aantalterug"] = it
+                selectedLabels.add("$returnLabel: $it")
+            }
             findViewById<EditText>(R.id.et_aantal_lokaal)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
                 resultMap["lokaal"] = it
                 selectedLabels.add("Lokaal: $it")
@@ -402,29 +390,41 @@ class AnnotatieScherm : AppCompatActivity() {
         val recordAantalterug = intent.getStringExtra(EXTRA_RECORD_AANTALTERUG)
         val lokaal = intent.getStringExtra(EXTRA_LOKAAL)
         
-        val isZwSeizoen = isZwSeizoen()
-        
-        if (isZwSeizoen) {
-            // ZW seizoen: record.aantal = ZW richting, record.aantalterug = NO richting
-            recordAantal?.takeIf { it.isNotBlank() && it != "0" }?.let { value ->
-                findViewById<EditText>(R.id.et_aantal_zw)?.setText(value)
-            }
-            recordAantalterug?.takeIf { it.isNotBlank() && it != "0" }?.let { value ->
-                findViewById<EditText>(R.id.et_aantal_no)?.setText(value)
-            }
-        } else {
-            // NO seizoen: record.aantal = NO richting, record.aantalterug = ZW richting
-            recordAantal?.takeIf { it.isNotBlank() && it != "0" }?.let { value ->
-                findViewById<EditText>(R.id.et_aantal_no)?.setText(value)
-            }
-            recordAantalterug?.takeIf { it.isNotBlank() && it != "0" }?.let { value ->
-                findViewById<EditText>(R.id.et_aantal_zw)?.setText(value)
-            }
+        // Direct mapping - labels are already adjusted based on season
+        // et_aantal always corresponds to record.aantal
+        // et_aantalterug always corresponds to record.aantalterug
+        recordAantal?.takeIf { it.isNotBlank() && it != "0" }?.let { value ->
+            findViewById<EditText>(R.id.et_aantal)?.setText(value)
+        }
+        recordAantalterug?.takeIf { it.isNotBlank() && it != "0" }?.let { value ->
+            findViewById<EditText>(R.id.et_aantalterug)?.setText(value)
         }
         
         // Prefill lokaal count field (this is direction-independent)
         lokaal?.takeIf { it.isNotBlank() && it != "0" }?.let { value ->
             findViewById<EditText>(R.id.et_aantal_lokaal)?.setText(value)
+        }
+    }
+    
+    /**
+     * Update the count field labels based on the current season.
+     * In ZW seizoen (Jul-Dec): "Aantal ZW :" and "Aantal NO :"
+     * In NO seizoen (Jan-Jun): "Aantal NO :" and "Aantal ZW :"
+     */
+    private fun updateCountFieldLabels() {
+        val isZwSeizoen = isZwSeizoen()
+        
+        val labelAantal = findViewById<TextView>(R.id.tv_label_aantal)
+        val labelAantalterug = findViewById<TextView>(R.id.tv_label_aantalterug)
+        
+        if (isZwSeizoen) {
+            // ZW seizoen: hoofdrichting is ZW, terug is NO
+            labelAantal?.text = getString(R.string.annotation_count_zw)
+            labelAantalterug?.text = getString(R.string.annotation_count_no)
+        } else {
+            // NO seizoen: hoofdrichting is NO, terug is ZW
+            labelAantal?.text = getString(R.string.annotation_count_no)
+            labelAantalterug?.text = getString(R.string.annotation_count_zw)
         }
     }
     
