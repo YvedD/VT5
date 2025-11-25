@@ -10,7 +10,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -160,22 +159,51 @@ class ServerDataDownloadManager(
                 return@withContext true
             }
             
-            // Create default annotations.json
+            // Create default annotations.json with full options matching annotations sample
             val defaultAnnotations = AnnotationsConfig(
-                geslacht = listOf(
-                    AnnotationOption("M", "Man"),
-                    AnnotationOption("V", "Vrouw"),
-                    AnnotationOption("O", "Onbekend")
-                ),
                 leeftijd = listOf(
-                    AnnotationOption("ad", "Adult"),
-                    AnnotationOption("imm", "Immatuur"),
-                    AnnotationOption("juv", "Juveniel")
+                    AnnotationOption("adult", "leeftijd", "A"),
+                    AnnotationOption("juveniel", "leeftijd", "J"),
+                    AnnotationOption(">1kj", "leeftijd", "I"),
+                    AnnotationOption("1kj", "leeftijd", "1"),
+                    AnnotationOption("2kj", "leeftijd", "2"),
+                    AnnotationOption("3kj", "leeftijd", "3"),
+                    AnnotationOption("4kj", "leeftijd", "4"),
+                    AnnotationOption("niet juv.", "leeftijd", "Non-Juv")
+                ),
+                geslacht = listOf(
+                    AnnotationOption("man", "geslacht", "M"),
+                    AnnotationOption("vrouw", "geslacht", "F"),
+                    AnnotationOption("vrouwkleed", "geslacht", "FC")
                 ),
                 kleed = listOf(
-                    AnnotationOption("zomer", "Zomerkleed"),
-                    AnnotationOption("winter", "Winterkleed"),
-                    AnnotationOption("overgangonbekend")
+                    AnnotationOption("zomerkleed", "kleed", "B"),
+                    AnnotationOption("winterkleed", "kleed", "W"),
+                    AnnotationOption("man", "kleed", "M"),
+                    AnnotationOption("vrouw", "kleed", "F"),
+                    AnnotationOption("licht", "kleed", "L"),
+                    AnnotationOption("donker", "kleed", "D"),
+                    AnnotationOption("eclips", "kleed", "E"),
+                    AnnotationOption("intermediar", "kleed", "I")
+                ),
+                teltype = listOf(
+                    AnnotationOption("Handteller", "teltype_C", "C")
+                ),
+                height = listOf(
+                    AnnotationOption("<25m", "height", "<25m"),
+                    AnnotationOption("<50m", "height", "<50m"),
+                    AnnotationOption("50-100m", "height", "50-100m"),
+                    AnnotationOption("100-200m", "height", "100-200m"),
+                    AnnotationOption(">200m", "height", ">200m")
+                ),
+                location = listOf(
+                    AnnotationOption("zee", "location", "zee"),
+                    AnnotationOption("branding", "location", "branding"),
+                    AnnotationOption("duinen", "location", "duinen"),
+                    AnnotationOption("binnenkant", "location", "binnenkant"),
+                    AnnotationOption("polders", "location", "polders"),
+                    AnnotationOption("bos", "location", "bos"),
+                    AnnotationOption("over water", "location", "over water")
                 )
             )
             
@@ -204,17 +232,22 @@ class ServerDataDownloadManager(
     
     /**
      * Data classes voor annotations.json structure.
+     * Matches the format used by AnnotationsManager: { tekst, veld, waarde }
      */
     @Serializable
     private data class AnnotationsConfig(
-        val geslacht: List<AnnotationOption> = emptyList(),
         val leeftijd: List<AnnotationOption> = emptyList(),
-        val kleed: List<AnnotationOption> = emptyList()
+        val geslacht: List<AnnotationOption> = emptyList(),
+        val kleed: List<AnnotationOption> = emptyList(),
+        val teltype: List<AnnotationOption> = emptyList(),
+        val height: List<AnnotationOption> = emptyList(),
+        val location: List<AnnotationOption> = emptyList()
     )
     
     @Serializable
     private data class AnnotationOption(
-        val code: String,
-        val label: String = code
+        val tekst: String,
+        val veld: String,
+        val waarde: String? = null
     )
 }
