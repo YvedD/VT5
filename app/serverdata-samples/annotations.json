@@ -40,12 +40,13 @@
   ],
 
   "location": [
-    { "tekst": "zee",       "veld": "location", "waarde": "zee" },
-    { "tekst": "branding",  "veld": "location", "waarde": "branding" },
-    { "tekst": "duinen",    "veld": "location", "waarde": "duinen" },
-    { "tekst": "binnenkant","veld": "location", "waarde": "binnenkant" },
-    { "tekst": "polders",   "veld": "location", "waarde": "polders" },
-    { "tekst": "bos",       "veld": "location", "waarde": "bos" },
-    { "tekst": "over water","veld": "location", "waarde": "over water" }
+    { "tekst": "op zee",       "veld": "location", "waarde": "op zee" },
+    { "tekst": "branding",     "veld": "location", "waarde": "branding" },
+    { "tekst": "duinen",       "veld": "location", "waarde": "duinen" },
+    { "tekst": "binnenkant",   "veld": "location", "waarde": "binnenkant" },
+    { "tekst": "polders",      "veld": "location", "waarde": "polders" },
+    { "tekst": "bos",          "veld": "location", "waarde": "over bos" },
+    { "tekst": "naar zee",     "veld": "location", "waarde": "naar zee" },
+    { "tekst": "uit zee",      "veld": "location", "waarde": "uit zee" }
   ]
 }
