@@ -218,10 +218,18 @@ class TegelBeheer(private val ui: TegelUi) {
     
     /**
      * Recalculate tile counts from pending records.
-     * This aggregates aantal into countZW and aantalterug into countNO.
+     * 
+     * The mapping from record fields to tile counts depends on the season:
+     * - In ZW seizoen (Jul-Dec): aantal → countZW, aantalterug → countNO
+     * - In NO seizoen (Jan-Jun): aantal → countNO, aantalterug → countZW
+     * 
+     * This ensures that the tile counts always show the physical direction counts
+     * (how many birds went ZW vs NO), regardless of the seasonal main direction.
      */
     fun recalculateCountsFromRecords(records: List<com.yvesds.vt5.net.ServerTellingDataItem>) {
         synchronized(lock) {
+            val isZw = isZwSeizoen()
+            
             // Create map of soortId -> (totalZW, totalNO)
             val countMap = mutableMapOf<String, Pair<Int, Int>>()
             
@@ -231,7 +239,17 @@ class TegelBeheer(private val ui: TegelUi) {
                 val aantalterug = record.aantalterug.toIntOrNull() ?: 0
                 
                 val current = countMap[soortId] ?: Pair(0, 0)
-                countMap[soortId] = Pair(current.first + aantal, current.second + aantalterug)
+                
+                // Season-dependent mapping
+                val (addZw, addNo) = if (isZw) {
+                    // ZW seizoen: aantal = ZW, aantalterug = NO
+                    Pair(aantal, aantalterug)
+                } else {
+                    // NO seizoen: aantal = NO, aantalterug = ZW
+                    Pair(aantalterug, aantal)
+                }
+                
+                countMap[soortId] = Pair(current.first + addZw, current.second + addNo)
             }
             
             // Update tiles with new counts

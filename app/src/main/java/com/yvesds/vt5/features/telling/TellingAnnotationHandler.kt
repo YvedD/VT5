@@ -56,12 +56,33 @@ class TellingAnnotationHandler(
 
     /**
      * Launch AnnotatieScherm for a specific log row.
+     * Prefills count fields with existing record values if a matching pending record is found.
      */
     fun launchAnnotatieScherm(text: String, timestamp: Long, rowPosition: Int) {
         val intent = Intent(activity, AnnotatieScherm::class.java).apply {
             putExtra(AnnotatieScherm.EXTRA_TEXT, text)
             putExtra(AnnotatieScherm.EXTRA_TS, timestamp)
             putExtra("extra_row_pos", rowPosition)
+            
+            // Find matching pending record to prefill count fields
+            val pendingRecords = onGetPendingRecords?.invoke() ?: emptyList()
+            val finalsList = onGetFinalsList?.invoke() ?: emptyList()
+            
+            // Find matching record by position
+            val finalRowTs = finalsList.getOrNull(rowPosition)?.ts
+            val matchingRecord = if (finalRowTs != null) {
+                pendingRecords.firstOrNull { it.tijdstip == finalRowTs.toString() }
+            } else {
+                // Fallback: try by explicit timestamp
+                pendingRecords.firstOrNull { it.tijdstip == timestamp.toString() }
+            }
+            
+            // Prefill count values if record found
+            matchingRecord?.let { record ->
+                putExtra(AnnotatieScherm.EXTRA_RECORD_AANTAL, record.aantal)
+                putExtra(AnnotatieScherm.EXTRA_RECORD_AANTALTERUG, record.aantalterug)
+                putExtra(AnnotatieScherm.EXTRA_LOKAAL, record.lokaal)
+            }
         }
         annotationLauncher.launch(intent)
     }

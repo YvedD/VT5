@@ -21,6 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.util.Calendar
 
 /**
  * AnnotatieScherm
@@ -43,6 +44,12 @@ class AnnotatieScherm : AppCompatActivity() {
         // Legacy keys expected by older code paths (keeps TellingScherm compile+runtime compatible)
         const val EXTRA_TEXT = "extra_text"
         const val EXTRA_TS = "extra_ts"
+        
+        // Keys for prefilling count fields from existing record values
+        // These are the raw record values, which need season-based mapping to UI fields
+        const val EXTRA_RECORD_AANTAL = "extra_record_aantal"           // record.aantal (main direction)
+        const val EXTRA_RECORD_AANTALTERUG = "extra_record_aantalterug" // record.aantalterug (opposite direction)
+        const val EXTRA_LOKAAL = "extra_lokaal"
     }
 
     private val json = Json { prettyPrint = false }
@@ -94,6 +101,9 @@ class AnnotatieScherm : AppCompatActivity() {
                 }
                 // populate the pre-drawn buttons and possibly append dynamic ones
                 populateAllColumnsFromCache()
+                
+                // Prefill count fields with existing record values if provided
+                prefillCountFields()
             } finally {
                 progress.dismiss()
             }
@@ -142,15 +152,36 @@ class AnnotatieScherm : AppCompatActivity() {
                 selectedLabels.add("Handteller")
             }
 
-            // Manual count inputs
-            findViewById<EditText>(R.id.et_aantal_zw)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
-                resultMap["aantal"] = it
-                selectedLabels.add("ZW: $it")
+            // Manual count inputs - mapping depends on season
+            // In ZW seizoen (Jul-Dec): et_aantal_zw -> aantal, et_aantal_no -> aantalterug
+            // In NO seizoen (Jan-Jun): et_aantal_no -> aantal, et_aantal_zw -> aantalterug
+            val isZwSeizoen = isZwSeizoen()
+            
+            val valueZw = findViewById<EditText>(R.id.et_aantal_zw)?.text?.toString()?.trim() ?: ""
+            val valueNo = findViewById<EditText>(R.id.et_aantal_no)?.text?.toString()?.trim() ?: ""
+            
+            if (isZwSeizoen) {
+                // ZW seizoen: ZW is hoofdrichting, NO is terug
+                if (valueZw.isNotEmpty()) {
+                    resultMap["aantal"] = valueZw
+                    selectedLabels.add("ZW: $valueZw")
+                }
+                if (valueNo.isNotEmpty()) {
+                    resultMap["aantalterug"] = valueNo
+                    selectedLabels.add("NO: $valueNo")
+                }
+            } else {
+                // NO seizoen: NO is hoofdrichting, ZW is terug
+                if (valueNo.isNotEmpty()) {
+                    resultMap["aantal"] = valueNo
+                    selectedLabels.add("NO: $valueNo")
+                }
+                if (valueZw.isNotEmpty()) {
+                    resultMap["aantalterug"] = valueZw
+                    selectedLabels.add("ZW: $valueZw")
+                }
             }
-            findViewById<EditText>(R.id.et_aantal_no)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
-                resultMap["aantalterug"] = it
-                selectedLabels.add("NO: $it")
-            }
+            
             findViewById<EditText>(R.id.et_aantal_lokaal)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
                 resultMap["lokaal"] = it
                 selectedLabels.add("Lokaal: $it")
@@ -355,5 +386,54 @@ class AnnotatieScherm : AppCompatActivity() {
         btn.setTextColor(Color.WHITE)
         // Refresh drawable state to apply the selector based on isChecked
         btn.refreshDrawableState()
+    }
+    
+    /**
+     * Prefill count fields with existing record values if provided via Intent extras.
+     * This allows the user to see the current counts from the speech input and modify them.
+     * 
+     * The mapping from record fields to UI fields depends on the season:
+     * - In ZW seizoen (Jul-Dec): record.aantal → et_aantal_zw, record.aantalterug → et_aantal_no
+     * - In NO seizoen (Jan-Jun): record.aantal → et_aantal_no, record.aantalterug → et_aantal_zw
+     */
+    private fun prefillCountFields() {
+        // Get existing count values from intent extras (these are raw record values)
+        val recordAantal = intent.getStringExtra(EXTRA_RECORD_AANTAL)
+        val recordAantalterug = intent.getStringExtra(EXTRA_RECORD_AANTALTERUG)
+        val lokaal = intent.getStringExtra(EXTRA_LOKAAL)
+        
+        val isZwSeizoen = isZwSeizoen()
+        
+        if (isZwSeizoen) {
+            // ZW seizoen: record.aantal = ZW richting, record.aantalterug = NO richting
+            recordAantal?.takeIf { it.isNotBlank() && it != "0" }?.let { value ->
+                findViewById<EditText>(R.id.et_aantal_zw)?.setText(value)
+            }
+            recordAantalterug?.takeIf { it.isNotBlank() && it != "0" }?.let { value ->
+                findViewById<EditText>(R.id.et_aantal_no)?.setText(value)
+            }
+        } else {
+            // NO seizoen: record.aantal = NO richting, record.aantalterug = ZW richting
+            recordAantal?.takeIf { it.isNotBlank() && it != "0" }?.let { value ->
+                findViewById<EditText>(R.id.et_aantal_no)?.setText(value)
+            }
+            recordAantalterug?.takeIf { it.isNotBlank() && it != "0" }?.let { value ->
+                findViewById<EditText>(R.id.et_aantal_zw)?.setText(value)
+            }
+        }
+        
+        // Prefill lokaal count field (this is direction-independent)
+        lokaal?.takeIf { it.isNotBlank() && it != "0" }?.let { value ->
+            findViewById<EditText>(R.id.et_aantal_lokaal)?.setText(value)
+        }
+    }
+    
+    /**
+     * Determine if we're in ZW season (Jul-Dec) or NO season (Jan-Jun).
+     * Returns true for ZW season, false for NO season.
+     */
+    private fun isZwSeizoen(): Boolean {
+        val month = Calendar.getInstance().get(Calendar.MONTH) + 1 // 1-12
+        return month in 7..12  // Jul-Dec = ZW seizoen
     }
 }
