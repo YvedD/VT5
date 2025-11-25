@@ -127,8 +127,8 @@
     <string name="annotation_tally">Tally</string>
     <string name="annotation_mark_local">Lokaal</string>
     <string name="annotation_manual_counts_title">Manuele aantallen:</string>
-    <string name="annotation_count_zw">Aantal ZW :</string>
-    <string name="annotation_count_no">Aantal NO :</string>
+    <string name="annotation_count_zw">Aantal :</string>
+    <string name="annotation_count_no">Aantal terug :</string>
     <string name="annotation_count_main">Aantal :</string>
     <string name="annotation_count_return">Aantal terug :</string>
     <string name="annotation_count_local">Aantal Lokaal :</string>

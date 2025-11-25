@@ -40,12 +40,12 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:orientation="vertical"
-                    android:padding="6dp">
+                    android:padding="2dp">
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:paddingBottom="6dp"
+                        android:padding="2dp"
                         android:text="@string/annotation_age"
                         android:textAlignment="center"
                         android:textSize="12sp"
@@ -63,88 +63,96 @@
                             style="@style/Widget.VT5.Button.Outlined"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:layout_margin="2dp"
                             android:layout_marginTop="3dp"
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_leeftijd_2"
                             style="@style/Widget.VT5.Button.Outlined"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:layout_margin="2dp"
                             android:layout_marginTop="3dp"
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_leeftijd_3"
                             style="@style/Widget.VT5.Button.Outlined"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:layout_margin="2dp"
                             android:layout_marginTop="3dp"
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_leeftijd_4"
                             style="@style/Widget.VT5.Button.Outlined"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:layout_margin="2dp"
                             android:layout_marginTop="3dp"
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_leeftijd_5"
                             style="@style/Widget.VT5.Button.Outlined"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:layout_margin="2dp"
                             android:layout_marginTop="3dp"
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_leeftijd_6"
                             style="@style/Widget.VT5.Button.Outlined"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:layout_margin="2dp"
                             android:layout_marginTop="3dp"
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_leeftijd_7"
                             style="@style/Widget.VT5.Button.Outlined"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:layout_margin="2dp"
                             android:layout_marginTop="3dp"
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_leeftijd_8"
                             style="@style/Widget.VT5.Button.Outlined"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
+                            android:layout_margin="2dp"
                             android:layout_marginTop="3dp"
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                     </LinearLayout>
                 </LinearLayout>
@@ -156,12 +164,12 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:orientation="vertical"
-                    android:padding="6dp">
+                    android:padding="2dp">
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:paddingBottom="6dp"
+                        android:padding="2dp"
                         android:text="@string/annotation_gender"
                         android:textAlignment="center"
                         android:textSize="12sp"
@@ -182,7 +190,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_geslacht_2"
@@ -193,7 +201,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_geslacht_3"
@@ -204,7 +212,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_geslacht_4"
@@ -215,7 +223,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                     </LinearLayout>
                 </LinearLayout>
@@ -227,12 +235,12 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:orientation="vertical"
-                    android:padding="6dp">
+                    android:padding="2dp">
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:paddingBottom="6dp"
+                        android:padding="2dp"
                         android:text="@string/annotation_plumage"
                         android:textAlignment="center"
                         android:textSize="12sp"
@@ -253,7 +261,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_kleed_2"
@@ -264,7 +272,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_kleed_3"
@@ -275,7 +283,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_kleed_4"
@@ -286,7 +294,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_kleed_5"
@@ -297,7 +305,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_kleed_6"
@@ -308,7 +316,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_kleed_7"
@@ -319,7 +327,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_kleed_8"
@@ -330,7 +338,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
                     </LinearLayout>
                 </LinearLayout>
 
@@ -341,12 +349,12 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:orientation="vertical"
-                    android:padding="6dp">
+                    android:padding="2dp">
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:paddingBottom="6dp"
+                        android:padding="2dp"
                         android:text="@string/annotation_location"
                         android:textAlignment="center"
                         android:textSize="12sp"
@@ -367,7 +375,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_location_2"
@@ -378,7 +386,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_location_3"
@@ -389,7 +397,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_location_4"
@@ -400,7 +408,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_location_5"
@@ -411,7 +419,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_location_6"
@@ -422,7 +430,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_location_7"
@@ -433,7 +441,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_location_8"
@@ -444,7 +452,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
                     </LinearLayout>
                 </LinearLayout>
 
@@ -455,12 +463,12 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
                     android:orientation="vertical"
-                    android:padding="6dp">
+                    android:padding="2dp">
 
                     <TextView
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:paddingBottom="6dp"
+                        android:padding="2dp"
                         android:text="@string/annotation_height"
                         android:textAlignment="center"
                         android:textSize="12sp"
@@ -481,7 +489,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_height_2"
@@ -492,7 +500,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_height_3"
@@ -503,7 +511,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_height_4"
@@ -514,7 +522,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_height_5"
@@ -525,7 +533,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_height_6"
@@ -536,7 +544,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_height_7"
@@ -547,7 +555,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
 
                         <androidx.appcompat.widget.AppCompatToggleButton
                             android:id="@+id/btn_height_8"
@@ -558,7 +566,7 @@
                             android:layout_marginBottom="3dp"
                             android:minHeight="20dp"
                             android:padding="2dp"
-                            android:textSize="8sp" />
+                            android:textSize="7sp" />
                     </LinearLayout>
                 </LinearLayout>
 
