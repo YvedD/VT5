@@ -8,6 +8,8 @@ import com.yvesds.vt5.features.alias.AliasManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.security.MessageDigest
 
@@ -255,7 +257,7 @@ class AliasIndexManager(
                 inputStream.readBytes().toString(Charsets.UTF_8)
             } ?: return null
             
-            jsonPretty.decodeFromString(AliasMasterMeta.serializer(), text)
+            jsonPretty.decodeFromString<AliasMasterMeta>(text)
         } catch (e: Exception) {
             Log.w(TAG, "readMetadata failed: ${e.message}")
             null
@@ -274,7 +276,7 @@ class AliasIndexManager(
             assets.findFile("alias_master.meta.json")?.delete()
             val metaDoc = assets.createFile("application/json", "alias_master.meta.json") ?: return
             
-            val jsonText = jsonPretty.encodeToString(AliasMasterMeta.serializer(), meta)
+            val jsonText = jsonPretty.encodeToString(meta)
             
             context.contentResolver.openOutputStream(metaDoc.uri, "w")?.use { outputStream ->
                 outputStream.write(jsonText.toByteArray(Charsets.UTF_8))
