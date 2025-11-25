@@ -228,7 +228,7 @@ object HourlyAlarmManager {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
                            Intent.FLAG_ACTIVITY_SINGLE_TOP or
                            Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
-                    putExtra("SHOW_HUIDIGE_STAND", true)
+                    putExtra(com.yvesds.vt5.features.telling.TellingScherm.EXTRA_SHOW_HUIDIGE_STAND, true)
                 }
                 
                 context.startActivity(intent)
