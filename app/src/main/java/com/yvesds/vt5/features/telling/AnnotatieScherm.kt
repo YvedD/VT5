@@ -6,11 +6,9 @@ import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
 import android.view.View
-import android.view.ViewGroup
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.AppCompatToggleButton
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.yvesds.vt5.R
 import com.yvesds.vt5.core.ui.ProgressDialogHelper
@@ -29,7 +27,6 @@ import kotlinx.serialization.json.Json
  * - Laadt annotations.json in geheugen via AnnotationsManager.loadCache(...)
  * - Vult vooraf getekende ToggleButtons in activity_annotatie.xml met de "tekst" uit annotations.json,
  *   plaatst het corresponderende AnnotationOption object in btn.tag, en handhaaft single-select per groep.
- * - Als er meer opties aanwezig zijn dan vooraf getekende knoppen, worden extra buttons dynamisch toegevoegd.
  * - Als er minder opties zijn dan knoppen, worden overtollige buttons verborgen.
  * - OK retourneert een JSON-map { storeKey -> waarde } via EXTRA_ANNOTATIONS_JSON.
  * - Voor compatibiliteit met oudere callers (bv. TellingScherm) vult het resultaat ook:
@@ -54,7 +51,7 @@ class AnnotatieScherm : AppCompatActivity() {
 
     private val json = Json { prettyPrint = false }
 
-    // Map groupName -> list of ToggleButtons (including dynamically created ones)
+    // Map groupName -> list of ToggleButtons
     private val groupButtons = mutableMapOf<String, MutableList<AppCompatToggleButton>>()
     
     // Reference to remarks EditText for location/height auto-tagging
@@ -74,7 +71,8 @@ class AnnotatieScherm : AppCompatActivity() {
     )
     private val locationBtnIds = listOf(
         R.id.btn_location_1, R.id.btn_location_2, R.id.btn_location_3,
-        R.id.btn_location_4, R.id.btn_location_5, R.id.btn_location_6
+        R.id.btn_location_4, R.id.btn_location_5, R.id.btn_location_6,
+        R.id.btn_location_7, R.id.btn_location_8
     )
     private val heightBtnIds = listOf(
         R.id.btn_height_1, R.id.btn_height_2, R.id.btn_height_3, R.id.btn_height_4,
@@ -99,7 +97,7 @@ class AnnotatieScherm : AppCompatActivity() {
                     // load annotations into memory (SAF -> assets fallback)
                     AnnotationsManager.loadCache(this@AnnotatieScherm)
                 }
-                // populate the pre-drawn buttons and possibly append dynamic ones
+                // populate the pre-drawn buttons
                 populateAllColumnsFromCache()
                 
                 // Update count field labels based on current season
@@ -224,7 +222,7 @@ class AnnotatieScherm : AppCompatActivity() {
     /**
      * Fill pre-drawn buttons with the provided options.
      * - If options.size <= preIds.size: fill first N buttons, hide rest.
-     * - If options.size > preIds.size: fill preIds, then append dynamic buttons to container.
+     * - All buttons are pre-drawn in the layout; no dynamic button creation.
      */
     private fun applyOptionsToPreDrawn(group: String, options: List<AnnotationOption>, preIds: List<Int>, containerId: Int) {
         val container = findViewById<LinearLayout>(containerId) ?: return
@@ -251,27 +249,6 @@ class AnnotatieScherm : AppCompatActivity() {
             }
             setToggleColor(btn)
             btnList.add(btn)
-        }
-
-        // If more options than preIds, append extra buttons dynamically
-        if (options.size > preIds.size) {
-            for (i in preIds.size until options.size) {
-                val opt = options[i]
-                val themeWrapper = android.view.ContextThemeWrapper(this, R.style.Widget_VT5_Button_Outlined)
-                val dynBtn = androidx.appcompat.widget.AppCompatToggleButton(themeWrapper).apply {
-                    text = opt.tekst
-                    textOn = opt.tekst
-                    textOff = opt.tekst
-                    isAllCaps = false
-                    tag = opt
-                    val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
-                    lp.setMargins(6, 6, 6, 6)
-                    layoutParams = lp
-                    setPadding(18, 12, 18, 12)
-                    setOnClickListener { v -> onGroupButtonClicked(group, v as AppCompatToggleButton) }
-                }
-                container.addView(dynBtn)
-                btnList.add(dynBtn)            }
         }
 
         groupButtons[group] = btnList
