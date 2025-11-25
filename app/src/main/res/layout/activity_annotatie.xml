@@ -423,6 +423,28 @@
                             android:minHeight="20dp"
                             android:padding="2dp"
                             android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_location_7"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
+
+                        <androidx.appcompat.widget.AppCompatToggleButton
+                            android:id="@+id/btn_location_8"
+                            style="@style/Widget.VT5.Button.Outlined"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="3dp"
+                            android:layout_marginBottom="3dp"
+                            android:minHeight="20dp"
+                            android:padding="2dp"
+                            android:textSize="8sp" />
                     </LinearLayout>
                 </LinearLayout>
 
