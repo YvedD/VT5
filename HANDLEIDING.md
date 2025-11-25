@@ -89,7 +89,6 @@ Documents/VT5/
 │   ├── alias_master.meta.json      # Metadata over de alias index
 │   ├── alias_index.json            # Exportformaat van aliases
 │   ├── annotations.json            # Annotatie-opties (leeftijd, geslacht, kleed)
-│   └── checkuser.json              # Gebruikersinfo na login
 │
 ├── binaries/                        # Geoptimaliseerde runtime bestanden
 │   ├── aliases_optimized.cbor.gz   # Binaire alias-index (snel laden)
@@ -99,7 +98,8 @@ Documents/VT5/
 │   ├── species.json                # Alle vogelsoorten
 │   ├── site_species.json           # Soorten per telpost
 │   ├── sites.json                  # Telposten/locaties
-│   └── codes.json                  # Weer- en overige codes
+│   ├── codes.json                  # Weer- en overige codes
+│   └── checkuser.json              # Gebruikersinfo na login
 │
 ├── counts/                          # Opgeslagen tellingen
 │   └── <timestamp>_count_<id>.json # Per telling een JSON-bestand
