@@ -197,13 +197,14 @@ class ServerDataDownloadManager(
                     AnnotationOption(">200m", "height", ">200m")
                 ),
                 location = listOf(
-                    AnnotationOption("zee", "location", "zee"),
+                    AnnotationOption("op zee", "location", "op zee"),
                     AnnotationOption("branding", "location", "branding"),
                     AnnotationOption("duinen", "location", "duinen"),
                     AnnotationOption("binnenkant", "location", "binnenkant"),
                     AnnotationOption("polders", "location", "polders"),
-                    AnnotationOption("bos", "location", "bos"),
-                    AnnotationOption("over water", "location", "over water")
+                    AnnotationOption("bos", "location", "over bos"),
+                    AnnotationOption("uit zee", "location", "uit zee"),
+                    AnnotationOption("naar zee", "location", "naar zee")
                 )
             )
             
