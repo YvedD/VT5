@@ -1,7 +1,7 @@
 package com.yvesds.vt5.features.telling
 
 import android.util.Log
-import java.util.Calendar
+import com.yvesds.vt5.utils.SeizoenUtils
 
 /**
  * TegelBeheer.kt
@@ -54,13 +54,10 @@ class TegelBeheer(private val ui: TegelUi) {
     private val lock = Any()
     
     /**
-     * Bepaal of we in ZW seizoen zitten (Jul-Dec) of NO seizoen (Jan-Jun).
-     * Returns true voor ZW seizoen, false voor NO seizoen.
+     * Helper to get the current season status.
+     * Delegates to SeizoenUtils for consistent behavior across the app.
      */
-    private fun isZwSeizoen(): Boolean {
-        val month = Calendar.getInstance().get(Calendar.MONTH) + 1 // 1-12
-        return month in 7..12  // Jul-Dec = ZW seizoen
-    }
+    private fun isZwSeizoen(): Boolean = SeizoenUtils.isZwSeizoen()
 
     fun setTiles(list: List<SoortTile>) {
         synchronized(lock) {

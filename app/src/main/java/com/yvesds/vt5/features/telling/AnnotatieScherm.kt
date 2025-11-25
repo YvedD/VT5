@@ -16,12 +16,12 @@ import com.yvesds.vt5.R
 import com.yvesds.vt5.core.ui.ProgressDialogHelper
 import com.yvesds.vt5.features.annotation.AnnotationsManager
 import com.yvesds.vt5.features.annotation.AnnotationOption
+import com.yvesds.vt5.utils.SeizoenUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.util.Calendar
 
 /**
  * AnnotatieScherm
@@ -429,11 +429,8 @@ class AnnotatieScherm : AppCompatActivity() {
     }
     
     /**
-     * Determine if we're in ZW season (Jul-Dec) or NO season (Jan-Jun).
-     * Returns true for ZW season, false for NO season.
+     * Helper to get the current season status.
+     * Delegates to SeizoenUtils for consistent behavior across the app.
      */
-    private fun isZwSeizoen(): Boolean {
-        val month = Calendar.getInstance().get(Calendar.MONTH) + 1 // 1-12
-        return month in 7..12  // Jul-Dec = ZW seizoen
-    }
+    private fun isZwSeizoen(): Boolean = SeizoenUtils.isZwSeizoen()
 }
