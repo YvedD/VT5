@@ -103,6 +103,9 @@ class TellingScherm : AppCompatActivity() {
         private const val DEFAULT_SILENCE_MS = 1000
 
         private const val MAX_LOG_ROWS = 600
+        
+        // Intent extra key for hourly alarm trigger
+        const val EXTRA_SHOW_HUIDIGE_STAND = "SHOW_HUIDIGE_STAND"
     }
 
     // UI & adapters
@@ -145,6 +148,10 @@ class TellingScherm : AppCompatActivity() {
     // Track backup files created per-record (DocumentFile or internal path strings)
     private val pendingBackupDocs = mutableListOf<DocumentFile>()
     private val pendingBackupInternalPaths = mutableListOf<String>()
+    
+    // Flag to show HuidigeStandScherm after tiles are loaded (triggered by hourly alarm)
+    @Volatile
+    private var pendingShowHuidigeStand = false
 
     // BroadcastReceiver: listen for alias-reload events from AliasManager
     private val aliasReloadReceiver = object : BroadcastReceiver() {
@@ -189,6 +196,12 @@ class TellingScherm : AppCompatActivity() {
         setContentView(binding.root)
 
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        
+        // Check if this is triggered by the hourly alarm (from HourlyAlarmManager)
+        // Store the flag to show HuidigeStandScherm after tiles are loaded
+        if (intent.getBooleanExtra(EXTRA_SHOW_HUIDIGE_STAND, false)) {
+            pendingShowHuidigeStand = true
+        }
         
         // Initialize helper classes BEFORE registering launchers
         // (partial initialization for those that need it)
@@ -371,6 +384,12 @@ class TellingScherm : AppCompatActivity() {
         // Initializer callbacks
         initializer.onTilesLoaded = { tiles ->
             tegelBeheer.setTiles(tiles)
+            
+            // Check if we need to show HuidigeStandScherm (triggered by hourly alarm)
+            if (pendingShowHuidigeStand) {
+                pendingShowHuidigeStand = false
+                showHuidigeStandScherm()
+            }
         }
         initializer.onMatchContextBuilt = { context ->
             speechHandler.updateCachedMatchContext(context)
@@ -518,21 +537,27 @@ class TellingScherm : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         // Check if this is triggered by the hourly alarm
-        if (intent.getBooleanExtra("SHOW_HUIDIGE_STAND", false)) {
-            // Show HuidigeStandScherm with current data
-            if (::tegelBeheer.isInitialized) {
-                val tiles = tegelBeheer.getTiles()
-                // Convert SoortTile to SoortRow
-                val rows = tiles.map { tile ->
-                    SoortRow(
-                        soortId = tile.soortId,
-                        naam = tile.naam,
-                        countZW = tile.countZW,
-                        countNO = tile.countNO
-                    )
-                }
-                handleSaveClose(rows)
+        if (intent.getBooleanExtra(EXTRA_SHOW_HUIDIGE_STAND, false)) {
+            showHuidigeStandScherm()
+        }
+    }
+    
+    /**
+     * Show the HuidigeStandScherm with the current tile data.
+     * Called by hourly alarm (via onCreate or onNewIntent).
+     */
+    private fun showHuidigeStandScherm() {
+        if (::tegelBeheer.isInitialized) {
+            val tiles = tegelBeheer.getTiles()
+            val rows = tiles.map { tile ->
+                SoortRow(
+                    soortId = tile.soortId,
+                    naam = tile.naam,
+                    countZW = tile.countZW,
+                    countNO = tile.countNO
+                )
             }
+            handleSaveClose(rows)
         }
     }
 
