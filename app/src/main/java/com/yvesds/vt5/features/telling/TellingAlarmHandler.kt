@@ -1,10 +1,8 @@
 package com.yvesds.vt5.features.telling
 
 import android.content.Context
-import android.media.MediaPlayer
-import android.os.VibrationEffect
-import android.os.VibratorManager
 import android.util.Log
+import com.yvesds.vt5.core.app.AlarmSoundHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -17,7 +15,7 @@ import java.util.Calendar
  * TellingAlarmHandler
  * 
  * Beheert het uurlijkse alarm direct binnen TellingScherm.
- * Controleert elke seconde of het de 59ste minuut is en triggert:
+ * Controleert op de 59ste minuut en triggert:
  * - Geluid afspelen (bell.mp3 of systeem notificatie)
  * - Vibratie
  * - Callback naar TellingScherm om HuidigeStandScherm te tonen
@@ -33,7 +31,6 @@ class TellingAlarmHandler(
         private const val TAG = "TellingAlarmHandler"
         private const val PREFS_NAME = "vt5_prefs"
         private const val PREF_HOURLY_ALARM_ENABLED = "pref_hourly_alarm_enabled"
-        private const val CHECK_INTERVAL_MS = 1000L // Controleer elke seconde
         private const val TARGET_MINUTE = 59 // Alarm op de 59ste minuut
     }
     
@@ -42,9 +39,6 @@ class TellingAlarmHandler(
     
     // Houdt bij voor welk uur we al een alarm hebben getriggerd (voorkomt dubbele triggers)
     private var lastTriggeredHour: Int = -1
-    
-    // MediaPlayer voor alarm geluid
-    private var mediaPlayer: MediaPlayer? = null
     
     // Callback die wordt aangeroepen wanneer het alarm afgaat
     var onAlarmTriggered: (() -> Unit)? = null
@@ -62,8 +56,8 @@ class TellingAlarmHandler(
         Log.i(TAG, "Start alarm monitoring")
         alarmCheckJob = scope.launch(Dispatchers.Default) {
             while (isActive) {
-                checkAndTriggerAlarm()
-                delay(CHECK_INTERVAL_MS)
+                val delayMs = checkAndTriggerAlarm()
+                delay(delayMs)
             }
         }
     }
@@ -80,15 +74,20 @@ class TellingAlarmHandler(
     
     /**
      * Controleer of het tijd is voor het alarm en trigger indien nodig.
+     * 
+     * @return milliseconden om te wachten tot de volgende check.
+     *         Optimaliseert door te wachten tot vlak voor de volgende minuutwisseling.
      */
-    private suspend fun checkAndTriggerAlarm() {
+    private suspend fun checkAndTriggerAlarm(): Long {
         if (!isEnabled()) {
-            return
+            // Als alarm uitgeschakeld, check elke 30 seconden of het weer ingeschakeld is
+            return 30_000L
         }
         
         val calendar = Calendar.getInstance()
         val currentMinute = calendar.get(Calendar.MINUTE)
         val currentHour = calendar.get(Calendar.HOUR_OF_DAY)
+        val currentSecond = calendar.get(Calendar.SECOND)
         
         // Trigger alleen op de 59ste minuut en niet als we dit uur al getriggerd hebben
         if (currentMinute == TARGET_MINUTE && lastTriggeredHour != currentHour) {
@@ -100,6 +99,37 @@ class TellingAlarmHandler(
                 triggerAlarm()
             }
         }
+        
+        // Bereken optimale wachttijd tot de volgende check
+        return calculateDelayUntilNextCheck(currentMinute, currentSecond)
+    }
+    
+    /**
+     * Bereken hoeveel milliseconden te wachten tot de volgende check.
+     * Als we niet op minuut 59 zijn, wacht tot vlak voor minuut 59.
+     * Als we op minuut 59 zijn, wacht tot het volgende uur begint.
+     */
+    private fun calculateDelayUntilNextCheck(currentMinute: Int, currentSecond: Int): Long {
+        return when {
+            currentMinute < TARGET_MINUTE -> {
+                // Wacht tot ~2 seconden voor minuut 59 (om marge te houden)
+                val minutesToWait = TARGET_MINUTE - currentMinute - 1
+                val secondsToWait = (60 - currentSecond) + (minutesToWait * 60)
+                (secondsToWait * 1000L).coerceAtLeast(1000L)
+            }
+            currentMinute == TARGET_MINUTE -> {
+                // Op minuut 59: wacht tot het volgende uur begint
+                val secondsToWait = 60 - currentSecond + 5 // +5 voor marge
+                (secondsToWait * 1000L).coerceAtLeast(1000L)
+            }
+            else -> {
+                // Na minuut 59 (minuut 0-58 van het volgende cyclus)
+                // Dit zou niet moeten gebeuren, maar voor de zekerheid
+                val minutesToWait = 60 - currentMinute + TARGET_MINUTE - 1
+                val secondsToWait = (60 - currentSecond) + (minutesToWait * 60)
+                (secondsToWait * 1000L).coerceAtLeast(1000L)
+            }
+        }
     }
     
     /**
@@ -108,84 +138,12 @@ class TellingAlarmHandler(
     private fun triggerAlarm() {
         Log.i(TAG, "Voer alarm uit: geluid + vibratie + HuidigeStandScherm")
         
-        // Speel geluid af
-        playAlarmSound()
-        
-        // Vibreer
-        vibrate()
+        // Speel geluid af en vibreer via gedeelde helper
+        AlarmSoundHelper.playAlarmSound(context)
+        AlarmSoundHelper.vibrate(context)
         
         // Roep callback aan om HuidigeStandScherm te tonen
         onAlarmTriggered?.invoke()
-    }
-    
-    /**
-     * Speelt het alarm geluid af.
-     * Gebruikt bell.mp3 uit res/raw, met fallback naar systeem notificatie geluid.
-     */
-    private fun playAlarmSound() {
-        try {
-            // Release vorige MediaPlayer indien aanwezig
-            mediaPlayer?.release()
-            mediaPlayer = null
-            
-            // Probeer eerst bell.mp3 uit res/raw
-            var player: MediaPlayer? = null
-            try {
-                val bellResourceId = context.resources.getIdentifier("bell", "raw", context.packageName)
-                if (bellResourceId != 0) {
-                    player = MediaPlayer.create(context, bellResourceId)
-                    Log.i(TAG, "Gebruik bell.mp3 voor alarm geluid")
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "bell.mp3 niet gevonden, gebruik systeem notificatie: ${e.message}")
-            }
-            
-            // Fallback naar systeem notificatie geluid
-            if (player == null) {
-                player = MediaPlayer.create(
-                    context,
-                    android.provider.Settings.System.DEFAULT_NOTIFICATION_URI
-                )
-                Log.i(TAG, "Gebruik systeem notificatie geluid")
-            }
-            
-            player?.apply {
-                setOnCompletionListener { mp ->
-                    mp.release()
-                    if (mediaPlayer === mp) {
-                        mediaPlayer = null
-                    }
-                }
-                setOnErrorListener { mp, what, extra ->
-                    Log.e(TAG, "MediaPlayer error: what=$what, extra=$extra")
-                    mp.release()
-                    if (mediaPlayer === mp) {
-                        mediaPlayer = null
-                    }
-                    true
-                }
-                start()
-                mediaPlayer = this
-                Log.i(TAG, "Alarm geluid gestart")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Fout bij afspelen alarm geluid: ${e.message}", e)
-        }
-    }
-    
-    /**
-     * Laat het apparaat vibreren.
-     * Gebruikt VibratorManager (API 31+) aangezien minSdk = 33.
-     */
-    private fun vibrate() {
-        try {
-            val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-            val vibrator = vibratorManager.defaultVibrator
-            vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
-            Log.i(TAG, "Vibratie getriggerd")
-        } catch (e: Exception) {
-            Log.e(TAG, "Fout bij vibreren: ${e.message}", e)
-        }
     }
     
     /**
@@ -213,7 +171,5 @@ class TellingAlarmHandler(
      */
     fun cleanup() {
         stopMonitoring()
-        mediaPlayer?.release()
-        mediaPlayer = null
     }
 }
