@@ -88,6 +88,7 @@ Documents/VT5/
 │   ├── alias_master.json           # Alle aliassen (soortnaam-synoniemen)
 │   ├── alias_master.meta.json      # Metadata over de alias index
 │   ├── alias_index.json            # Exportformaat van aliases
+│   ├── annotations.json            # Annotatie-opties (leeftijd, geslacht, kleed)
 │   └── checkuser.json              # Gebruikersinfo na login
 │
 ├── binaries/                        # Geoptimaliseerde runtime bestanden
@@ -98,8 +99,7 @@ Documents/VT5/
 │   ├── species.json                # Alle vogelsoorten
 │   ├── site_species.json           # Soorten per telpost
 │   ├── sites.json                  # Telposten/locaties
-│   ├── codes.json                  # Annotatie-codes
-│   └── annotations.json            # Annotatie-opties
+│   └── codes.json                  # Weer- en overige codes
 │
 ├── counts/                          # Opgeslagen tellingen
 │   └── <timestamp>_count_<id>.json # Per telling een JSON-bestand
@@ -126,10 +126,11 @@ Klik op **"Test login"** om te verifiëren dat uw credentials werken. Bij succes
    - `species.json` — Alle vogelsoorten
    - `site_species.json` — Soorten per telpost
    - `sites.json` — Beschikbare telposten
-   - `codes.json` — Weer- en annotatiecodes
-   - `annotations.json` — Annotatie-opties (leeftijd, geslacht, kleed)
+   - `codes.json` — Weer- en overige codes
 
-3. Na het downloaden wordt automatisch de **alias-index** bijgewerkt
+3. Automatisch wordt `annotations.json` aangemaakt in `assets/` met standaard annotatie-opties (leeftijd, geslacht, kleed) indien nog niet aanwezig
+
+4. Na het downloaden wordt automatisch de **alias-index** bijgewerkt
 
 ### Alias Index Bijwerken
 De alias-index wordt automatisch bijgewerkt na het downloaden van server data. U kunt handmatig een rebuild forceren via **"Forceer heropbouw alias index"**.
