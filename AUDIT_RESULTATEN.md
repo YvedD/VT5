@@ -1,324 +1,429 @@
-# VT5 Production-Ready Audit - Volledige Resultaten
+# VT5 Codebase Audit Rapport
 
-## Samenvatting voor Gebruiker
-
-Beste ontwikkelaar,
-
-Ik heb een volledige production-ready audit uitgevoerd op de VT5 Android app. Hieronder vind je de resultaten en alle doorgevoerde verbeteringen.
+**Datum:** 25 november 2025
+**Branch:** main
+**Doel:** Identificeren van ongebruikte functies, variabelen, en bestanden
 
 ---
 
-## 📊 Audit Overzicht
+## Samenvatting
 
-### Codebase Statistieken
-- **Totaal Kotlin bestanden**: 96
-- **Totaal regels code**: 19,648
-- **Packages**: 20+ features en core modules
-- **Grootste module**: features/telling (24 bestanden)
-
-### Kwaliteitsscore VOOR Audit
-- ⚠️ **Log statements**: 615 (waarvan 185 debug logs)
-- ⚠️ **Unsafe null assertions**: 8 (!! operators)
-- ✅ **Memory leaks**: Geen gevonden
-- ✅ **Empty catch blocks**: Geen
-- ✅ **Thread.sleep**: Geen (alleen in comments)
-- ✅ **Static context leaks**: Geen
+| Categorie | Aantal |
+|-----------|--------|
+| Potentieel ongebruikte private functies | 86 |
+| Potentieel ongebruikte private variabelen | 29 |
+| Potentieel ongebruikte Kotlin bestanden | 2 |
+| Potentieel ongebruikte XML layouts | 1 |
+| Potentieel ongebruikte drawables | 2 |
 
 ---
 
-## ✅ Doorgevoerde Verbeteringen
+## 1. Potentieel Ongebruikte Private Functies (86)
 
-### 1. Debug Logging Cleanup ✅
-**Resultaat**: **185 Log.d() statements verwijderd** uit 33 bestanden
+> **Let op:** Deze functies worden 2x of minder aangetroffen in de codebase (1x definitie + mogelijk 1x call).
+> Functies die intern worden aangeroepen door andere private functies kunnen vals positief zijn.
 
-**Impact**:
-- ✅ Geen debug logs meer in productie
-- ✅ Schonere logcat output
-- ✅ Betere app performance (minder I/O)
-- ✅ Kleinere code footprint
+### VT5App.kt
+- L98: `preloadDataAsync()` - Wordt wel degelijk aangeroepen in onCreate()
 
-**Top bestanden met verwijderingen**:
-```
-TellingAnnotationHandler.kt:  27 statements
-AnnotatieScherm.kt:           14 statements
-ServerDataCache.kt:           10 statements
-TegelBeheer.kt:                9 statements
-VT5App.kt:                     9 statements
-AliasIndexManager.kt:          8 statements
-SpeechRecognitionManager.kt:   8 statements
-TellingScherm.kt:              8 statements
-ServerDataDownloadManager.kt:  7 statements
-TellingAfrondHandler.kt:       7 statements
-```
+### core/app/HourlyAlarmManager.kt
+- L113: `cancelAlarm()` - Mogelijk nodig voor alarm lifecycle
+- L130: `isTellingActive()` - Intern gebruikt
 
-**Behouden logging** (voor production monitoring):
-- **Log.i()**: 71 statements - Informatieve logs
-- **Log.w()**: 279 statements - Waarschuwingen
-- **Log.e()**: 80 statements - Error logging
+### features/alias/AliasIndexWriter.kt
+- L421: `writeStringToSaFOverwrite()` - Hulpfunctie
 
-### 2. Null Safety Verbeteringen ✅
-**Resultaat**: **Alle unsafe !! operators vervangen** met veilige null checks
+### features/alias/AliasManager.kt
+- L553: `scheduleBatchWrite()` - **ENIGE REF = DEFINITIE - NIET GEBRUIKT**
 
-#### AnnotationsManager.kt
-- **Fix**: 3 occurrences van `cachedMap!!`
-- **Methode**: Vervangen door explicit local variables en safe returns
-- **Impact**: Geen crashes bij null scenarios
+### features/alias/helpers/AliasSeedGenerator.kt
+- L135: `parseSiteSpeciesIds()` - Intern helper
+- L184: `loadSpeciesMap()` - Intern helper
+- L234: `buildSpeciesList()` - Intern helper
 
-**Voor**:
+### features/metadata/helpers/MetadataFormManager.kt
+- L113: `setupTellersAutoSave()` - Callback setup
+- L241: `openDatePicker()` - UI handler
+- L265: `openTimeSpinnerDialog()` - UI handler
+
+### features/metadata/helpers/WeatherDataFetcher.kt
+- L89: `applyWeatherToForm()` - Callback gebruikt
+- L144: `markWeatherAutoApplied()` - Intern helper
+
+### features/metadata/ui/MetadataScherm.kt
+- L117: `loadEssentialData()` - Activity lifecycle
+- L228: `ensureLocationPermissionThenFetch()` - Click handler
+- L270: `onVerderClicked()` - Click handler
+- L307: `startTellingAndOpenSoortSelectie()` - Navigation
+
+### features/opstart/helpers/AliasIndexManager.kt
+- L241: `sha256Hex()` - Crypto helper
+
+### features/opstart/helpers/ServerDataDownloadManager.kt
+- L145: `ensureAnnotationsFile()` - Download helper
+
+### features/opstart/ui/InstallatieScherm.kt
+- L102: `initUi()` - Activity init
+- L112: `wireClicks()` - Click handlers setup
+- L263: `handleDownloadServerData()` - Click handler
+- L413: `navigateToOpstart()` - Navigation
+- L428: `restoreCreds()` - Startup helper
+- L436: `refreshSafStatus()` - UI update
+
+### features/opstart/usecases/ServerJsonDownloader.kt
+- L130: `httpGetJsonBasicAuth()` - Network helper
+- L167: `parseJsonOrThrow()` - Parse helper
+- L185: `writeBin()` - File helper
+- L198: `datasetKindFor()` - Mapping helper
+- L214: `makeVt5BinHeader()` - Header builder
+
+### features/opstart/usecases/TrektellenAuth.kt
+- L70: `prettyJsonOrRaw()` - Debug helper
+
+### features/soort/ui/SoortSelectieScherm.kt
+- L104: `setupAdapters()` - Activity init
+- L182: `setupListeners()` - Listeners setup
+- L215: `loadData()` - Data loading
+- L413: `updateSuggestions()` - Search handler
+
+### features/speech/AliasPriorityMatcher.kt
+- L130: `tryExactMatch()` - Match helper
+
+### features/speech/DutchPhonemizer.kt
+- L124: `phonemizeUncached()` - Phonemization
+
+### features/speech/SpeechRecognitionManager.kt
+- L266: `createRecognitionListener()` - Speech setup
+- L459: `quickPartialParse()` - Parsing helper
+- L590: `calculateSimilarity()` - Matching helper
+- L655: `splitEmbeddedNumbers()` - Number parsing
+- L671: `findNextNumber()` - Number parsing
+- L688: `isDigitOne()` - Number helper
+- L726: `singularizeNl()` - Dutch linguistics
+
+### features/speech/VolumeKeyHandler.kt
+- L128: `handleKeyCodes()` - Key handling
+
+### features/speech/helpers/FastPathMatcher.kt
+- L97: `disambiguateSpecies()` - Match disambiguation
+- L118: `validateMatch()` - Match validation
+
+### features/speech/helpers/HeavyPathMatcher.kt
+- L140: `extractMatcherScore()` - Score extraction
+
+### features/speech/helpers/PendingMatchBuffer.kt
+- L102: `ensureWorkerRunning()` - Worker management
+- L119: `runWorkerLoop()` - Worker loop
+- L133: `processPendingItem()` - Item processing
+- L152: `handleTimeout()` - Timeout handler
+- L169: `handleSuccess()` - Success handler
+
+### features/speech/helpers/SpeechMatchLogger.kt
+- L62: `buildLogEntry()` - Log builder
+- L84: `buildCandidateLog()` - Log builder
+- L109: `buildMultiMatchLog()` - Log builder
+- L123: `writeToSAFAsync()` - SAF writer
+- L163: `appendToLogFile()` - File append
+- L186: `fallbackRewriteLogFile()` - Fallback writer
+
+### features/telling/AliasEditor.kt
+- L40: `validateAlias()` - Validation
+- L56: `cleanAliasForStorage()` - Sanitization
+
+### features/telling/AnnotatieScherm.kt
+- L213: `populateAllColumnsFromCache()` - UI population
+- L336: `addTagToRemarks()` - Tag handler
+- L387: `prefillCountFields()` - Field prefill
+- L414: `updateCountFieldLabels()` - Label update
+
+### features/telling/TellingAlarmHandler.kt
+- L81: `checkAndTriggerAlarm()` - Alarm check
+- L112: `calculateDelayUntilNextCheck()` - Delay calculation
+
+### features/telling/TellingAnnotationHandler.kt
+- L93: `handleAnnotationResult()` - Result handler
+- L300: `getCurrentTimestamp()` - Timestamp helper
+
+### features/telling/TellingMatchResultHandler.kt
+- L57: `handleAutoAcceptMatch()` - Match handler
+- L68: `handleAutoAcceptAddPopup()` - Popup handler
+- L80: `handleMultiMatch()` - Multi-match handler
+- L88: `extractCountFromHypothesis()` - Count extraction
+
+### features/telling/TellingScherm.kt
+- L315: `setupHelperCallbacks()` - Callback setup
+- L414: `setupUiWithManager()` - UI setup
+- L444: `handlePartialTap()` - Tap handler
+- L491: `handleFinalTap()` - Tap handler
+- L500: `handleAfrondenWithConfirmation()` - Confirm handler
+- L639: `initializeSpeechRecognition()` - Speech init
+- L653: `handleSpeechHypotheses()` - Speech handler
+- L736: `updateLogsUi()` - UI update
+- L901: `openSoortSelectieForAdd()` - Navigation
+
+### hoofd/HoofdActiviteit.kt
+- L85: `shutdownAndExit()` - Exit handler
+- L104: `finishAndRemoveTaskCompat()` - Exit helper
+- L112: `setupAlarmSection()` - Alarm UI setup
+
+### net/StartTellingApi.kt
+- L86: `nowAsSqlLike()` - Date formatting
+
+---
+
+## 2. Potentieel Ongebruikte Private Variabelen (29)
+
+### core/secure/CredentialsStore.kt
+- L13: `masterKey` - **VALS POSITIEF**: Wordt gebruikt in lazy getter
+
+### features/alias/AliasManager.kt
+- L68: `indexLoadMutex` - Synchronization mutex
+- L73: `masterWriteMutex` - Synchronization mutex
+
+### features/metadata/ui/MetadataScherm.kt
+- L55: `dataLoaded` - State tracking
+- L69: `requestLocationPerms` - Permission launcher
+- L291: `soortSelectieLauncher` - Activity result launcher
+
+### features/opstart/usecases/ServerJsonDownloader.kt
+- L41: `jsonLenient` - JSON parser config
+
+### features/opstart/usecases/TrektellenAuth.kt
+- L24: `jsonParser` - JSON parser
+
+### features/speech/AliasMatcher.kt
+- L47: `loadMutex` - Synchronization mutex
+- L53: `WHITESPACE` - Regex pattern
+
+### features/speech/AliasSpeechParser.kt
+- L46: `fastPathMatcher` - Matcher instance
+
+### features/speech/DutchPhonemizer.kt
+- L37: `multiCharRaw` - Character mapping
+- L66: `singleChar` - Character mapping
+
+### features/speech/NumberPatterns.kt
+- L52: `numberCologneCodes` - Phonetic codes
+- L60: `numberPhonemePatterns` - Phoneme patterns
+
+### features/speech/PhoneticModels.kt
+- L35: `firstCodeIndex` - Index tracking
+
+### features/speech/SpeechParsingBuffer.kt
+- L12: `maxSize` - Buffer config
+- L13: `expiryTimeMs` - Expiry config
+
+### features/telling/AnnotatieScherm.kt
+- L64: `leeftijdBtnIds` - Button ID array
+- L68: `geslachtBtnIds` - Button ID array
+- L71: `kleedBtnIds` - Button ID array
+- L75: `locationBtnIds` - Button ID array
+- L79: `heightBtnIds` - Button ID array
+
+### features/telling/SpeciesTileAdapter.kt
+- L17: `onTileClick` - Click callback
+
+### features/telling/SpeechLogAdapter.kt
+- L51: `fmt` - Date formatter
+
+### features/telling/TellingAfrondHandler.kt
+- L44: `PRETTY_JSON` - JSON config
+
+### features/telling/TellingLogManager.kt
+- L20: `RE_TRIM_RAW_NUMBER` - Regex pattern
+
+### features/telling/TellingScherm.kt
+- L144: `PARTIAL_UI_DEBOUNCE_MS` - Debounce constant
+
+### utils/weather/TextUtils.kt
+- L20: `TRAILING_NUMBER` - Regex pattern
+
+---
+
+## 3. Potentieel Ongebruikte Kotlin Bestanden (2)
+
+### `features/alias/AliasPrecomputeWorker.kt`
+- **Bevat:** `AliasPrecomputeWorker` class
+- **Status:** WorkManager worker die niet wordt gequeued
+- **Analyse:** Deze worker class is gedefinieerd maar wordt nergens gequeued via `WorkManager.enqueue()`. Mogelijk legacy code of gepland voor toekomstig gebruik.
+- **Aanbeveling:** ⚠️ Controleer of deze worker nog nodig is
+
+### `features/metadata/model/MetadataModels.kt`
+- **Bevat:** `MetadataHeader` data class
+- **Status:** Model class die niet wordt gebruikt
+- **Analyse:** Deze data class is gedefinieerd maar wordt nergens geïnstantieerd of als type gebruikt.
+- **Aanbeveling:** ⚠️ Kan verwijderd worden als niet meer nodig
+
+---
+
+## 4. Potentieel Ongebruikte XML Layouts (1)
+
+### `item_speech_log_secondary.xml`
+- **Status:** Niet gebruikt in ViewBinding of R.layout references
+- **Analyse:** Dit layout bestand wordt niet geïnflate in de huidige codebase
+- **Aanbeveling:** ⚠️ Controleer of dit voor toekomstige features gepland was
+
+---
+
+## 5. Potentieel Ongebruikte Drawables (2)
+
+### `vt5_btn_shape_normal.xml`
+- **Status:** Niet gerefereerd in andere XML of Kotlin bestanden
+- **Analyse:** Was mogelijk onderdeel van een oudere button selector
+- **Aanbeveling:** ✅ Kan veilig verwijderd worden
+
+### `vt5_btn_shape_pressed.xml`
+- **Status:** Niet gerefereerd in andere XML of Kotlin bestanden
+- **Analyse:** Was mogelijk onderdeel van een oudere button selector
+- **Aanbeveling:** ✅ Kan veilig verwijderd worden
+
+---
+
+## Belangrijke Opmerkingen
+
+### Vals Positieven
+Veel van de "ongebruikte" functies zijn **vals positieven** omdat:
+
+1. **Private functies worden intern aangeroepen** - Een functie kan private zijn en vanuit een andere private functie worden aangeroepen
+2. **Lifecycle callbacks** - Functies als `onCreate`, `onResume` worden door het Android framework aangeroepen
+3. **Activity result launchers** - Variabelen die callbacks registreren
+4. **Mutexes en synchronization primitives** - Worden impliciet gebruikt door coroutines
+
+### Echte Kandidaten voor Verwijdering
+
+Na grondige analyse zijn de volgende items **echt ongebruikt**:
+
+| Type | Bestand | Item | Veilig te verwijderen? |
+|------|---------|------|------------------------|
+| Kotlin | `AliasManager.kt` | `scheduleBatchWrite()` | ✅ Ja |
+| Kotlin | `AliasPrecomputeWorker.kt` | Hele bestand | ⚠️ Controleren |
+| Kotlin | `MetadataModels.kt` | `MetadataHeader` | ⚠️ Controleren |
+| XML | `item_speech_log_secondary.xml` | Hele bestand | ⚠️ Controleren |
+| Drawable | `vt5_btn_shape_normal.xml` | Hele bestand | ✅ Ja |
+| Drawable | `vt5_btn_shape_pressed.xml` | Hele bestand | ✅ Ja |
+
+---
+
+## Aanbevelingen
+
+1. **Gebruik Android Studio's "Unused declaration" inspections** voor meer nauwkeurige detectie
+2. **Voer een build uit** met strikte warnings om compiletime ongebruikte code te detecteren
+3. **Controleer git history** van verdachte bestanden om te zien wanneer ze voor het laatst zijn aangepast
+4. **Test na verwijdering** om te controleren of core functionaliteit intact blijft
+
+---
+
+---
+
+## 6. Potentieel Ongebruikte String Resources
+
+### strings.xml (21 mogelijk ongebruikt van 119 totaal)
+
+| String Name | Status |
+|-------------|--------|
+| `annotatie_none` | ⚠️ Mogelijk ongebruikt |
+| `annotatie_opmerkingen_hint` | ⚠️ Mogelijk ongebruikt |
+| `annotatie_opmerkingen_label` | ⚠️ Mogelijk ongebruikt |
+| `annotation_local` | ⚠️ Mogelijk ongebruikt |
+| `app_name` | **VALS POSITIEF** - Gebruikt in AndroidManifest.xml |
+| `btn_install_start` | ⚠️ Mogelijk ongebruikt |
+| `dialog_choose_species` | ⚠️ Mogelijk ongebruikt |
+| `dialog_finish_success` | ⚠️ Mogelijk ongebruikt |
+| `dlg_busy_titel` | ⚠️ Mogelijk ongebruikt |
+| `dlg_cancel` | ⚠️ Mogelijk ongebruikt |
+| `dlg_disable_next` | ⚠️ Mogelijk ongebruikt |
+| `metadata_cloudcover_format` | ⚠️ Mogelijk ongebruikt |
+| `metadata_error_no_location` | ⚠️ Mogelijk ongebruikt |
+| `metadata_error_unclear_msg` | ⚠️ Mogelijk ongebruikt |
+| `metadata_error_unclear_title` | ⚠️ Mogelijk ongebruikt |
+| `metadata_loading` | ⚠️ Mogelijk ongebruikt |
+| `msg_annotations_not_available` | ⚠️ Mogelijk ongebruikt |
+| `status_alias_rebuild_complete` | ⚠️ Mogelijk ongebruikt |
+| `status_alias_rebuild_error` | ⚠️ Mogelijk ongebruikt |
+| `telling_alias_saved_observation` | ⚠️ Mogelijk ongebruikt |
+| `tile_count` | ⚠️ Mogelijk ongebruikt |
+
+### strings_metadata.xml (1 mogelijk ongebruikt van 19 totaal)
+
+| String Name | Status |
+|-------------|--------|
+| `meta_weer_titel` | ⚠️ Mogelijk ongebruikt |
+
+---
+
+## Gedetailleerde Analyse van Echte Kandidaten
+
+### 1. `AliasManager.kt` → `scheduleBatchWrite()`
 ```kotlin
-cachedMap = emptyMap()
-return@withContext cachedMap!!  // ❌ Kan crashen
+private fun scheduleBatchWrite(context: Context, saf: SaFStorageHelper) {
+    // Functie is gedefinieerd maar wordt nergens aangeroepen
+}
 ```
+**Conclusie:** ✅ Veilig te verwijderen - functie wordt niet aangeroepen.
 
-**Na**:
-```kotlin
-val emptyCache = emptyMap<String, List<AnnotationOption>>()
-cachedMap = emptyCache
-return@withContext emptyCache  // ✅ Veilig
-```
+### 2. `AliasPrecomputeWorker.kt`
+Dit is een WorkManager worker class die:
+- Wel gedefinieerd is
+- Nergens wordt gequeued via `WorkManager.enqueue()`
+- Mogelijk was bedoeld voor background alias precomputing
 
-#### ServerJsonDownloader.kt
-- **Fix**: 2 occurrences van `openOutputStream()!!`
-- **Methode**: Safe null checks met early return
-- **Impact**: Graceful error handling bij I/O failures
+**Conclusie:** ⚠️ Controleren met ontwikkelaar - was dit gepland voor toekomstige functionaliteit?
 
-**Voor**:
-```kotlin
-cr.openOutputStream(uri, "w")!!.use { ... }  // ❌ Kan crashen
-```
+### 3. `MetadataModels.kt` → `MetadataHeader`
+Data class die metadata velden bevat maar nergens wordt gebruikt:
+- Alle velden zijn Strings
+- Bevat weer-gerelateerde data
+- Lijkt bedoeld voor JSON export
 
-**Na**:
-```kotlin
-val stream = cr.openOutputStream(uri, "w") ?: return false
-stream.use { ... }  // ✅ Veilig met fallback
-```
+**Conclusie:** ⚠️ Controleren - dit lijkt een niet-afgeronde feature te zijn.
 
----
+### 4. `item_speech_log_secondary.xml`
+Een layout voor een secundaire speech log item:
+- Geen ViewBinding referenties gevonden
+- Mogelijk voor toekomstige multi-log view
 
-## 📈 Voor/Na Vergelijking
+**Conclusie:** ⚠️ Controleren met ontwikkelaar.
 
-| Metric | Voor | Na | Verbetering |
-|--------|------|-----|-------------|
-| **Log.d() statements** | 185 | 0 | ✅ 100% verwijderd |
-| **Totale log statements** | 615 | 430 | ✅ 30% reductie |
-| **Unsafe !! operators** | 8 | 0 | ✅ 100% verwijderd |
-| **Code regels** | 19,648 | 19,468 | ✅ 180 regels minder |
-| **Bestanden aangepast** | - | 34 | - |
-| **Memory leaks** | 0 | 0 | ✅ Blijft clean |
-| **Empty catch blocks** | 0 | 0 | ✅ Blijft clean |
+### 5. Button Shape Drawables
+`vt5_btn_shape_normal.xml` en `vt5_btn_shape_pressed.xml`:
+- Werden vervangen door nieuwe selector states
+- Huidige selector gebruikt: `vt5_btn_checked`, `vt5_btn_pressed`, `vt5_btn_unchecked`
+
+**Conclusie:** ✅ Veilig te verwijderen - legacy drawables.
 
 ---
 
-## 🎯 Wat is NIET Aangepast (Waarom)
+## Volledige Statistieken
 
-### 1. Hardcoded Strings (1,344 stuks)
-**Reden**: Dit vereist een aparte internationalisatie (i18n) effort
-**Aanbeveling**: Plan apart voor toekomstige lokalisatie
-**Impact**: Geen - app is momenteel Nederlands-only
-
-### 2. Log.i() Statements (71 behouden)
-**Reden**: Nodig voor production monitoring
-**Voorbeelden**:
-- Data upload success/failure
-- App lifecycle events
-- Critical operation completion
-
-### 3. Log.w() Statements (279 behouden)
-**Reden**: Belangrijke waarschuwingen voor edge cases
-**Voorbeelden**:
-- Fallback scenarios
-- Data inconsistencies
-- Permission/resource issues
-
-### 4. Log.e() Statements (80 behouden)
-**Reden**: Essential error logging voor debugging production issues
-**Impact**: Nodig voor crash reports en user support
-
-### 5. Unused Imports
-**Reden**: Automatische cleanup via IDE (Android Studio) is effectiever
-**Aanbeveling**: Run "Optimize Imports" in Android Studio voor final cleanup
+| Categorie | Totaal | Potentieel Ongebruikt | Percentage |
+|-----------|--------|----------------------|------------|
+| Kotlin bestanden | 99 | 2 | 2.0% |
+| Private functies | ~537 | 86 | ~16% |
+| Private variabelen | ~200 | 29 | ~15% |
+| XML layouts | 16 | 1 | 6.3% |
+| Drawables | 12 | 2 | 16.7% |
+| String resources | 138 | 22 | 15.9% |
 
 ---
 
-## 🔒 Security & Privacy Check ✅
+## Actieplan
 
-### Credentials Storage
-✅ **VEILIG**: Gebruikt `EncryptedSharedPreferences`
-- Passwords en tokens encrypted at rest
-- Proper key management via Android Keystore
+### Fase 1: Veilige Verwijderingen (Low Risk)
+1. Verwijder `vt5_btn_shape_normal.xml`
+2. Verwijder `vt5_btn_shape_pressed.xml`
+3. Verwijder `scheduleBatchWrite()` uit `AliasManager.kt`
 
-### Permissions
-✅ **CORRECT GEDECLAREERD**:
-```xml
-- INTERNET ✅
-- RECORD_AUDIO ✅  
-- ACCESS_FINE_LOCATION ✅
-- SCHEDULE_EXACT_ALARM ✅
-- RECEIVE_BOOT_COMPLETED ✅
-- VIBRATE ✅
-```
+### Fase 2: Nader Onderzoek Vereist
+1. Controleer of `AliasPrecomputeWorker.kt` nog nodig is
+2. Controleer of `MetadataModels.kt` nog nodig is
+3. Controleer of `item_speech_log_secondary.xml` nog nodig is
+4. Beoordeel ongebruikte strings
 
-### Sensitive Data
-✅ **GEEN HARDCODED SECRETS**: 
-- Geen API keys in source code
-- Geen hardcoded passwords
-- Credentials via user input only
+### Fase 3: Validatie
+1. Build project na verwijderingen
+2. Run alle tests
+3. Test core functionaliteit handmatig
 
 ---
 
-## 🚀 Performance Analyse
-
-### Resource Management ✅
-- **78 `.use{}` blocks** - Proper automatic resource cleanup
-- **5 manual `.close()` calls** - Controlled cleanup waar nodig
-- **Geen resource leaks** gedetecteerd
-
-### Threading ✅
-- **Coroutines gebruikt** voor async operations
-- **1 runBlocking** - Alleen in safe cancellation path
-- **Geen Thread.sleep** in actieve code
-- **Dispatchers correct gebruikt** (Main, IO, Default)
-
-### Memory Management ✅
-- **Geen static Context references**
-- **Volatile waar nodig** voor thread-safe caching
-- **Proper lifecycle awareness** in Activities
-- **onLowMemory/onTrimMemory handlers** aanwezig in VT5App
-
----
-
-## 📝 Code Quality Score
-
-### Voor Audit
-```
-Code Quality: ⭐⭐⭐☆☆ (60%)
-- Debug logs in production code
-- Unsafe null assertions
-- Kan verbeterd worden
-```
-
-### Na Audit
-```
-Code Quality: ⭐⭐⭐⭐⭐ (95%)
-✅ Geen debug logs
-✅ Null-safe code
-✅ Production-ready
-✅ Proper error handling
-✅ Good resource management
-```
-
----
-
-## 🧪 Testing Aanbevelingen
-
-### MUST DO Voor Release
-1. **Manual Testing** op physical device:
-   - ✅ Voice recognition flow (critical!)
-   - ✅ Species selection en matching
-   - ✅ Data upload naar trektellen.nl
-   - ✅ Annotation flow
-   - ✅ Offline functionality
-   - ✅ Alarm systeem (hourly)
-
-2. **Edge Cases Testen**:
-   - ✅ No internet scenario
-   - ✅ No microphone permission
-   - ✅ Low storage space
-   - ✅ Background process killing
-   - ✅ Multiple rapid observations
-
-3. **Performance Testing**:
-   - ✅ App cold start time
-   - ✅ Voice recognition latency
-   - ✅ Species list scroll performance
-   - ✅ Memory usage during long sessions
-
-### SHOULD DO (Post-Release)
-4. Automated UI tests voor critical flows
-5. Performance profiling met Android Profiler
-6. Battery usage analysis
-7. Crash reporting setup (Firebase Crashlytics?)
-
----
-
-## 📦 Release Readiness Checklist
-
-### Code Quality ✅
-- [x] Debug logging verwijderd
-- [x] Null safety verbeterd
-- [x] No memory leaks
-- [x] Proper exception handling
-- [x] Resource cleanup correct
-
-### Configuration ✅
-- [x] Permissions correct gedeclareerd
-- [x] Version code/name up to date (versionCode: 1, versionName: "1.0")
-- [x] App icon aanwezig (alle densities)
-- [x] targetSdk 35 (latest)
-- [x] minSdk 33 (Android 13+)
-
-### Security ✅
-- [x] Encrypted credentials storage
-- [x] No hardcoded secrets
-- [x] Proper HTTPS usage
-- [x] Safe file operations (SAF)
-
-### Performance ✅
-- [x] Async operations op IO/Default dispatcher
-- [x] Main thread niet geblokkeerd
-- [x] Proper memory management
-- [x] Resource cleanup
-
-### ⚠️ TODO Voor Release
-- [ ] Manual testing op physical device
-- [ ] ProGuard/R8 configureren voor release build (optioneel)
-- [ ] Signed APK/AAB genereren
-- [ ] Play Store metadata voorbereiden
-
----
-
-## 🎉 Conclusie
-
-Je VT5 app is nu **aanzienlijk production-readier**!
-
-### Wat is Verbeterd
-✅ **185 debug logs** verwijderd → Schonere production code  
-✅ **8 unsafe null assertions** vervangen → Stabielere app  
-✅ **30% log reductie** → Betere performance  
-✅ **Zero functional changes** → Geen breaking changes  
-
-### Huidige Status
-🟢 **PRODUCTION-READY** - Klaar voor testing en release
-
-### Volgende Stappen
-1. **Review deze changes** in de PR
-2. **Manual testing** op een Android device (Android 13+)
-3. **Test vooral**: Voice recognition, data sync, offline mode
-4. **Merge naar main** als tests slagen
-5. **Genereer signed APK** voor release
-
----
-
-## 📚 Documentatie
-
-Alle details zijn gedocumenteerd in:
-1. **PRODUCTION_READY_AUDIT.md** - Volledige audit bevindingen
-2. **PRODUCTION_FIXES_SUMMARY.md** - Gedetailleerde fix samenvatting
-3. **Deze file (AUDIT_RESULTATEN.md)** - User-friendly overzicht
-
----
-
-## 💬 Vragen of Issues?
-
-Als je vragen hebt over specifieke changes of als je tijdens testing issues tegenkomt:
-1. Check de git diff voor de exacte changes
-2. Review de log van removed statements
-3. Test incrementeel (feature by feature)
-
-**Veel succes met je release!** 🚀
-
----
-
-*Audit uitgevoerd op: 24 November 2025*  
-*Branch: copilot/conduct-app-audit*  
-*Status: ✅ COMPLEET - Ready for manual testing*
+*Dit rapport is gegenereerd via statische analyse en kan vals positieven bevatten.*
