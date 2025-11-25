@@ -8,25 +8,22 @@ import android.widget.TableRow
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.yvesds.vt5.R
+import com.yvesds.vt5.utils.SeizoenUtils
 
 /**
  * HuidigeStandScherm
  *
- * Rudimentair overzichtsscherm dat de huidige soorten en aantallen toont
- * in een eenvoudige tabel met kolommen: Soortnaam | Totaal Aantal | ZW | NO
- *
- * Verwacht Intent extras:
- * - EXTRA_SOORT_IDS: ArrayList<String>
- * - EXTRA_SOORT_NAMEN: ArrayList<String>
- * - EXTRA_SOORT_AANTALLEN: ArrayList<String> (counts as strings)
+ * Overzichtsscherm dat de huidige soorten en aantallen toont
+ * in een eenvoudige tabel met kolommen: Soortnaam | Totaal | Hoofdrichting | Terug
+ * De labels voor de richtingen zijn seizoensafhankelijk (ZW/NO of NO/ZW).
  */
 class HuidigeStandScherm : AppCompatActivity() {
 
     companion object {
         const val EXTRA_SOORT_IDS = "extra_soort_ids"
         const val EXTRA_SOORT_NAMEN = "extra_soort_namen"
-        const val EXTRA_SOORT_AANTALLEN_ZW = "extra_soort_aantallen_zw"
-        const val EXTRA_SOORT_AANTALLEN_NO = "extra_soort_aantallen_no"
+        const val EXTRA_SOORT_AANTALLEN_MAIN = "extra_soort_aantallen_main"
+        const val EXTRA_SOORT_AANTALLEN_RETURN = "extra_soort_aantallen_return"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -37,40 +34,45 @@ class HuidigeStandScherm : AppCompatActivity() {
         val totalsTv = findViewById<TextView>(R.id.tv_totals)
         val okBtn = findViewById<Button>(R.id.btn_ok_huidige_stand)
 
-        // Header row
+        // Determine season-based labels
+        val isZwSeizoen = SeizoenUtils.isZwSeizoen()
+        val mainLabel = if (isZwSeizoen) "ZW" else "NO"
+        val returnLabel = if (isZwSeizoen) "NO" else "ZW"
+
+        // Header row with dynamic labels
         val header = TableRow(this).apply {
             val lp = TableLayout.LayoutParams(TableLayout.LayoutParams.MATCH_PARENT, TableLayout.LayoutParams.WRAP_CONTENT)
             layoutParams = lp
             setPadding(8, 8, 8, 8)
         }
         header.addView(makeHeaderTextView("Soortnaam"))
-        header.addView(makeHeaderTextView("Totaal Aantal"))
-        header.addView(makeHeaderTextView("ZW"))
-        header.addView(makeHeaderTextView("NO"))
+        header.addView(makeHeaderTextView("Totaal"))
+        header.addView(makeHeaderTextView(mainLabel))
+        header.addView(makeHeaderTextView(returnLabel))
         table.addView(header)
 
         // Read extras
         val ids = intent.getStringArrayListExtra(EXTRA_SOORT_IDS) ?: arrayListOf()
         val names = intent.getStringArrayListExtra(EXTRA_SOORT_NAMEN) ?: arrayListOf()
-        val countsZW = intent.getStringArrayListExtra(EXTRA_SOORT_AANTALLEN_ZW) ?: arrayListOf()
-        val countsNO = intent.getStringArrayListExtra(EXTRA_SOORT_AANTALLEN_NO) ?: arrayListOf()
+        val countsMain = intent.getStringArrayListExtra(EXTRA_SOORT_AANTALLEN_MAIN) ?: arrayListOf()
+        val countsReturn = intent.getStringArrayListExtra(EXTRA_SOORT_AANTALLEN_RETURN) ?: arrayListOf()
 
         // Safety: ensure sizes match; otherwise use shortest
-        val n = listOf(ids.size, names.size, countsZW.size, countsNO.size).minOrNull() ?: 0
+        val n = listOf(ids.size, names.size, countsMain.size, countsReturn.size).minOrNull() ?: 0
 
         var totalSum = 0
-        var zwSum = 0
-        var noSum = 0
+        var mainSum = 0
+        var returnSum = 0
 
         for (i in 0 until n) {
             val name = names[i]
-            val countZW = countsZW[i].toIntOrNull() ?: 0
-            val countNO = countsNO[i].toIntOrNull() ?: 0
-            val total = countZW + countNO
+            val countMain = countsMain[i].toIntOrNull() ?: 0
+            val countReturn = countsReturn[i].toIntOrNull() ?: 0
+            val total = countMain + countReturn
             
             totalSum += total
-            zwSum += countZW
-            noSum += countNO
+            mainSum += countMain
+            returnSum += countReturn
 
             val row = TableRow(this).apply {
                 val lp = TableLayout.LayoutParams(TableLayout.LayoutParams.MATCH_PARENT, TableLayout.LayoutParams.WRAP_CONTENT)
@@ -80,14 +82,14 @@ class HuidigeStandScherm : AppCompatActivity() {
 
             row.addView(makeCellTextView(name))
             row.addView(makeCellTextView(total.toString()))
-            row.addView(makeCellTextView(countZW.toString()))
-            row.addView(makeCellTextView(countNO.toString()))
+            row.addView(makeCellTextView(countMain.toString()))
+            row.addView(makeCellTextView(countReturn.toString()))
 
             table.addView(row)
         }
 
-        // Set totals text (use SUM symbol Σ)
-        totalsTv.text = getString(R.string.huidige_stand_totals, totalSum, zwSum, noSum)
+        // Set totals text with dynamic labels
+        totalsTv.text = getString(R.string.huidige_stand_totals_dynamic, totalSum, mainLabel, mainSum, returnLabel, returnSum)
 
         okBtn.setOnClickListener {
             // Simply finish and return to TellingScherm; TellingScherm state is preserved

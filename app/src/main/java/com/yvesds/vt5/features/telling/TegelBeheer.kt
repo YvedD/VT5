@@ -1,7 +1,6 @@
 package com.yvesds.vt5.features.telling
 
 import android.util.Log
-import java.util.Calendar
 
 /**
  * TegelBeheer.kt
@@ -16,9 +15,9 @@ import java.util.Calendar
  *  - Bij ASR of handmatige wijziging: tegelBeheer.verhoogSoortAantal(soortId, delta)
  *  - UI implementatie ontvangt submitTiles(list) en rolt de adapter updates uit op Main thread.
  *
- * Seizoen-gebaseerde tellers:
- *  - Jan-Jun (maand 1-6): Vogels gaan naar NO (noordoost migratie)
- *  - Jul-Dec (maand 7-12): Vogels gaan naar ZW (zuidwest migratie)
+ * De tellers gebruiken semantische richtingen:
+ *  - countMain: de hoofdrichting (record.aantal) - label is seizoensafhankelijk in UI
+ *  - countReturn: de tegengestelde richting (record.aantalterug)
  */
 
 private const val TAG = "TegelBeheer"
@@ -33,16 +32,19 @@ interface TegelUi {
 
 /**
  * Lokaal model voor één tegel (soort).
- * Houdt nu ZW (aantal) en NO (aantalterug) gescheiden bij.
+ * Houdt de aantallen gescheiden bij:
+ * - countMain: aantal in de hoofdrichting (record.aantal)
+ * - countReturn: aantal in de tegengestelde richting (record.aantalterug)
+ * De UI toont dynamisch de juiste labels (ZW/NO) gebaseerd op het seizoen.
  */
 data class SoortTile(
     val soortId: String,
     val naam: String,
-    val countZW: Int = 0,
-    val countNO: Int = 0
+    val countMain: Int = 0,
+    val countReturn: Int = 0
 ) {
     // Backwards compatible total count property
-    val count: Int get() = countZW + countNO
+    val count: Int get() = countMain + countReturn
 }
 
 /**
@@ -52,15 +54,6 @@ class TegelBeheer(private val ui: TegelUi) {
 
     private val tiles = mutableListOf<SoortTile>()
     private val lock = Any()
-    
-    /**
-     * Bepaal of we in ZW seizoen zitten (Jul-Dec) of NO seizoen (Jan-Jun).
-     * Returns true voor ZW seizoen, false voor NO seizoen.
-     */
-    private fun isZwSeizoen(): Boolean {
-        val month = Calendar.getInstance().get(Calendar.MONTH) + 1 // 1-12
-        return month in 7..12  // Jul-Dec = ZW seizoen
-    }
 
     fun setTiles(list: List<SoortTile>) {
         synchronized(lock) {
@@ -81,13 +74,8 @@ class TegelBeheer(private val ui: TegelUi) {
             val exists = tiles.any { it.soortId == soortId }
             if (exists) return false
             
-            // Seizoen-gebaseerd: plaats count in juiste teller
-            val isZw = isZwSeizoen()
-            val new = if (isZw) {
-                SoortTile(soortId = soortId, naam = naam, countZW = initialCount, countNO = 0)
-            } else {
-                SoortTile(soortId = soortId, naam = naam, countZW = 0, countNO = initialCount)
-            }
+            // New observations always go to countMain
+            val new = SoortTile(soortId = soortId, naam = naam, countMain = initialCount, countReturn = 0)
             
             tiles.add(new)
             tiles.sortBy { it.naam.lowercase() }
@@ -102,13 +90,7 @@ class TegelBeheer(private val ui: TegelUi) {
             if (idx >= 0) {
                 if (mergeIfExists) {
                     val current = tiles[idx]
-                    // Seizoen-gebaseerd verhogen
-                    val isZw = isZwSeizoen()
-                    val updated = if (isZw) {
-                        current.copy(countZW = current.countZW + initialCount)
-                    } else {
-                        current.copy(countNO = current.countNO + initialCount)
-                    }
+                    val updated = current.copy(countMain = current.countMain + initialCount)
                     tiles[idx] = updated
                     ui.onTileCountUpdated(soortId, updated.count)
                     ui.submitTiles(tiles.map { it.copy() })
@@ -116,13 +98,7 @@ class TegelBeheer(private val ui: TegelUi) {
                 return
             }
             
-            // Nieuwe tile: seizoen-gebaseerd
-            val isZw = isZwSeizoen()
-            val new = if (isZw) {
-                SoortTile(soortId = soortId, naam = naam, countZW = initialCount, countNO = 0)
-            } else {
-                SoortTile(soortId = soortId, naam = naam, countZW = 0, countNO = initialCount)
-            }
+            val new = SoortTile(soortId = soortId, naam = naam, countMain = initialCount, countReturn = 0)
             
             tiles.add(new)
             tiles.sortBy { it.naam.lowercase() }
@@ -140,13 +116,7 @@ class TegelBeheer(private val ui: TegelUi) {
             }
             
             val cur = tiles[idx]
-            // Seizoen-gebaseerd: verhoog juiste teller
-            val isZw = isZwSeizoen()
-            val updated = if (isZw) {
-                cur.copy(countZW = cur.countZW + delta)
-            } else {
-                cur.copy(countNO = cur.countNO + delta)
-            }
+            val updated = cur.copy(countMain = cur.countMain + delta)
             
             tiles[idx] = updated
             ui.onTileCountUpdated(soortId, updated.count)
@@ -160,14 +130,7 @@ class TegelBeheer(private val ui: TegelUi) {
             val idx = tiles.indexOfFirst { it.soortId == soortId }
             if (idx == -1) {
                 val initial = if (delta >= 0) delta else 0
-                
-                // Seizoen-gebaseerd: nieuwe tile
-                val isZw = isZwSeizoen()
-                val new = if (isZw) {
-                    SoortTile(soortId = soortId, naam = naamFallback, countZW = initial, countNO = 0)
-                } else {
-                    SoortTile(soortId = soortId, naam = naamFallback, countZW = 0, countNO = initial)
-                }
+                val new = SoortTile(soortId = soortId, naam = naamFallback, countMain = initial, countReturn = 0)
                 
                 tiles.add(new)
                 tiles.sortBy { it.naam.lowercase() }
@@ -175,13 +138,7 @@ class TegelBeheer(private val ui: TegelUi) {
                 return initial
             } else {
                 val cur = tiles[idx]
-                // Seizoen-gebaseerd: verhoog bestaande tile
-                val isZw = isZwSeizoen()
-                val updated = if (isZw) {
-                    cur.copy(countZW = cur.countZW + delta)
-                } else {
-                    cur.copy(countNO = cur.countNO + delta)
-                }
+                val updated = cur.copy(countMain = cur.countMain + delta)
                 
                 tiles[idx] = updated
                 ui.onTileCountUpdated(soortId, updated.count)
@@ -212,17 +169,18 @@ class TegelBeheer(private val ui: TegelUi) {
 
     fun logTilesState(prefix: String = "tiles") {
         synchronized(lock) {
-            val summary = tiles.joinToString(", ") { "${it.soortId}:${it.naam}:ZW=${it.countZW}+NO=${it.countNO}" }
+            val summary = tiles.joinToString(", ") { "${it.soortId}:${it.naam}:main=${it.countMain}+return=${it.countReturn}" }
         }
     }
     
     /**
      * Recalculate tile counts from pending records.
-     * This aggregates aantal into countZW and aantalterug into countNO.
+     * Direct mapping - no season logic needed:
+     * - record.aantal → countMain
+     * - record.aantalterug → countReturn
      */
     fun recalculateCountsFromRecords(records: List<com.yvesds.vt5.net.ServerTellingDataItem>) {
         synchronized(lock) {
-            // Create map of soortId -> (totalZW, totalNO)
             val countMap = mutableMapOf<String, Pair<Int, Int>>()
             
             for (record in records) {
@@ -234,13 +192,12 @@ class TegelBeheer(private val ui: TegelUi) {
                 countMap[soortId] = Pair(current.first + aantal, current.second + aantalterug)
             }
             
-            // Update tiles with new counts
             var changed = false
             for (i in tiles.indices) {
                 val tile = tiles[i]
                 val counts = countMap[tile.soortId] ?: Pair(0, 0)
-                if (tile.countZW != counts.first || tile.countNO != counts.second) {
-                    tiles[i] = tile.copy(countZW = counts.first, countNO = counts.second)
+                if (tile.countMain != counts.first || tile.countReturn != counts.second) {
+                    tiles[i] = tile.copy(countMain = counts.first, countReturn = counts.second)
                     changed = true
                 }
             }

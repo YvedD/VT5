@@ -16,6 +16,7 @@ import com.yvesds.vt5.R
 import com.yvesds.vt5.core.ui.ProgressDialogHelper
 import com.yvesds.vt5.features.annotation.AnnotationsManager
 import com.yvesds.vt5.features.annotation.AnnotationOption
+import com.yvesds.vt5.utils.SeizoenUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -43,6 +44,12 @@ class AnnotatieScherm : AppCompatActivity() {
         // Legacy keys expected by older code paths (keeps TellingScherm compile+runtime compatible)
         const val EXTRA_TEXT = "extra_text"
         const val EXTRA_TS = "extra_ts"
+        
+        // Keys for prefilling count fields from existing record values
+        // These are the raw record values, which need season-based mapping to UI fields
+        const val EXTRA_RECORD_AANTAL = "extra_record_aantal"           // record.aantal (main direction)
+        const val EXTRA_RECORD_AANTALTERUG = "extra_record_aantalterug" // record.aantalterug (opposite direction)
+        const val EXTRA_LOKAAL = "extra_lokaal"
     }
 
     private val json = Json { prettyPrint = false }
@@ -94,6 +101,12 @@ class AnnotatieScherm : AppCompatActivity() {
                 }
                 // populate the pre-drawn buttons and possibly append dynamic ones
                 populateAllColumnsFromCache()
+                
+                // Update count field labels based on current season
+                updateCountFieldLabels()
+                
+                // Prefill count fields with existing record values if provided
+                prefillCountFields()
             } finally {
                 progress.dismiss()
             }
@@ -142,14 +155,20 @@ class AnnotatieScherm : AppCompatActivity() {
                 selectedLabels.add("Handteller")
             }
 
-            // Manual count inputs
-            findViewById<EditText>(R.id.et_aantal_zw)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            // Manual count inputs - direct mapping (labels are adjusted based on season)
+            // et_aantal always maps to record.aantal (main direction)
+            // et_aantalterug always maps to record.aantalterug (opposite direction)
+            val isZwSeizoen = isZwSeizoen()
+            val mainLabel = if (isZwSeizoen) "ZW" else "NO"
+            val returnLabel = if (isZwSeizoen) "NO" else "ZW"
+            
+            findViewById<EditText>(R.id.et_aantal)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
                 resultMap["aantal"] = it
-                selectedLabels.add("ZW: $it")
+                selectedLabels.add("$mainLabel: $it")
             }
-            findViewById<EditText>(R.id.et_aantal_no)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            findViewById<EditText>(R.id.et_aantalterug)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
                 resultMap["aantalterug"] = it
-                selectedLabels.add("NO: $it")
+                selectedLabels.add("$returnLabel: $it")
             }
             findViewById<EditText>(R.id.et_aantal_lokaal)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
                 resultMap["lokaal"] = it
@@ -356,4 +375,62 @@ class AnnotatieScherm : AppCompatActivity() {
         // Refresh drawable state to apply the selector based on isChecked
         btn.refreshDrawableState()
     }
+    
+    /**
+     * Prefill count fields with existing record values if provided via Intent extras.
+     * This allows the user to see the current counts from the speech input and modify them.
+     * 
+     * The mapping from record fields to UI fields depends on the season:
+     * - In ZW seizoen (Jul-Dec): record.aantal → et_aantal_zw, record.aantalterug → et_aantal_no
+     * - In NO seizoen (Jan-Jun): record.aantal → et_aantal_no, record.aantalterug → et_aantal_zw
+     */
+    private fun prefillCountFields() {
+        // Get existing count values from intent extras (these are raw record values)
+        val recordAantal = intent.getStringExtra(EXTRA_RECORD_AANTAL)
+        val recordAantalterug = intent.getStringExtra(EXTRA_RECORD_AANTALTERUG)
+        val lokaal = intent.getStringExtra(EXTRA_LOKAAL)
+        
+        // Direct mapping - labels are already adjusted based on season
+        // et_aantal always corresponds to record.aantal
+        // et_aantalterug always corresponds to record.aantalterug
+        recordAantal?.takeIf { it.isNotBlank() && it != "0" }?.let { value ->
+            findViewById<EditText>(R.id.et_aantal)?.setText(value)
+        }
+        recordAantalterug?.takeIf { it.isNotBlank() && it != "0" }?.let { value ->
+            findViewById<EditText>(R.id.et_aantalterug)?.setText(value)
+        }
+        
+        // Prefill lokaal count field (this is direction-independent)
+        lokaal?.takeIf { it.isNotBlank() && it != "0" }?.let { value ->
+            findViewById<EditText>(R.id.et_aantal_lokaal)?.setText(value)
+        }
+    }
+    
+    /**
+     * Update the count field labels based on the current season.
+     * In ZW seizoen (Jul-Dec): "Aantal ZW :" and "Aantal NO :"
+     * In NO seizoen (Jan-Jun): "Aantal NO :" and "Aantal ZW :"
+     */
+    private fun updateCountFieldLabels() {
+        val isZwSeizoen = isZwSeizoen()
+        
+        val labelAantal = findViewById<TextView>(R.id.tv_label_aantal)
+        val labelAantalterug = findViewById<TextView>(R.id.tv_label_aantalterug)
+        
+        if (isZwSeizoen) {
+            // ZW seizoen: hoofdrichting is ZW, terug is NO
+            labelAantal?.text = getString(R.string.annotation_count_zw)
+            labelAantalterug?.text = getString(R.string.annotation_count_no)
+        } else {
+            // NO seizoen: hoofdrichting is NO, terug is ZW
+            labelAantal?.text = getString(R.string.annotation_count_no)
+            labelAantalterug?.text = getString(R.string.annotation_count_zw)
+        }
+    }
+    
+    /**
+     * Helper to get the current season status.
+     * Delegates to SeizoenUtils for consistent behavior across the app.
+     */
+    private fun isZwSeizoen(): Boolean = SeizoenUtils.isZwSeizoen()
 }

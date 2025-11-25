@@ -129,6 +129,8 @@
     <string name="annotation_manual_counts_title">Manuele aantallen:</string>
     <string name="annotation_count_zw">Aantal ZW :</string>
     <string name="annotation_count_no">Aantal NO :</string>
+    <string name="annotation_count_main">Aantal :</string>
+    <string name="annotation_count_return">Aantal terug :</string>
     <string name="annotation_count_local">Aantal Lokaal :</string>
     <string name="annotation_remarks">Opmerking:</string>
     <string name="annotation_remarks_hint">Opmerkingen bij waarneming</string>
@@ -145,6 +147,7 @@
 
     <string name="huidige_stand_title">Huidige stand van zaken</string>
     <string name="huidige_stand_totals">Σ Totaal: %1$d | ZW: %2$d ex | NO: %3$d ex</string>
+    <string name="huidige_stand_totals_dynamic">Σ Totaal: %1$d | %2$s: %3$d ex | %4$s: %5$d ex</string>
     <string name="huidige_stand_ok">OK</string>
 
     <string name="add_alias_partials_label">Geselecteerde partials (kies één):</string>

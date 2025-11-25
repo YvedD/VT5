@@ -183,11 +183,11 @@ class TellingScherm : AppCompatActivity() {
     data class SoortRow(
         val soortId: String, 
         val naam: String, 
-        val countZW: Int = 0,
-        val countNO: Int = 0
+        val countMain: Int = 0,
+        val countReturn: Int = 0
     ) {
         // Backwards compatible total count property
-        val count: Int get() = countZW + countNO
+        val count: Int get() = countMain + countReturn
     }
     data class SpeechLogRow(val ts: Long, val tekst: String, val bron: String)
 
@@ -211,7 +211,7 @@ class TellingScherm : AppCompatActivity() {
         // Initialize TegelBeheer early
         tegelBeheer = TegelBeheer(object : TegelUi {
             override fun submitTiles(list: List<SoortTile>) {
-                val rows = list.map { SoortRow(it.soortId, it.naam, it.countZW, it.countNO) }
+                val rows = list.map { SoortRow(it.soortId, it.naam, it.countMain, it.countReturn) }
                 tilesAdapter.submitList(rows)
                 if (::viewModel.isInitialized) {
                     viewModel.setTiles(rows)
@@ -523,20 +523,20 @@ class TellingScherm : AppCompatActivity() {
     private fun handleSaveClose(tiles: List<SoortRow>) {
         val ids = ArrayList<String>(tiles.size)
         val names = ArrayList<String>(tiles.size)
-        val countsZW = ArrayList<String>(tiles.size)
-        val countsNO = ArrayList<String>(tiles.size)
+        val countsMain = ArrayList<String>(tiles.size)
+        val countsReturn = ArrayList<String>(tiles.size)
         for (row in tiles) {
             ids.add(row.soortId)
             names.add(row.naam)
-            countsZW.add(row.countZW.toString())
-            countsNO.add(row.countNO.toString())
+            countsMain.add(row.countMain.toString())
+            countsReturn.add(row.countReturn.toString())
         }
 
         val intent = Intent(this, HuidigeStandScherm::class.java).apply {
             putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_IDS, ids)
             putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_NAMEN, names)
-            putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_AANTALLEN_ZW, countsZW)
-            putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_AANTALLEN_NO, countsNO)
+            putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_AANTALLEN_MAIN, countsMain)
+            putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_AANTALLEN_RETURN, countsReturn)
         }
         startActivity(intent)
     }
@@ -560,8 +560,8 @@ class TellingScherm : AppCompatActivity() {
                 SoortRow(
                     soortId = tile.soortId,
                     naam = tile.naam,
-                    countZW = tile.countZW,
-                    countNO = tile.countNO
+                    countMain = tile.countMain,
+                    countReturn = tile.countReturn
                 )
             }
             handleSaveClose(rows)
