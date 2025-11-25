@@ -113,7 +113,7 @@ Documents/VT5/
 ## 5. Server Data Downloaden
 
 ### Inloggegevens Instellen
-1. Vul uw **Trektellen.nl gebruikersnaam** in bij "Login"
+1. Vul uw **trektellen.nl gebruikersnaam** in bij "Login"
 2. Vul uw **wachtwoord** in
 3. Klik op **"Bewaar"** om de gegevens veilig op te slaan
 
@@ -415,7 +415,7 @@ Klik op **"OK"** om terug te keren naar het telscherm.
 
 ## 14. Telling Afronden
 
-Na het voltooien van uw telling uploadt u de gegevens naar Trektellen.nl.
+Na het voltooien van uw telling uploadt u de gegevens naar trektellen.nl.
 
 ### Afronden
 1. Klik op **"Afronden"** in het telscherm
@@ -426,7 +426,7 @@ Na het voltooien van uw telling uploadt u de gegevens naar Trektellen.nl.
 1. VT5 bouwt een `counts_save` envelope met:
    - Alle metadata (telpost, datum, tijd, weer)
    - Alle waarnemingen met annotaties
-2. De envelope wordt geüpload naar Trektellen.nl
+2. De envelope wordt geüpload naar trektellen.nl
 3. Bij succes:
    - Lokale backup-bestanden worden opgeruimd
    - De telling wordt opgeslagen in `counts/` als archief
@@ -487,7 +487,7 @@ VT5 gebruikt de Open-Meteo API voor weergegevens (gratis, geen API-key nodig).
 ### Q: Mijn soort wordt niet herkend
 **A:** Maak een alias aan (zie sectie 11) of zoek de soort handmatig via de zoekfunctie.
 
-### Q: Data is niet gesynced naar Trektellen.nl
+### Q: Data is niet gesynced naar trektellen.nl
 **A:** Controleer uw internetverbinding. Open de app en klik op "Afronden" om opnieuw te proberen.
 
 ### Q: Ik wil een telling annuleren
@@ -507,7 +507,7 @@ VT5 gebruikt de Open-Meteo API voor weergegevens (gratis, geen API-key nodig).
 
 ## Contact & Support
 
-Voor vragen of problemen, neem contact op via de Trektellen.nl website of de app-ontwikkelaar.
+Voor vragen of problemen, neem contact op via de trektellen.nl website of de app-ontwikkelaar.
 
 ---
 
