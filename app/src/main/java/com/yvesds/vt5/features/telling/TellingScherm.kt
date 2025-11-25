@@ -130,6 +130,7 @@ class TellingScherm : AppCompatActivity() {
     private lateinit var speciesManager: TellingSpeciesManager
     private lateinit var annotationHandler: TellingAnnotationHandler
     private lateinit var initializer: TellingInitializer
+    private lateinit var alarmHandler: TellingAlarmHandler
 
     // Legacy helpers
     private lateinit var aliasEditor: AliasEditor
@@ -297,6 +298,12 @@ class TellingScherm : AppCompatActivity() {
         matchResultHandler = TellingMatchResultHandler(this)
         // speciesManager and annotationHandler already initialized before super.onCreate()
         initializer = TellingInitializer(this)
+        
+        // Initialize alarm handler for hourly alarm at minute 59
+        alarmHandler = TellingAlarmHandler(this, lifecycleScope)
+        alarmHandler.onAlarmTriggered = {
+            showHuidigeStandScherm()
+        }
 
         // Setup callbacks for new helpers
         setupHelperCallbacks()
@@ -567,6 +574,22 @@ class TellingScherm : AppCompatActivity() {
             initializer.onPermissionResult(requestCode, grantResults)
         }
     }
+    
+    override fun onResume() {
+        super.onResume()
+        // Start alarm monitoring when the screen is visible
+        if (::alarmHandler.isInitialized) {
+            alarmHandler.startMonitoring()
+        }
+    }
+    
+    override fun onPause() {
+        super.onPause()
+        // Stop alarm monitoring when the screen is not visible
+        if (::alarmHandler.isInitialized) {
+            alarmHandler.stopMonitoring()
+        }
+    }
 
     override fun onDestroy() {
         try {
@@ -575,6 +598,11 @@ class TellingScherm : AppCompatActivity() {
         try {
             if (::speechHandler.isInitialized) {
                 speechHandler.cleanup()
+            }
+        } catch (_: Exception) {}
+        try {
+            if (::alarmHandler.isInitialized) {
+                alarmHandler.cleanup()
             }
         } catch (_: Exception) {}
         super.onDestroy()
