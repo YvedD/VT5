@@ -508,7 +508,7 @@ VT5 gebruikt de Open-Meteo API voor weergegevens (gratis, geen API-key nodig).
 
 ## Contact & Support
 
-Voor vragen of problemen, neem contact op via de trektellen.nl website of de app-ontwikkelaar.
+Voor vragen of problemen, neem contact op met de app-ontwikkelaar.
 
 ---
 
