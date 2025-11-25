@@ -1,7 +1,6 @@
 package com.yvesds.vt5.core.app
 
 import android.content.Context
-import android.content.Intent
 import android.util.Log
 
 /**
@@ -9,22 +8,20 @@ import android.util.Log
  * 
  * Hulpklasse voor het testen van het uurlijkse alarm systeem.
  * Kan gebruikt worden in debug builds of in een test/instellingen scherm.
+ * 
+ * Gebruikt AlarmSoundHelper voor geluid en vibratie.
  */
 object AlarmTestHelper {
     private const val TAG = "AlarmTestHelper"
     
     /**
      * Triggert het alarm handmatig voor test doeleinden.
-     * Dit simuleert het ontvangen van een alarm broadcast.
+     * Speelt direct geluid af en vibreert (geen broadcast nodig).
      */
     fun triggerAlarmManually(context: Context) {
-        try {
-            val intent = Intent(context, HourlyAlarmManager.HourlyAlarmReceiver::class.java)
-            context.sendBroadcast(intent)
-            Log.i(TAG, "Test alarm handmatig getriggerd")
-        } catch (e: Exception) {
-            Log.e(TAG, "Fout bij triggeren test alarm: ${e.message}", e)
-        }
+        Log.i(TAG, "Test alarm handmatig getriggerd")
+        AlarmSoundHelper.playAlarmSound(context)
+        AlarmSoundHelper.vibrate(context)
     }
     
     /**

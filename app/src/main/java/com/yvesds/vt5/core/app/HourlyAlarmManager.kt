@@ -6,9 +6,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
-import android.media.MediaPlayer
-import android.os.VibrationEffect
-import android.os.VibratorManager
 import android.util.Log
 import androidx.core.content.edit
 import com.yvesds.vt5.R
@@ -143,9 +140,9 @@ object HourlyAlarmManager {
         override fun onReceive(context: Context, intent: Intent) {
             Log.i(TAG, "Uurlijks alarm ontvangen")
             
-            // Speel geluid en vibreer
-            playAlarmSound(context)
-            vibrate(context)
+            // Speel geluid en vibreer via gedeelde helper
+            AlarmSoundHelper.playAlarmSound(context)
+            AlarmSoundHelper.vibrate(context)
             
             // Als een telling actief is, toon HuidigeStandScherm
             if (isTellingActive(context)) {
@@ -154,56 +151,6 @@ object HourlyAlarmManager {
             
             // Plan het volgende alarm
             scheduleNextAlarm(context)
-        }
-        
-        /**
-         * Speelt het alarm geluid af
-         * Gebruikt bell.mp3 uit res/raw, met fallback naar systeem notificatie geluid
-         */
-        private fun playAlarmSound(context: Context) {
-            try {
-                // Probeer eerst bell.mp3 uit res/raw
-                var mediaPlayer: MediaPlayer? = null
-                try {
-                    val bellResourceId = context.resources.getIdentifier("bell", "raw", context.packageName)
-                    if (bellResourceId != 0) {
-                        mediaPlayer = MediaPlayer.create(context, bellResourceId)
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "bell.mp3 niet gevonden, gebruik systeem notificatie: ${e.message}")
-                }
-                
-                // Fallback naar systeem notificatie geluid als bell.mp3 niet beschikbaar is
-                if (mediaPlayer == null) {
-                    mediaPlayer = MediaPlayer.create(
-                        context,
-                        android.provider.Settings.System.DEFAULT_NOTIFICATION_URI
-                    )
-                }
-                
-                mediaPlayer?.apply {
-                    setOnCompletionListener { mp ->
-                        mp.release()
-                    }
-                    start()
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Fout bij afspelen alarm geluid: ${e.message}", e)
-            }
-        }
-        
-        /**
-         * Laat het apparaat vibreren
-         * Gebruikt VibratorManager (API 31+) aangezien minSdk = 33
-         */
-        private fun vibrate(context: Context) {
-            try {
-                val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-                val vibrator = vibratorManager.defaultVibrator
-                vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE))
-            } catch (e: Exception) {
-                Log.e(TAG, "Fout bij vibreren: ${e.message}", e)
-            }
         }
         
         /**
