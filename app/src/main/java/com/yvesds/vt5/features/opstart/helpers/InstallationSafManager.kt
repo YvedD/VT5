@@ -15,30 +15,33 @@ import com.yvesds.vt5.core.opslag.SaFStorageHelper
  * - Folder existence checks
  * - VT5 directory en subdirectory management
  * 
+ * BELANGRIJK: Deze class moet geïnitialiseerd worden vóór de activity in STARTED state is,
+ * d.w.z. in onCreate() voordat super.onCreate() wordt aangeroepen of direct daarna.
+ * 
  * Gebruik:
  * ```kotlin
- * val safManager = InstallationSafManager(activity, safHelper)
- * val picker = safManager.setupDocumentPicker { success ->
+ * // In onCreate():
+ * val safManager = InstallationSafManager(activity, safHelper) { success ->
  *     if (success) {
  *         // SAF setup succesvol
  *     }
  * }
+ * 
+ * // In click listener:
+ * safManager.launchDocumentPicker()
  * ```
  */
 class InstallationSafManager(
     private val activity: AppCompatActivity,
-    private val safHelper: SaFStorageHelper
+    private val safHelper: SaFStorageHelper,
+    onResult: (Boolean) -> Unit
 ) {
     /**
-     * Setup de document tree picker voor SAF toegang.
-     * 
-     * @param onResult Callback die aangeroepen wordt met true als setup succesvol was
-     * @return ActivityResultLauncher voor de tree picker
+     * Pre-registered ActivityResultLauncher voor de document tree picker.
+     * Moet geregistreerd worden voordat de activity in STARTED state komt.
      */
-    fun setupDocumentPicker(
-        onResult: (Boolean) -> Unit
-    ): ActivityResultLauncher<Uri?> {
-        return activity.registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+    private val documentPickerLauncher: ActivityResultLauncher<Uri?> =
+        activity.registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
             if (uri == null) {
                 onResult(false)
                 return@registerForActivityResult
@@ -50,6 +53,13 @@ class InstallationSafManager(
             val success = safHelper.foldersExist() || safHelper.ensureFolders()
             onResult(success)
         }
+    
+    /**
+     * Start de document tree picker.
+     * Kan veilig worden aangeroepen vanuit een click listener.
+     */
+    fun launchDocumentPicker() {
+        documentPickerLauncher.launch(null)
     }
     
     /**

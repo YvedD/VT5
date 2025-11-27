@@ -87,9 +87,21 @@ class InstallatieScherm : AppCompatActivity() {
 
     /**
      * Initialize all helper managers.
+     * 
+     * BELANGRIJK: safManager moet hier geïnitialiseerd worden (in onCreate) 
+     * omdat registerForActivityResult() moet worden aangeroepen voordat 
+     * de activity in STARTED state komt.
      */
     private fun initializeHelpers() {
-        safManager = InstallationSafManager(this, saf)
+        safManager = InstallationSafManager(this, saf) { success ->
+            binding.tvStatus.text = if (success) {
+                preloadDataIfExists()
+                getString(R.string.status_saf_ok)
+            } else {
+                getString(R.string.status_saf_niet_ingesteld)
+            }
+            updatePrecomputeButtonState()
+        }
         authManager = ServerAuthenticationManager(this)
         downloadManager = ServerDataDownloadManager(this)
         aliasManager = AliasIndexManager(this, saf)
@@ -112,16 +124,7 @@ class InstallatieScherm : AppCompatActivity() {
     private fun wireClicks() = with(binding) {
         // SAF picker button
         btnKiesDocuments.setOnClickListener { 
-            val picker = safManager.setupDocumentPicker { success ->
-                tvStatus.text = if (success) {
-                    preloadDataIfExists()
-                    getString(R.string.status_saf_ok)
-                } else {
-                    getString(R.string.status_saf_niet_ingesteld)
-                }
-                updatePrecomputeButtonState()
-            }
-            picker.launch(null)
+            safManager.launchDocumentPicker()
         }
 
         // Check/create folders button
