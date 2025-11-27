@@ -145,7 +145,7 @@ object AliasManager {
 
     /* Note: Helper methods moved to specialized helper classes:
      * - AliasIndexCache: loadIndexFromInternalCache, writeIndexToInternalCache, deleteInternalCache
-     * - AliasSafWriter: safeWriteToDocument, safeWriteTextToDocument, writeCopyToExports
+     * - AliasSafWriter: safeWriteToDocument, safeWriteTextToDocument
      */
 
     /**
@@ -336,17 +336,12 @@ object AliasManager {
                 if (masterDoc != null) {
                     wroteMaster = AliasSafWriter.safeWriteTextToDocument(context, masterDoc, prettyJson)
                     if (!wroteMaster) {
-                        Log.w(TAG, "writeMasterAndCborToSaf: writing master.json to assets failed; will fallback to internal cache and exports copy")
+                        Log.w(TAG, "writeMasterAndCborToSaf: writing master.json to assets failed; will fallback to internal cache")
                     } else {
                         Log.i(TAG, "writeMasterAndCborToSaf: wrote $masterName to ${masterDoc.uri} (${prettyJson.length} bytes)")
                     }
                 } else {
                     Log.e(TAG, "writeMasterAndCborToSaf: failed creating $masterName in assets")
-                }
-
-                // Also write a user-visible copy to exports folder (best-effort)
-                runCatching {
-                    AliasSafWriter.writeCopyToExports(context, vt5RootDir, MASTER_FILE, prettyJson.toByteArray(Charsets.UTF_8), "application/json")
                 }
             }
 
@@ -382,11 +377,6 @@ object AliasManager {
                 }
             } else {
                 Log.e(TAG, "writeMasterAndCborToSaf: failed creating $cborName in binaries")
-            }
-
-            // Also write user-visible copy to exports
-            runCatching {
-                AliasSafWriter.writeCopyToExports(context, vt5RootDir, CBOR_FILE, gzipped, "application/octet-stream")
             }
 
             // If SAF write to binaries failed, ensure internal cache is updated so runtime uses latest index
@@ -683,12 +673,6 @@ object AliasManager {
                 Log.w(TAG, "Failed to update internal cache after rebuildCborCache: ${ex.message}")
             }
 
-            // Also write a user-visible copy to exports for accessibility (best-effort)
-            val vt5 = saf.getVt5DirIfExists()
-            if (vt5 != null) {
-                runCatching { AliasSafWriter.writeCopyToExports(context, vt5, CBOR_FILE, gzipped, "application/octet-stream") }
-            }
-
             Log.i(TAG, "Rebuilt CBOR cache: ${index.json.size} records, ${gzipped.size} bytes compressed (safWrite=$wroteSaf)")
         } catch (ex: Exception) {
             Log.e(TAG, "rebuildCborCache failed: ${ex.message}", ex)
@@ -759,8 +743,7 @@ object AliasManager {
                     val prettyJson = jsonPretty.encodeToString(AliasMaster.serializer(), updatedMaster)
                     val wrote = AliasSafWriter.safeWriteTextToDocument(context, masterDoc, prettyJson)
                     if (!wrote) {
-                        // fallback: write a copy to exports for user access, and ensure internal cache updated
-                        AliasSafWriter.writeCopyToExports(context, vt5, MASTER_FILE, prettyJson.toByteArray(Charsets.UTF_8), "application/json")
+                        // fallback: ensure internal cache updated
                         val idx = updatedMaster.toAliasIndex()
                         AliasIndexCache.write(context, idx)
                     }
@@ -774,15 +757,12 @@ object AliasManager {
                     val prettyJson = jsonPretty.encodeToString(AliasMaster.serializer(), updatedMaster)
                     val wrote = AliasSafWriter.safeWriteTextToDocument(context, masterDoc, prettyJson)
                     if (!wrote) {
-                        // fallback: write to exports and update internal cache
-                        AliasSafWriter.writeCopyToExports(context, vt5, MASTER_FILE, prettyJson.toByteArray(Charsets.UTF_8), "application/json")
+                        // fallback: update internal cache
                         val idx = updatedMaster.toAliasIndex()
                         AliasIndexCache.write(context, idx)
-                        Log.w(TAG, "writeSingleAliasToMasterImmediate: writing master.json to assets failed; used exports/internal cache fallback")
-                        return@withContext true // treat as success: durable via internal cache + exports
+                        Log.w(TAG, "writeSingleAliasToMasterImmediate: writing master.json to assets failed; used internal cache fallback")
+                        return@withContext true // treat as success: durable via internal cache
                     } else {
-                        // also write a user-visible copy to exports
-                        AliasSafWriter.writeCopyToExports(context, vt5, MASTER_FILE, prettyJson.toByteArray(Charsets.UTF_8), "application/json")
                         Log.i(TAG, "writeSingleAliasToMasterImmediate: wrote alias to master.json for species=$speciesId")
                         return@withContext true
                     }
