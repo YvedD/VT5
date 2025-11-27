@@ -32,11 +32,17 @@ class CredentialsStore(context: Context) {
     private val prefs: SharedPreferences = createEncryptedPrefs()
 
     fun save(username: String, password: String) {
+        Log.i(TAG, "Saving credentials - username: ${if (username.isNotBlank()) "present" else "blank"}, password: ${if (password.isNotBlank()) "present" else "blank"}")
         val result = prefs.edit()
             .putString(KEY_USER, username)
             .putString(KEY_PASS, password)
             .commit()  // Use commit() instead of apply() for EncryptedSharedPreferences to ensure synchronous save
         Log.i(TAG, "Credentials save: ${if (result) "success" else "failed"}")
+        
+        // Verify by immediately reading back
+        val savedUsername = prefs.getString(KEY_USER, null)
+        val savedPassword = prefs.getString(KEY_PASS, null)
+        Log.i(TAG, "Verification - username saved: ${if (savedUsername == username) "OK" else "MISMATCH"}, password saved: ${if (savedPassword == password) "OK" else "MISMATCH"}")
     }
 
     fun getUsername(): String? {
@@ -63,14 +69,17 @@ class CredentialsStore(context: Context) {
      * keys are mismatched (e.g., after device reset or app data corruption).
      */
     private fun createEncryptedPrefs(): SharedPreferences {
+        Log.i(TAG, "Creating EncryptedSharedPreferences...")
         return try {
-            EncryptedSharedPreferences.create(
+            val prefs = EncryptedSharedPreferences.create(
                 appContext,
                 PREFS_FILE_NAME,
                 masterKey,
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
+            Log.i(TAG, "EncryptedSharedPreferences created successfully")
+            prefs
         } catch (e: GeneralSecurityException) {
             // AEADBadTagException (subclass of GeneralSecurityException), KeyStoreException, etc.
             // This happens when the MasterKey changed (device reset) but old encrypted
@@ -89,20 +98,23 @@ class CredentialsStore(context: Context) {
      * If recovery fails, falls back to in-memory preferences.
      */
     private fun recoverFromCorruptedPrefs(): SharedPreferences {
+        Log.w(TAG, "Attempting to recover from corrupted preferences...")
         clearCorruptedPrefsFile()
         
         return try {
-            EncryptedSharedPreferences.create(
+            val prefs = EncryptedSharedPreferences.create(
                 appContext,
                 PREFS_FILE_NAME,
                 masterKey,
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
+            Log.i(TAG, "Recovery successful - EncryptedSharedPreferences recreated")
+            prefs
         } catch (e: Exception) {
             // If retry also fails, use fallback unencrypted in-memory storage
             // This is a last-resort to prevent app crashes
-            Log.e(TAG, "Recovery failed, using fallback storage: ${e.message}")
+            Log.e(TAG, "Recovery failed, using fallback IN-MEMORY storage (credentials will NOT persist!): ${e.message}")
             FallbackPreferences()
         }
     }
