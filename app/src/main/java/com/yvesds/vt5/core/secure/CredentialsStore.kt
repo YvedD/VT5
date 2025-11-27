@@ -32,19 +32,31 @@ class CredentialsStore(context: Context) {
     private val prefs: SharedPreferences = createEncryptedPrefs()
 
     fun save(username: String, password: String) {
-        prefs.edit()
+        val result = prefs.edit()
             .putString(KEY_USER, username)
             .putString(KEY_PASS, password)
-            .apply()
+            .commit()  // Use commit() instead of apply() for EncryptedSharedPreferences to ensure synchronous save
+        Log.i(TAG, "Credentials save: ${if (result) "success" else "failed"}")
     }
 
-    fun getUsername(): String? = prefs.getString(KEY_USER, null)
-    fun getPassword(): String? = prefs.getString(KEY_PASS, null)
+    fun getUsername(): String? {
+        val username = prefs.getString(KEY_USER, null)
+        Log.d(TAG, "getUsername(): ${if (username.isNullOrBlank()) "absent" else "present"}")
+        return username
+    }
+    
+    fun getPassword(): String? {
+        val password = prefs.getString(KEY_PASS, null)
+        Log.d(TAG, "getPassword(): ${if (password.isNullOrBlank()) "absent" else "present"}")
+        return password
+    }
 
     fun hasCredentials(): Boolean = !getUsername().isNullOrEmpty() && !getPassword().isNullOrEmpty()
 
     fun clear() {
-        prefs.edit().remove(KEY_USER).remove(KEY_PASS).apply()
+        prefs.edit().remove(KEY_USER).remove(KEY_PASS).commit()  // Use commit() for synchronous save
+        Log.i(TAG, "Credentials cleared")
+    }
     }
 
     /**
