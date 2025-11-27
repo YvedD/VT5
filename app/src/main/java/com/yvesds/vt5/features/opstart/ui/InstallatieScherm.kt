@@ -232,15 +232,17 @@ class InstallatieScherm : AppCompatActivity() {
                     is ServerAuthenticationManager.AuthResult.Success -> {
                         dialogManager.showInfo(getString(R.string.dlg_titel_result), result.response)
                         
+                        // Save credentials automatically after successful login test
+                        creds.save(username, password)
+                        
                         // Save fullname to SharedPreferences for quick access
                         authManager.saveFullnameToPreferences(result.response)
                         
-                        // Save checkuser.json
+                        // Save checkuser.json to serverdata folder
                         lifecycleScope.launch(Dispatchers.IO) {
                             try {
-                                val vt5Dir = safManager.getVt5Directory()
-                                val assetsDir = safManager.getSubdirectory("assets", createIfMissing = true)
-                                authManager.saveCheckUserResponse(assetsDir, result.response)
+                                val serverdataDir = safManager.getSubdirectory("serverdata", createIfMissing = true)
+                                authManager.saveCheckUserResponse(serverdataDir, result.response)
                             } catch (e: Exception) {
                                 Log.w(TAG, "Error saving checkuser.json: ${e.message}", e)
                             }
