@@ -137,20 +137,12 @@ object AliasMasterIO {
                 if (masterDoc != null) {
                     val wroteMaster = AliasSafWriter.safeWriteTextToDocument(context, masterDoc, prettyJson)
                     if (!wroteMaster) {
-                        Log.w(TAG, "writeMasterAndCbor: writing master.json to assets failed; will fallback to internal cache and exports copy")
+                        Log.w(TAG, "writeMasterAndCbor: writing master.json to assets failed; will fallback to internal cache")
                     } else {
                         Log.i(TAG, "writeMasterAndCbor: wrote $MASTER_FILE to ${masterDoc.uri} (${prettyJson.length} bytes)")
                     }
                 } else {
                     Log.e(TAG, "writeMasterAndCbor: failed creating $MASTER_FILE in assets")
-                }
-                
-                // Also write a user-visible copy to exports folder (best-effort)
-                runCatching {
-                    AliasSafWriter.writeCopyToExports(
-                        context, vt5RootDir, MASTER_FILE, 
-                        prettyJson.toByteArray(Charsets.UTF_8), "application/json"
-                    )
                 }
             }
             
@@ -189,13 +181,6 @@ object AliasMasterIO {
                 }
             } else {
                 Log.e(TAG, "writeMasterAndCbor: failed creating $CBOR_FILE in binaries")
-            }
-            
-            // Also write user-visible copy to exports
-            runCatching {
-                AliasSafWriter.writeCopyToExports(
-                    context, vt5RootDir, CBOR_FILE, gzipped, "application/octet-stream"
-                )
             }
             
             // Always update internal cache so runtime uses latest index

@@ -199,16 +199,6 @@ object AliasCborRebuilder {
                 Log.w(TAG, "Failed to update internal cache after rebuildCborCache: ${ex.message}")
             }
             
-            // Write exports copy
-            val vt5 = saf.getVt5DirIfExists()
-            if (vt5 != null) {
-                runCatching {
-                    AliasSafWriter.writeCopyToExports(
-                        context, vt5, CBOR_FILE, gzipped, "application/octet-stream"
-                    )
-                }
-            }
-            
             Log.i(TAG, "Rebuilt CBOR cache: ${index.json.size} records, ${gzipped.size} bytes compressed (safWrite=$wroteSaf)")
         } catch (ex: Exception) {
             Log.e(TAG, "rebuildCborCache failed: ${ex.message}", ex)
