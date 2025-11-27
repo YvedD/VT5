@@ -13,6 +13,7 @@ import androidx.lifecycle.lifecycleScope
 import com.yvesds.vt5.R
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.features.alias.AliasManager
+import com.yvesds.vt5.features.alias.helpers.WorldSpeciesAdder
 import com.yvesds.vt5.features.recent.RecentSpeciesStore
 import com.yvesds.vt5.features.serverdata.model.ServerDataCache
 import com.yvesds.vt5.features.soort.ui.SoortSelectieScherm
@@ -84,6 +85,14 @@ class TellingSpeciesManager(
                         val existing = tegelBeheer.getTiles()
                         val existingIds = existing.map { it.soortId }.toSet()
 
+                        // Get all species IDs that are in alias_master (local site species)
+                        val aliasSpeciesIds = try {
+                            AliasManager.getAllSpeciesFromIndex(activity, safHelper).keys
+                        } catch (ex: Exception) {
+                            Log.w(TAG, "Could not load alias species: ${ex.message}")
+                            emptySet()
+                        }
+
                         val additions = newIds
                             .filterNot { it in existingIds }
                             .mapNotNull { sid ->
@@ -92,12 +101,46 @@ class TellingSpeciesManager(
                             }
 
                         if (additions.isNotEmpty()) {
+                            // Check which species are from world list (not in local alias_master)
+                            // and add them to local lists (site_species + alias_master)
+                            val telpostId = TellingSessionManager.preselectState.value.telpostId
+                            var worldSpeciesAdded = 0
+
+                            for (tile in additions) {
+                                if (tile.soortId !in aliasSpeciesIds) {
+                                    // This is a world species - add to local lists
+                                    val speciesItem = speciesById[tile.soortId]
+                                    if (speciesItem != null) {
+                                        val added = withContext(Dispatchers.IO) {
+                                            WorldSpeciesAdder.addWorldSpeciesToLocalLists(
+                                                context = activity,
+                                                saf = safHelper,
+                                                speciesId = tile.soortId,
+                                                speciesItem = speciesItem,
+                                                telpostId = telpostId
+                                            )
+                                        }
+                                        if (added) {
+                                            worldSpeciesAdded++
+                                            Log.i(TAG, "Added world species to local lists: ${tile.naam}")
+                                        }
+                                    }
+                                }
+                            }
+
                             // Add new tiles
                             additions.forEach { tile ->
                                 tegelBeheer.voegSoortToe(tile.soortId, tile.naam, 0, mergeIfExists = false)
                             }
 
-                            onLogMessage?.invoke("Soorten toegevoegd: ${additions.size}", "manueel")
+                            // Log message with world species info
+                            val msg = if (worldSpeciesAdded > 0) {
+                                "Soorten toegevoegd: ${additions.size} (waarvan $worldSpeciesAdded naar lokale lijst)"
+                            } else {
+                                "Soorten toegevoegd: ${additions.size}"
+                            }
+                            onLogMessage?.invoke(msg, "manueel")
+
                             Toast.makeText(
                                 activity,
                                 activity.getString(R.string.telling_added_count, additions.size),
