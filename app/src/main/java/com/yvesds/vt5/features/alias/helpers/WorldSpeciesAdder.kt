@@ -23,6 +23,7 @@ import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.time.Instant
+import java.util.Locale
 import java.util.zip.CRC32
 import java.util.zip.GZIPOutputStream
 
@@ -41,6 +42,9 @@ import java.util.zip.GZIPOutputStream
 object WorldSpeciesAdder {
 
     private const val TAG = "WorldSpeciesAdder"
+    
+    // VT5BIN10 header constants
+    private const val CRC_HEADER_BYTES = 0x24 // CRC32 is calculated over first 36 bytes
 
     private val jsonPretty = Json {
         prettyPrint = true
@@ -219,7 +223,7 @@ object WorldSpeciesAdder {
             val jsonDoc = serverdata.findFile("site_species.json")?.takeIf { it.isFile }
                 ?: serverdata.createFile("application/json", "site_species.json")
             if (jsonDoc != null) {
-                val wroteJson = context.contentResolver.openOutputStream(jsonDoc.uri, "wt")?.use { out ->
+                val wroteJson = context.contentResolver.openOutputStream(jsonDoc.uri)?.use { out ->
                     out.write(jsonContent.toByteArray(Charsets.UTF_8))
                     true
                 } ?: false
@@ -369,7 +373,7 @@ object WorldSpeciesAdder {
         val phonemes = runCatching { DutchPhonemizer.phonemize(cleaned) }.getOrNull() ?: ""
 
         return AliasData(
-            text = text.trim().lowercase(),
+            text = text.trim().lowercase(Locale.ROOT),
             norm = cleaned,
             cologne = cologne,
             phonemes = phonemes,
@@ -409,8 +413,8 @@ object WorldSpeciesAdder {
         // recordCount
         buf.putInt(recordCount.toInt())
 
-        // CRC32 over [0x00..0x23]
-        val tmp = buf.array().copyOfRange(0, 0x24)
+        // CRC32 over first 36 bytes [0x00..0x23]
+        val tmp = buf.array().copyOfRange(0, CRC_HEADER_BYTES)
         val crc = CRC32().apply { update(tmp) }.value.toUInt()
 
         // headerCrc32
@@ -422,6 +426,8 @@ object WorldSpeciesAdder {
 
     /**
      * Extension function to find a file in a DocumentFile directory.
+     * Note: This duplicates similar functionality elsewhere but is kept private
+     * to avoid adding dependencies on other utility classes.
      */
     private fun DocumentFile.findFile(name: String): DocumentFile? =
         listFiles().firstOrNull { it.name == name }
