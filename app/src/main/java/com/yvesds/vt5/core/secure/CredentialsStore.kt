@@ -57,7 +57,6 @@ class CredentialsStore(context: Context) {
         prefs.edit().remove(KEY_USER).remove(KEY_PASS).commit()  // Use commit() for synchronous save
         Log.i(TAG, "Credentials cleared")
     }
-    }
 
     /**
      * Creates EncryptedSharedPreferences, with fallback recovery if the encryption
