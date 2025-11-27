@@ -15,8 +15,8 @@ import com.yvesds.vt5.core.opslag.SaFStorageHelper
  * - Folder existence checks
  * - VT5 directory en subdirectory management
  * 
- * BELANGRIJK: Deze class moet geïnitialiseerd worden vóór de activity in STARTED state is,
- * d.w.z. in onCreate() voordat super.onCreate() wordt aangeroepen of direct daarna.
+ * BELANGRIJK: Deze class moet geïnitialiseerd worden in onCreate() voordat 
+ * de activity in STARTED state komt (dus na super.onCreate() maar voor onStart()).
  * 
  * Gebruik:
  * ```kotlin

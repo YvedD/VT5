@@ -88,9 +88,9 @@ class InstallatieScherm : AppCompatActivity() {
     /**
      * Initialize all helper managers.
      * 
-     * BELANGRIJK: safManager moet hier geïnitialiseerd worden (in onCreate) 
-     * omdat registerForActivityResult() moet worden aangeroepen voordat 
-     * de activity in STARTED state komt.
+     * BELANGRIJK: safManager moet hier geïnitialiseerd worden (in onCreate) omdat
+     * registerForActivityResult() moet worden aangeroepen voordat de activity in
+     * STARTED state komt.
      */
     private fun initializeHelpers() {
         safManager = InstallationSafManager(this, saf) { success ->
