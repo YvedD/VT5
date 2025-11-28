@@ -29,6 +29,7 @@ import java.util.Locale
  * - pendingRecordsFlow: StateFlow exposing current pending records
  * - persist index to filesDir/VT5/pending_index.json so Workers can recover pending records
  * - suspend backup writers (SAF + internal)
+ * - Continuous envelope persistence: saves full envelope after each observation
  *
  * Usage:
  * - create RecordsBeheer(applicationContext) in Activity or ViewModel
@@ -46,7 +47,8 @@ sealed class OperationResult {
 
 class RecordsBeheer(
     private val context: Context,
-    private val json: Json = VT5App.json
+    private val json: Json = VT5App.json,
+    private val envelopePersistence: TellingEnvelopePersistence? = null
 ) {
     private val PREFS_NAME = "vt5_prefs"
     private val PREF_TELLING_ID = "pref_telling_id"
@@ -178,6 +180,15 @@ class RecordsBeheer(
                 Log.w(TAG, "Record backup failed after collect: ${ex.message}", ex)
                 // still return success; backups are best-effort
             }
+            
+            // Save full envelope with all records (best-effort)
+            try {
+                val currentRecords = _pendingRecordsFlow.value
+                envelopePersistence?.saveEnvelopeWithRecords(currentRecords)
+            } catch (ex: Exception) {
+                Log.w(TAG, "Envelope persistence failed after collect: ${ex.message}", ex)
+                // still return success; envelope persistence is best-effort
+            }
 
             OperationResult.Success(item)
         } catch (ex: Exception) {
@@ -257,7 +268,16 @@ class RecordsBeheer(
             _pendingRecordsFlow.value = cur.toList()
             true
         }
-        if (ok) persistIndex()
+        if (ok) {
+            persistIndex()
+            // Also save full envelope after update
+            try {
+                val currentRecords = _pendingRecordsFlow.value
+                envelopePersistence?.saveEnvelopeWithRecords(currentRecords)
+            } catch (ex: Exception) {
+                Log.w(TAG, "Envelope persistence failed after update: ${ex.message}", ex)
+            }
+        }
         return ok
     }
 
@@ -282,6 +302,12 @@ class RecordsBeheer(
         }
         // persist empty index
         persistIndex()
+        // Also clear the envelope file
+        try {
+            envelopePersistence?.clearSavedEnvelope()
+        } catch (ex: Exception) {
+            Log.w(TAG, "Failed to clear envelope file: ${ex.message}", ex)
+        }
     }
 
     /**

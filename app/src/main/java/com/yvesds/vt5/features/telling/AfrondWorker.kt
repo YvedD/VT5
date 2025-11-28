@@ -138,6 +138,15 @@ class AfrondWorker(
 
             // Success: clear pending records + backups
             recordsBeheer.clearPendingRecordsAndBackups()
+            
+            // Clear the active_telling.json (continuous backup file)
+            try {
+                val saf = SaFStorageHelper(context)
+                val envelopePersistence = TellingEnvelopePersistence(context, saf)
+                envelopePersistence.clearSavedEnvelope()
+            } catch (ex: Exception) {
+                Log.w(TAG, "Failed to clear active_telling.json: ${ex.message}", ex)
+            }
 
             // Save pretty envelope to SAF/internal for audit
             if (prettyJson != null) {
