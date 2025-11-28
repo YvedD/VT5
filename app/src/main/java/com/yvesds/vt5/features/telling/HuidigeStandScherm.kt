@@ -16,15 +16,6 @@ import com.yvesds.vt5.utils.SeizoenUtils
  * Overzichtsscherm dat de huidige soorten en aantallen toont
  * in een eenvoudige tabel met kolommen: Soortnaam | Totaal | Hoofdrichting | Terug
  * De labels voor de richtingen zijn seizoensafhankelijk (ZW/NO of NO/ZW).
- * 
- * BELANGRIJK: De seizoensbepaling is gebaseerd op de telling-datum (begintijd),
- * NIET op de huidige systeemdatum. Dit is nodig wanneer een gebruiker een telling
- * invoert op een andere datum dan vandaag (bijv. een vergeten telling van januari
- * die in november wordt ingevoerd).
- * 
- * Seizoensregels (volgens de telling-datum):
- * - januari -> juni: aantal = 'NO', aantalterug = 'ZW'
- * - juli -> december: aantal = 'ZW', aantalterug = 'NO'
  */
 class HuidigeStandScherm : AppCompatActivity() {
 
@@ -33,8 +24,6 @@ class HuidigeStandScherm : AppCompatActivity() {
         const val EXTRA_SOORT_NAMEN = "extra_soort_namen"
         const val EXTRA_SOORT_AANTALLEN_MAIN = "extra_soort_aantallen_main"
         const val EXTRA_SOORT_AANTALLEN_RETURN = "extra_soort_aantallen_return"
-        /** Telling start time (begintijd) as epoch seconds for correct season determination */
-        const val EXTRA_TELLING_BEGINTIJD_EPOCH = "extra_telling_begintijd_epoch"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -45,14 +34,8 @@ class HuidigeStandScherm : AppCompatActivity() {
         val totalsTv = findViewById<TextView>(R.id.tv_totals)
         val okBtn = findViewById<Button>(R.id.btn_ok_huidige_stand)
 
-        // Determine season-based labels using the telling date (not current system date)
-        // -1L means not provided, fall back to current date
-        val begintijdEpoch = intent.getLongExtra(EXTRA_TELLING_BEGINTIJD_EPOCH, -1L)
-        val isZwSeizoen = if (begintijdEpoch > 0) {
-            SeizoenUtils.isZwSeizoen(begintijdEpoch)
-        } else {
-            SeizoenUtils.isZwSeizoen()
-        }
+        // Determine season-based labels
+        val isZwSeizoen = SeizoenUtils.isZwSeizoen()
         val mainLabel = if (isZwSeizoen) "ZW" else "NO"
         val returnLabel = if (isZwSeizoen) "NO" else "ZW"
 
