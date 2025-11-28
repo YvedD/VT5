@@ -77,7 +77,7 @@ class TellingEnvelopePersistence(
                     return@withContext null
                 }
                 
-                if (envelopeList.isNullOrEmpty()) {
+                if (envelopeList.isEmpty()) {
                     Log.w(TAG, "Envelope lijst is leeg")
                     return@withContext null
                 }
@@ -239,7 +239,7 @@ class TellingEnvelopePersistence(
                     jsonContent
                 )
                 
-                if (envelopeList.isNullOrEmpty()) {
+                if (envelopeList.isEmpty()) {
                     return@withContext null
                 }
                 

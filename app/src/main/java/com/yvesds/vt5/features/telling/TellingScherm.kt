@@ -377,7 +377,8 @@ class TellingScherm : AppCompatActivity() {
             synchronized(pendingRecords) { pendingRecords.add(item) }
             if (::viewModel.isInitialized) viewModel.addPendingRecord(item)
             
-            // Save full envelope after each observation (best-effort, async)
+            // Save full envelope after each observation to prevent data loss on crash.
+            // Runs async on IO dispatcher; failures are logged but don't interrupt the UI flow.
             lifecycleScope.launch(Dispatchers.IO) {
                 try {
                     val records = synchronized(pendingRecords) { pendingRecords.toList() }
@@ -405,7 +406,8 @@ class TellingScherm : AppCompatActivity() {
                 }
             }
             
-            // Save full envelope after record update (best-effort, async)
+            // Save full envelope after annotation update to preserve changes.
+            // Runs async on IO dispatcher; failures are logged but don't interrupt the UI flow.
             lifecycleScope.launch(Dispatchers.IO) {
                 try {
                     val records = synchronized(pendingRecords) { pendingRecords.toList() }
