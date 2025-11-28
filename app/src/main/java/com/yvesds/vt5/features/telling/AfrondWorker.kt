@@ -139,13 +139,15 @@ class AfrondWorker(
             // Success: clear pending records + backups
             recordsBeheer.clearPendingRecordsAndBackups()
             
-            // Clear the active_telling.json (continuous backup file)
+            // Archive the active_telling.json (rename to timestamped file in counts folder)
             try {
                 val saf = SaFStorageHelper(context)
                 val envelopePersistence = TellingEnvelopePersistence(context, saf)
-                envelopePersistence.clearSavedEnvelope()
+                val tellingId = finalEnv.tellingid
+                val archiveOnlineId = prefs.getString("pref_online_id", null) ?: finalEnv.onlineid
+                envelopePersistence.archiveSavedEnvelope(tellingId, archiveOnlineId)
             } catch (ex: Exception) {
-                Log.w(TAG, "Failed to clear active_telling.json: ${ex.message}", ex)
+                Log.w(TAG, "Failed to archive active_telling.json: ${ex.message}", ex)
             }
 
             // Save pretty envelope to SAF/internal for audit

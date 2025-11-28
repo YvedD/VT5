@@ -241,11 +241,13 @@ class TellingAfrondHandler(
                 remove(PREF_SAVED_ENVELOPE_JSON)
             }
             
-            // Clear the active_telling.json (continuous backup file)
+            // Archive the active_telling.json (rename to timestamped file in counts folder)
             try {
-                envelopePersistence?.clearSavedEnvelope()
+                val tellingId = finalEnv.tellingid
+                val archiveOnlineId = savedOnlineId ?: finalEnv.onlineid
+                envelopePersistence?.archiveSavedEnvelope(tellingId, archiveOnlineId)
             } catch (ex: Exception) {
-                Log.w(TAG, "Failed to clear active_telling.json: ${ex.message}", ex)
+                Log.w(TAG, "Failed to archive active_telling.json: ${ex.message}", ex)
             }
         } catch (e: Exception) {
             Log.w(TAG, "Cleanup after successful Afronden failed: ${e.message}", e)

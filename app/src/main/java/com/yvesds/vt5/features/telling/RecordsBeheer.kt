@@ -302,12 +302,7 @@ class RecordsBeheer(
         }
         // persist empty index
         persistIndex()
-        // Also clear the envelope file
-        try {
-            envelopePersistence?.clearSavedEnvelope()
-        } catch (ex: Exception) {
-            Log.w(TAG, "Failed to clear envelope file: ${ex.message}", ex)
-        }
+        // Note: envelope archiving is handled by the caller (TellingAfrondHandler/AfrondWorker)
     }
 
     /**

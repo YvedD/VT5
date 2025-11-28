@@ -13,6 +13,9 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * TellingEnvelopePersistence: Beheert het continu opslaan van de volledige telling envelope.
@@ -287,7 +290,103 @@ class TellingEnvelopePersistence(
     }
     
     /**
-     * Verwijder het active_telling.json bestand (na succesvolle upload).
+     * Archiveer het active_telling.json bestand na succesvolle upload.
+     * Het bestand wordt hernoemd naar een uniek bestand met timestamp in de counts map
+     * zodat het later nog kan worden geopend en bewerkt.
+     * 
+     * @param tellingId De telling ID voor de bestandsnaam
+     * @param onlineId De online ID voor de bestandsnaam
+     * @return Pad naar gearchiveerd bestand, of null bij fout
+     */
+    suspend fun archiveSavedEnvelope(tellingId: String?, onlineId: String?): String? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                // Sanitize IDs to prevent path traversal - keep only alphanumeric and underscore
+                val tellingPart = sanitizeFilename(tellingId?.takeIf { it.isNotBlank() } ?: "unknown")
+                val onlinePart = sanitizeFilename(onlineId?.takeIf { it.isNotBlank() } ?: "unknown")
+                val archiveFilename = "telling_${tellingPart}_${onlinePart}_$timestamp.json"
+                
+                var archivedPath: String? = null
+                
+                // Probeer SAF bestand te archiveren
+                val vt5Dir = safHelper.getVt5DirIfExists()
+                if (vt5Dir != null) {
+                    val countsDir = vt5Dir.findFile(COUNTS_DIR)
+                    val activeFile = countsDir?.findFile(ACTIVE_FILENAME)
+                    if (activeFile != null && activeFile.exists()) {
+                        // Lees de inhoud van het actieve bestand
+                        val content = context.contentResolver.openInputStream(activeFile.uri)?.use { input ->
+                            input.bufferedReader(Charsets.UTF_8).readText()
+                        }
+                        
+                        if (content != null && content.isNotBlank()) {
+                            // Maak het archief bestand
+                            val archiveFile = countsDir.createFile("application/json", archiveFilename)
+                            if (archiveFile != null) {
+                                context.contentResolver.openOutputStream(archiveFile.uri)?.use { out ->
+                                    out.write(content.toByteArray(Charsets.UTF_8))
+                                }
+                                
+                                // Verify the archive was written successfully before deleting original
+                                val verifySize = archiveFile.length()
+                                if (verifySize > 0) {
+                                    archivedPath = "Documents/VT5/$COUNTS_DIR/$archiveFilename"
+                                    Log.i(TAG, "SAF envelope gearchiveerd: $archivedPath")
+                                    // Verwijder het actieve bestand only after successful archive
+                                    activeFile.delete()
+                                } else {
+                                    Log.w(TAG, "Archive file appears empty, keeping original")
+                                    archiveFile.delete()
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Probeer internal bestand te archiveren
+                val internalActiveFile = File(context.filesDir, "$VT5_DIR/$COUNTS_DIR/$ACTIVE_FILENAME")
+                if (internalActiveFile.exists()) {
+                    val countsDir = File(context.filesDir, "$VT5_DIR/$COUNTS_DIR")
+                    if (!countsDir.exists()) {
+                        countsDir.mkdirs()
+                    }
+                    
+                    val archiveFile = File(countsDir, archiveFilename)
+                    internalActiveFile.copyTo(archiveFile, overwrite = true)
+                    
+                    // Verify the copy was successful before deleting original
+                    if (archiveFile.exists() && archiveFile.length() == internalActiveFile.length()) {
+                        internalActiveFile.delete()
+                        
+                        if (archivedPath == null) {
+                            archivedPath = "internal:${archiveFile.absolutePath}"
+                        }
+                        Log.i(TAG, "Internal envelope gearchiveerd: ${archiveFile.absolutePath}")
+                    } else {
+                        Log.w(TAG, "Internal archive copy verification failed, keeping original")
+                        archiveFile.delete()
+                    }
+                }
+                
+                archivedPath
+            } catch (e: Exception) {
+                Log.w(TAG, "Kon active_telling.json niet archiveren: ${e.message}", e)
+                null
+            }
+        }
+    }
+    
+    /**
+     * Sanitize a string for use in a filename - removes unsafe characters.
+     */
+    private fun sanitizeFilename(input: String): String {
+        return input.replace(Regex("[^a-zA-Z0-9_-]"), "_").take(50)
+    }
+    
+    /**
+     * @deprecated Gebruik archiveSavedEnvelope() in plaats van clearSavedEnvelope()
+     * Verwijdert het active_telling.json bestand volledig (alleen voor uitzonderlijke gevallen).
      */
     suspend fun clearSavedEnvelope() {
         withContext(Dispatchers.IO) {
