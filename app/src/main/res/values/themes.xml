@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- Globaal: donker, Material3, géén action bar, géén splash -->
+    <!-- Globaal: donker, Material3, géén action bar -->
     <style name="Theme.VT5.Dark" parent="Theme.Material3.Dark.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@color/vt5_black</item>
@@ -17,6 +17,13 @@
         <item name="android:buttonStyle">@style/Widget.VT5.Button.Outlined</item>
         <item name="materialButtonStyle">@style/Widget.VT5.Button</item>
         <item name="materialButtonOutlinedStyle">@style/Widget.VT5.Button.Outlined</item>
+    </style>
+
+    <!-- Splash Screen thema - fullscreen zonder action bar -->
+    <style name="Theme.VT5.Splash" parent="Theme.VT5.Dark">
+        <!-- Fullscreen splash zonder status/navigatie bars -->
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowContentOverlay">@null</item>
     </style>
 
 </resources>
