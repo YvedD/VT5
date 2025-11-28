@@ -35,6 +35,15 @@ class HoofdActiviteit : AppCompatActivity() {
     
     // Houdt bij of de data geladen is (voor splash screen)
     private var isDataLoaded = false
+    
+    companion object {
+        /**
+         * Minimale splash screen duur in milliseconden.
+         * Dit geeft VT5App.preloadDataAsync() de tijd om data in de achtergrond te laden.
+         * De splash screen verdwijnt na deze periode, ongeacht of preloading klaar is.
+         */
+        private const val SPLASH_MIN_DURATION_MS = 500L
+    }
 
     @OptIn(ExperimentalSerializationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -87,11 +96,10 @@ class HoofdActiviteit : AppCompatActivity() {
             shutdownAndExit()
         }
         
-        // Wacht kort en markeer data als geladen (splash screen verdwijnt)
-        // Dit geeft de VT5App.preloadDataAsync() even de tijd
+        // Wacht minimale splash duur en markeer data als geladen (splash screen verdwijnt)
+        // Dit geeft de VT5App.preloadDataAsync() even de tijd om te starten
         lifecycleScope.launch {
-            // Kleine vertraging om preloading in VT5App tijd te geven
-            kotlinx.coroutines.delay(500)
+            kotlinx.coroutines.delay(SPLASH_MIN_DURATION_MS)
             isDataLoaded = true
         }
     }
