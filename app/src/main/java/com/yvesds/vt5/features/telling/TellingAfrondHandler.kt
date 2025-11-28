@@ -27,12 +27,14 @@ import java.util.Locale
  * - Uploading to server
  * - Handling server response
  * - Cleanup of temporary files and preferences
+ * - Cleanup of active_telling.json (continuous backup)
  * - Error handling and user feedback
  */
 class TellingAfrondHandler(
     private val context: Context,
     private val backupManager: TellingBackupManager,
-    private val dataProcessor: TellingDataProcessor
+    private val dataProcessor: TellingDataProcessor,
+    private val envelopePersistence: TellingEnvelopePersistence? = null
 ) {
     companion object {
         private const val TAG = "TellingAfrondHandler"
@@ -237,6 +239,15 @@ class TellingAfrondHandler(
                 remove(PREF_ONLINE_ID)
                 remove(PREF_TELLING_ID)
                 remove(PREF_SAVED_ENVELOPE_JSON)
+            }
+            
+            // Archive the active_telling.json (rename to timestamped file in counts folder)
+            try {
+                val tellingId = finalEnv.tellingid
+                val archiveOnlineId = savedOnlineId ?: finalEnv.onlineid
+                envelopePersistence?.archiveSavedEnvelope(tellingId, archiveOnlineId)
+            } catch (ex: Exception) {
+                Log.w(TAG, "Failed to archive active_telling.json: ${ex.message}", ex)
             }
         } catch (e: Exception) {
             Log.w(TAG, "Cleanup after successful Afronden failed: ${e.message}", e)

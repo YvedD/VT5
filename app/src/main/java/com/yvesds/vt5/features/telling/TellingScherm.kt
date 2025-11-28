@@ -131,6 +131,9 @@ class TellingScherm : AppCompatActivity() {
     private lateinit var annotationHandler: TellingAnnotationHandler
     private lateinit var initializer: TellingInitializer
     private lateinit var alarmHandler: TellingAlarmHandler
+    
+    // Continuous envelope persistence - saves full envelope after each observation
+    private lateinit var envelopePersistence: TellingEnvelopePersistence
 
     // Legacy helpers
     private lateinit var aliasEditor: AliasEditor
@@ -289,7 +292,12 @@ class TellingScherm : AppCompatActivity() {
         // backupManager already initialized before super.onCreate()
         dataProcessor = TellingDataProcessor()
         uiManager = TellingUiManager(this, binding)
-        afrondHandler = TellingAfrondHandler(this, backupManager, dataProcessor)
+        
+        // Initialize envelope persistence for continuous backup
+        envelopePersistence = TellingEnvelopePersistence(this, safHelper)
+        
+        // Initialize afrondHandler with envelope persistence for cleanup on success
+        afrondHandler = TellingAfrondHandler(this, backupManager, dataProcessor, envelopePersistence)
         
         // tegelBeheer already initialized before super.onCreate()
 
@@ -368,6 +376,17 @@ class TellingScherm : AppCompatActivity() {
         speciesManager.onRecordCollected = { item ->
             synchronized(pendingRecords) { pendingRecords.add(item) }
             if (::viewModel.isInitialized) viewModel.addPendingRecord(item)
+            
+            // Save full envelope after each observation to prevent data loss on crash.
+            // Runs async on IO dispatcher; failures are logged but don't interrupt the UI flow.
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    val records = synchronized(pendingRecords) { pendingRecords.toList() }
+                    envelopePersistence.saveEnvelopeWithRecords(records)
+                } catch (ex: Exception) {
+                    Log.w(TAG, "Envelope persistence failed after record collected: ${ex.message}", ex)
+                }
+            }
         }
 
         // Annotation handler callbacks
@@ -384,6 +403,17 @@ class TellingScherm : AppCompatActivity() {
                     
                     // Recalculate tile counts from all pending records
                     tegelBeheer.recalculateCountsFromRecords(pendingRecords.toList())
+                }
+            }
+            
+            // Save full envelope after annotation update to preserve changes.
+            // Runs async on IO dispatcher; failures are logged but don't interrupt the UI flow.
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    val records = synchronized(pendingRecords) { pendingRecords.toList() }
+                    envelopePersistence.saveEnvelopeWithRecords(records)
+                } catch (ex: Exception) {
+                    Log.w(TAG, "Envelope persistence failed after record update: ${ex.message}", ex)
                 }
             }
         }
