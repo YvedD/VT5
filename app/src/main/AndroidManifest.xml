@@ -23,10 +23,11 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.VT5.Dark">
-        <!-- OpstartScherm -->
+        <!-- Hoofdscherm met splash screen -->
         <activity
             android:name=".hoofd.HoofdActiviteit"
             android:exported="true"
+            android:theme="@style/Theme.VT5.Splash"
             android:screenOrientation="sensorPortrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>

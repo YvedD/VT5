@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- Globaal: donker, Material3, géén action bar, géén splash -->
+    <!-- Globaal: donker, Material3, géén action bar, met splash screen -->
     <style name="Theme.VT5.Dark" parent="Theme.Material3.Dark.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@color/vt5_black</item>
@@ -17,6 +17,16 @@
         <item name="android:buttonStyle">@style/Widget.VT5.Button.Outlined</item>
         <item name="materialButtonStyle">@style/Widget.VT5.Button</item>
         <item name="materialButtonOutlinedStyle">@style/Widget.VT5.Button.Outlined</item>
+    </style>
+
+    <!-- Splash Screen thema voor Android 12+ -->
+    <style name="Theme.VT5.Splash" parent="Theme.VT5.Dark">
+        <!-- Splash screen achtergrondkleur -->
+        <item name="android:windowSplashScreenBackground">@color/vt5_black</item>
+        <!-- Splash screen icoon (vt5.png) -->
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/vt5</item>
+        <!-- Geen animatie branding afbeelding -->
+        <item name="android:windowSplashScreenBrandingImage">@null</item>
     </style>
 
 </resources>
