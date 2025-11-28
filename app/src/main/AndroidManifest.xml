@@ -20,7 +20,7 @@
     <application
         android:name=".VT5App"
         android:allowBackup="true"
-        android:icon="@drawable/vt5"
+        android:icon="@drawable/vt53"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.VT5.Dark">
