@@ -15,7 +15,7 @@
         android:layout_gravity="center"
         android:adjustViewBounds="true"
         android:contentDescription="@string/app_name"
-        android:padding="32dp"
+        android:padding="8dp"
         android:src="@drawable/vt5" />
 
 </FrameLayout>
