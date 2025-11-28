@@ -532,13 +532,45 @@ class TellingScherm : AppCompatActivity() {
             countsReturn.add(row.countReturn.toString())
         }
 
+        // Get the telling begintijd (epoch seconds) for correct season determination
+        val begintijdEpoch = getTellingBegintijdEpoch()
+
         val intent = Intent(this, HuidigeStandScherm::class.java).apply {
             putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_IDS, ids)
             putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_NAMEN, names)
             putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_AANTALLEN_MAIN, countsMain)
             putStringArrayListExtra(HuidigeStandScherm.EXTRA_SOORT_AANTALLEN_RETURN, countsReturn)
+            if (begintijdEpoch > 0) {
+                putExtra(HuidigeStandScherm.EXTRA_TELLING_BEGINTIJD_EPOCH, begintijdEpoch)
+            }
         }
         startActivity(intent)
+    }
+    
+    /**
+     * Get the telling begintijd (start time) as epoch seconds from the saved envelope.
+     * This is needed to correctly determine the season for column mapping in HuidigeStandScherm.
+     * 
+     * @return The begintijd as epoch seconds, or -1L if not available
+     */
+    private fun getTellingBegintijdEpoch(): Long {
+        return try {
+            val savedEnvelopeJson = prefs.getString("pref_saved_envelope_json", null)
+            if (savedEnvelopeJson.isNullOrBlank()) return -1L
+            
+            val envelopeList = VT5App.json.decodeFromString(
+                ListSerializer(ServerTellingEnvelope.serializer()),
+                savedEnvelopeJson
+            )
+            
+            if (envelopeList.isNullOrEmpty()) return -1L
+            
+            // The begintijd field is a string containing epoch seconds
+            envelopeList[0].begintijd.toLongOrNull() ?: -1L
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to get telling begintijd: ${e.message}")
+            -1L
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
