@@ -6,7 +6,6 @@ import android.util.Log
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
 import com.yvesds.vt5.R
@@ -27,32 +26,12 @@ import kotlinx.serialization.ExperimentalSerializationApi
  * 1. (Her)Installatie → InstallatieScherm
  * 2. Invoeren telpostgegevens → MetadataScherm  
  * 3. Afsluiten → Veilige app shutdown met cleanup
- * 
- * Toont een splash screen met vt5.png tijdens het opstarten en laden van data.
  */
 class HoofdActiviteit : AppCompatActivity() {
     private val TAG = "HoofdActiviteit"
-    
-    // Houdt bij of de data geladen is (voor splash screen)
-    private var isDataLoaded = false
-    
-    companion object {
-        /**
-         * Minimale splash screen duur in milliseconden.
-         * Dit geeft VT5App.preloadDataAsync() de tijd om data in de achtergrond te laden.
-         * De splash screen verdwijnt na deze periode, ongeacht of preloading klaar is.
-         */
-        private const val SPLASH_MIN_DURATION_MS = 500L
-    }
 
     @OptIn(ExperimentalSerializationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Installeer splash screen VOOR super.onCreate()
-        val splashScreen = installSplashScreen()
-        
-        // Houd splash screen zichtbaar totdat data geladen is
-        splashScreen.setKeepOnScreenCondition { !isDataLoaded }
-        
         super.onCreate(savedInstanceState)
         setContentView(R.layout.scherm_hoofd)
 
@@ -94,13 +73,6 @@ class HoofdActiviteit : AppCompatActivity() {
         btnAfsluiten.setOnClickListener {
             it.isEnabled = false
             shutdownAndExit()
-        }
-        
-        // Wacht minimale splash duur en markeer data als geladen (splash screen verdwijnt)
-        // Dit geeft de VT5App.preloadDataAsync() even de tijd om te starten
-        lifecycleScope.launch {
-            kotlinx.coroutines.delay(SPLASH_MIN_DURATION_MS)
-            isDataLoaded = true
         }
     }
 

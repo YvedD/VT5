@@ -20,12 +20,13 @@
     <application
         android:name=".VT5App"
         android:allowBackup="true"
+        android:icon="@drawable/vt5"
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.VT5.Dark">
-        <!-- Hoofdscherm met splash screen -->
+        <!-- Splash Screen (launcher) -->
         <activity
-            android:name=".hoofd.HoofdActiviteit"
+            android:name=".splash.SplashActiviteit"
             android:exported="true"
             android:theme="@style/Theme.VT5.Splash"
             android:screenOrientation="sensorPortrait">
@@ -34,6 +35,12 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        
+        <!-- Hoofdscherm -->
+        <activity
+            android:name=".hoofd.HoofdActiviteit"
+            android:exported="false"
+            android:screenOrientation="sensorPortrait" />
 
         <!-- InstallatieScherm -->
         <activity
