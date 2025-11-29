@@ -22,7 +22,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 object TrektellenApi {
 
     private val client: OkHttpClient by lazy { OkHttpClient() }
-    private val json: Json by lazy { Json { ignoreUnknownKeys = true; explicitNulls = false; encodeDefaults = true } }
+    private val json: Json by lazy { Json { ignoreUnknownKeys = true; explicitNulls = false; encodeDefaults = true; coerceInputValues = true } }
 
     /**
      * POST /api/counts_save

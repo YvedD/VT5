@@ -1,0 +1,139 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Telpost dropdown -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:hint="@string/beheer_telpost"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+            app:boxStrokeColor="@color/vt5_light_blue"
+            app:hintTextColor="@color/vt5_light_blue">
+
+            <AutoCompleteTextView
+                android:id="@+id/acTelpost"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="none"
+                android:textColor="@color/vt5_on_surface" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Datum -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:hint="@string/beheer_datum"
+            app:boxStrokeColor="@color/vt5_light_blue"
+            app:hintTextColor="@color/vt5_light_blue">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etDatum"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:focusable="false"
+                android:clickable="true"
+                android:textColor="@color/vt5_on_surface" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Begintijd -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:hint="@string/beheer_begintijd"
+            app:boxStrokeColor="@color/vt5_light_blue"
+            app:hintTextColor="@color/vt5_light_blue">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etBegintijd"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:focusable="false"
+                android:clickable="true"
+                android:textColor="@color/vt5_on_surface" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Eindtijd -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:hint="@string/beheer_eindtijd"
+            app:boxStrokeColor="@color/vt5_light_blue"
+            app:hintTextColor="@color/vt5_light_blue">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etEindtijd"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:focusable="false"
+                android:clickable="true"
+                android:textColor="@color/vt5_on_surface" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Tellers -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:hint="@string/beheer_tellers"
+            app:boxStrokeColor="@color/vt5_light_blue"
+            app:hintTextColor="@color/vt5_light_blue">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etTellers"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text"
+                android:textColor="@color/vt5_on_surface" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Weer -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:hint="@string/beheer_weer"
+            app:boxStrokeColor="@color/vt5_light_blue"
+            app:hintTextColor="@color/vt5_light_blue">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etWeer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textMultiLine"
+                android:minLines="2"
+                android:textColor="@color/vt5_on_surface" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Opmerkingen -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/beheer_opmerkingen"
+            app:boxStrokeColor="@color/vt5_light_blue"
+            app:hintTextColor="@color/vt5_light_blue">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etOpmerkingen"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textMultiLine"
+                android:minLines="3"
+                android:textColor="@color/vt5_on_surface" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+    </LinearLayout>
+</ScrollView>

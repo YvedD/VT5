@@ -123,8 +123,150 @@ class SaFStorageHelper(private val context: Context) {
     suspend fun findOrCreateDirectorySuspend(parent: DocumentFile, name: String): DocumentFile? = withContext(Dispatchers.IO) {
         findOrCreateDirectory(parent, name)
     }
+    
+    // ========================================================================
+    // COUNTS DIRECTORY HELPERS
+    // ========================================================================
+    
+    /**
+     * Get the counts directory (Documents/VT5/counts/) if it exists.
+     * 
+     * @return DocumentFile for counts directory, or null if not available
+     */
+    fun getCountsDir(): DocumentFile? {
+        val vt5Dir = getVt5DirIfExists() ?: return null
+        return vt5Dir.findFile(COUNTS_DIR)?.takeIf { it.isDirectory }
+    }
+    
+    /**
+     * Suspend variant of getCountsDir().
+     */
+    suspend fun getCountsDirSuspend(): DocumentFile? = withContext(Dispatchers.IO) {
+        getCountsDir()
+    }
+    
+    /**
+     * List all files in the counts directory.
+     * 
+     * @return List of DocumentFile objects for files in counts directory
+     */
+    fun listCountsFiles(): List<DocumentFile> {
+        val countsDir = getCountsDir() ?: return emptyList()
+        return countsDir.listFiles().filter { it.isFile }
+    }
+    
+    /**
+     * Suspend variant of listCountsFiles().
+     */
+    suspend fun listCountsFilesSuspend(): List<DocumentFile> = withContext(Dispatchers.IO) {
+        listCountsFiles()
+    }
+    
+    /**
+     * Delete a file from the counts directory.
+     * 
+     * @param filename Name of the file to delete (not a path)
+     * @return true if file was deleted, false otherwise
+     */
+    fun deleteCountsFile(filename: String): Boolean {
+        // Validate filename (no path traversal)
+        if (filename.contains("..") || filename.contains("/") || filename.contains("\\")) {
+            return false
+        }
+        
+        val countsDir = getCountsDir() ?: return false
+        val file = countsDir.findFile(filename) ?: return false
+        return file.delete()
+    }
+    
+    /**
+     * Suspend variant of deleteCountsFile().
+     */
+    suspend fun deleteCountsFileSuspend(filename: String): Boolean = withContext(Dispatchers.IO) {
+        deleteCountsFile(filename)
+    }
+    
+    /**
+     * Read contents of a file in the counts directory.
+     * 
+     * @param filename Name of the file to read
+     * @return File contents as String, or null if file not found or read failed
+     */
+    fun readCountsFile(filename: String): String? {
+        // Validate filename (no path traversal)
+        if (filename.contains("..") || filename.contains("/") || filename.contains("\\")) {
+            return null
+        }
+        
+        val countsDir = getCountsDir() ?: return null
+        val file = countsDir.findFile(filename) ?: return null
+        
+        return try {
+            context.contentResolver.openInputStream(file.uri)?.use { input ->
+                input.bufferedReader(Charsets.UTF_8).readText()
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+    
+    /**
+     * Suspend variant of readCountsFile().
+     */
+    suspend fun readCountsFileSuspend(filename: String): String? = withContext(Dispatchers.IO) {
+        readCountsFile(filename)
+    }
+    
+    /**
+     * Write content to a file in the counts directory.
+     * If file exists, it will be overwritten.
+     * 
+     * @param filename Name of the file to write
+     * @param content Content to write
+     * @return true if write was successful, false otherwise
+     */
+    fun writeCountsFile(filename: String, content: String): Boolean {
+        // Validate filename (no path traversal)
+        if (filename.contains("..") || filename.contains("/") || filename.contains("\\")) {
+            return false
+        }
+        
+        val vt5Dir = getVt5DirIfExists() ?: return false
+        var countsDir = vt5Dir.findFile(COUNTS_DIR)
+        
+        // Create counts directory if it doesn't exist
+        if (countsDir == null || !countsDir.isDirectory) {
+            countsDir = vt5Dir.createDirectory(COUNTS_DIR) ?: return false
+        }
+        
+        // Delete existing file if present
+        countsDir.findFile(filename)?.delete()
+        
+        // Create new file
+        val mimeType = if (filename.endsWith(".json")) "application/json" else "text/plain"
+        val newFile = countsDir.createFile(mimeType, filename) ?: return false
+        
+        return try {
+            context.contentResolver.openOutputStream(newFile.uri)?.use { out ->
+                out.write(content.toByteArray(Charsets.UTF_8))
+            }
+            true
+        } catch (e: Exception) {
+            // Try to clean up failed file
+            try { newFile.delete() } catch (_: Exception) {}
+            false
+        }
+    }
+    
+    /**
+     * Suspend variant of writeCountsFile().
+     */
+    suspend fun writeCountsFileSuspend(filename: String, content: String): Boolean = withContext(Dispatchers.IO) {
+        writeCountsFile(filename, content)
+    }
 
     companion object {
+        private const val COUNTS_DIR = "counts"
         private const val PREFS_NAME = "saf_storage_prefs"
         private const val KEY_ROOT_URI = "root_tree_uri"
 

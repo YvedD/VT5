@@ -10,6 +10,7 @@
     <!-- Accent (lichtblauwe rand) -->
     <color name="vt5_light_blue">#117CAF</color>
     <color name="vt5_light_gray">#5D748C</color>
+    <color name="vt5_dark_gray">#1E1E1E</color>
 
     <!-- Disabled -->
     <color name="vt5_disabled_bg">#2A2A2A</color>
@@ -25,4 +26,7 @@
     <!-- Tekst op surface -->
     <color name="vt5_on_surface">#E6E6E6</color>
     <color name="vt5_green">#80D97A</color>
+    
+    <!-- Waarschuwing / verwijderen -->
+    <color name="vt5_red">#CF6679</color>
 </resources>
