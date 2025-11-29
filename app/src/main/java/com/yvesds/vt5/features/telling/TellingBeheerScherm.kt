@@ -1,12 +1,16 @@
 package com.yvesds.vt5.features.telling
 
+import android.app.DatePickerDialog
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ArrayAdapter
+import android.widget.AutoCompleteTextView
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
+import android.widget.NumberPicker
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -20,12 +24,16 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.yvesds.vt5.R
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
+import com.yvesds.vt5.features.serverdata.model.DataSnapshot
+import com.yvesds.vt5.features.serverdata.model.ServerDataCache
+import com.yvesds.vt5.features.serverdata.model.SiteItem
 import com.yvesds.vt5.net.ServerTellingDataItem
 import com.yvesds.vt5.net.ServerTellingEnvelope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -230,23 +238,230 @@ class TellingBeheerScherm : AppCompatActivity() {
     private fun showEditMetadataDialog(envelope: ServerTellingEnvelope) {
         val dialogView = layoutInflater.inflate(R.layout.dialog_edit_metadata, null)
         
+        // Find all views
+        val acTelpost = dialogView.findViewById<AutoCompleteTextView>(R.id.acTelpost)
+        val etDatum = dialogView.findViewById<TextInputEditText>(R.id.etDatum)
+        val etBegintijd = dialogView.findViewById<TextInputEditText>(R.id.etBegintijd)
+        val etEindtijd = dialogView.findViewById<TextInputEditText>(R.id.etEindtijd)
         val etTellers = dialogView.findViewById<TextInputEditText>(R.id.etTellers)
+        val etWeer = dialogView.findViewById<TextInputEditText>(R.id.etWeer)
         val etOpmerkingen = dialogView.findViewById<TextInputEditText>(R.id.etOpmerkingen)
         
+        // State for tracking selected values
+        var selectedTelpostId = envelope.telpostid
+        var selectedBegintijdEpoch = envelope.begintijd.toLongOrNull() ?: 0L
+        var selectedEindtijdEpoch = envelope.eindtijd.toLongOrNull() ?: 0L
+        
+        // Load telpost data and populate dropdown
+        lifecycleScope.launch {
+            try {
+                val snapshot = withContext(Dispatchers.IO) {
+                    ServerDataCache.getOrLoad(this@TellingBeheerScherm)
+                }
+                
+                val sites = snapshot.sitesById.values
+                    .sortedBy { it.telpostnaam.lowercase(Locale.getDefault()) }
+                
+                val labels = sites.map { it.telpostnaam }
+                val ids = sites.map { it.telpostid }
+                
+                val adapter = ArrayAdapter(this@TellingBeheerScherm, android.R.layout.simple_list_item_1, labels)
+                acTelpost.setAdapter(adapter)
+                
+                // Pre-select current telpost
+                val currentIdx = ids.indexOf(envelope.telpostid)
+                if (currentIdx >= 0) {
+                    acTelpost.setText(labels[currentIdx], false)
+                }
+                
+                acTelpost.setOnItemClickListener { _, _, pos, _ ->
+                    selectedTelpostId = ids[pos]
+                }
+            } catch (e: Exception) {
+                // Fallback: just show telpostid as text
+                acTelpost.setText(envelope.telpostid)
+            }
+        }
+        
+        // Date/time formatters
+        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+        val dateTimeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+        
+        // Convert epoch to date string for display
+        fun epochToDateStr(epoch: Long): String {
+            return if (epoch > 0) dateFormat.format(Date(epoch * 1000)) else ""
+        }
+        
+        fun epochToTimeStr(epoch: Long): String {
+            return if (epoch > 0) timeFormat.format(Date(epoch * 1000)) else ""
+        }
+        
+        // Prefill current values
         etTellers.setText(envelope.tellers)
+        etWeer.setText(envelope.weer)
         etOpmerkingen.setText(envelope.opmerkingen)
+        
+        // Prefill date (from begintijd)
+        if (selectedBegintijdEpoch > 0) {
+            etDatum.setText(epochToDateStr(selectedBegintijdEpoch))
+        }
+        
+        // Prefill times
+        etBegintijd.setText(epochToTimeStr(selectedBegintijdEpoch))
+        etEindtijd.setText(epochToTimeStr(selectedEindtijdEpoch))
+        
+        // Setup date picker
+        etDatum.setOnClickListener {
+            val cal = Calendar.getInstance()
+            if (selectedBegintijdEpoch > 0) {
+                cal.timeInMillis = selectedBegintijdEpoch * 1000
+            }
+            
+            DatePickerDialog(
+                this,
+                { _, year, month, dayOfMonth ->
+                    val mm = (month + 1).toString().padStart(2, '0')
+                    val dd = dayOfMonth.toString().padStart(2, '0')
+                    etDatum.setText("$year-$mm-$dd")
+                    
+                    // Update epoch values with new date
+                    val datePart = "$year-$mm-$dd"
+                    val beginTimePart = etBegintijd.text?.toString() ?: "00:00"
+                    val endTimePart = etEindtijd.text?.toString() ?: "00:00"
+                    
+                    try {
+                        selectedBegintijdEpoch = dateTimeFormat.parse("$datePart $beginTimePart")?.time?.div(1000) ?: selectedBegintijdEpoch
+                        selectedEindtijdEpoch = dateTimeFormat.parse("$datePart $endTimePart")?.time?.div(1000) ?: selectedEindtijdEpoch
+                    } catch (_: Exception) {}
+                },
+                cal.get(Calendar.YEAR),
+                cal.get(Calendar.MONTH),
+                cal.get(Calendar.DAY_OF_MONTH)
+            ).show()
+        }
+        
+        // Setup begintijd time picker
+        etBegintijd.setOnClickListener {
+            showTimePickerDialog(etBegintijd, selectedBegintijdEpoch) { newEpoch ->
+                selectedBegintijdEpoch = newEpoch
+            }
+        }
+        
+        // Setup eindtijd time picker
+        etEindtijd.setOnClickListener {
+            showTimePickerDialog(etEindtijd, selectedEindtijdEpoch) { newEpoch ->
+                selectedEindtijdEpoch = newEpoch
+            }
+        }
         
         AlertDialog.Builder(this)
             .setTitle(getString(R.string.beheer_metadata_bewerken))
             .setView(dialogView)
             .setPositiveButton("OK") { _, _ ->
+                // Build epoch strings from date + time
+                val datePart = etDatum.text?.toString() ?: ""
+                val beginTimePart = etBegintijd.text?.toString() ?: "00:00"
+                val endTimePart = etEindtijd.text?.toString() ?: "00:00"
+                
+                var finalBegintijd = selectedBegintijdEpoch.toString()
+                var finalEindtijd = selectedEindtijdEpoch.toString()
+                
+                if (datePart.isNotBlank()) {
+                    try {
+                        dateTimeFormat.parse("$datePart $beginTimePart")?.let {
+                            finalBegintijd = (it.time / 1000).toString()
+                        }
+                        dateTimeFormat.parse("$datePart $endTimePart")?.let {
+                            finalEindtijd = (it.time / 1000).toString()
+                        }
+                    } catch (_: Exception) {}
+                }
+                
                 val updates = MetadataUpdates(
+                    telpostid = selectedTelpostId,
+                    begintijd = finalBegintijd,
+                    eindtijd = finalEindtijd,
                     tellers = etTellers.text?.toString(),
+                    weer = etWeer.text?.toString(),
                     opmerkingen = etOpmerkingen.text?.toString()
                 )
                 currentEnvelope = toolset.updateMetadata(envelope, updates)
                 hasUnsavedChanges = true
                 currentEnvelope?.let { updateDetailView(it) }
+            }
+            .setNegativeButton("Annuleren", null)
+            .show()
+    }
+    
+    /**
+     * Show a time picker dialog with hour and minute spinners.
+     */
+    private fun showTimePickerDialog(
+        targetEditText: TextInputEditText,
+        currentEpoch: Long,
+        onTimeSelected: (Long) -> Unit
+    ) {
+        val cal = Calendar.getInstance()
+        if (currentEpoch > 0) {
+            cal.timeInMillis = currentEpoch * 1000
+        }
+        
+        val startHour = cal.get(Calendar.HOUR_OF_DAY)
+        val startMinute = cal.get(Calendar.MINUTE)
+        
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(48, 32, 48, 16)
+        }
+        
+        val hourPicker = NumberPicker(this).apply {
+            minValue = 0
+            maxValue = 23
+            value = startHour
+            wrapSelectorWheel = true
+        }
+        
+        val minutePicker = NumberPicker(this).apply {
+            minValue = 0
+            maxValue = 59
+            value = startMinute
+            wrapSelectorWheel = true
+            setFormatter { v -> v.toString().padStart(2, '0') }
+        }
+        
+        // Auto-increment hour when going 59->0 or 0->59
+        var lastMinute = startMinute
+        minutePicker.setOnValueChangedListener { _, _, newVal ->
+            if (newVal == 0 && lastMinute == 59) {
+                hourPicker.value = (hourPicker.value + 1) % 24
+            } else if (newVal == 59 && lastMinute == 0) {
+                hourPicker.value = if (hourPicker.value == 0) 23 else hourPicker.value - 1
+            }
+            lastMinute = newVal
+        }
+        
+        row.addView(hourPicker, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        row.addView(minutePicker, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.beheer_tijd_kiezen))
+            .setView(row)
+            .setPositiveButton("OK") { _, _ ->
+                val hh = hourPicker.value.toString().padStart(2, '0')
+                val mm = minutePicker.value.toString().padStart(2, '0')
+                targetEditText.setText("$hh:$mm")
+                
+                // Calculate new epoch
+                val newCal = Calendar.getInstance()
+                if (currentEpoch > 0) {
+                    newCal.timeInMillis = currentEpoch * 1000
+                }
+                newCal.set(Calendar.HOUR_OF_DAY, hourPicker.value)
+                newCal.set(Calendar.MINUTE, minutePicker.value)
+                newCal.set(Calendar.SECOND, 0)
+                
+                onTimeSelected(newCal.timeInMillis / 1000)
             }
             .setNegativeButton("Annuleren", null)
             .show()

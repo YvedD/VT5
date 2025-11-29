@@ -108,6 +108,12 @@
     <string name="beheer_aantal">Aantal</string>
     <string name="beheer_tellers">Tellers</string>
     <string name="beheer_opmerkingen">Opmerkingen</string>
+    <string name="beheer_telpost">Telpost</string>
+    <string name="beheer_datum">Datum</string>
+    <string name="beheer_begintijd">Begintijd</string>
+    <string name="beheer_eindtijd">Eindtijd</string>
+    <string name="beheer_weer">Weer</string>
+    <string name="beheer_tijd_kiezen">Tijd kiezen</string>
 
     <!-- SoortSelectieScherm -->
     <string name="soort_no_species_download">Geen soorten gevonden. Download eerst serverdata.</string>

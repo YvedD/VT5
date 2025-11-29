@@ -27,5 +27,10 @@ data class MetadataUpdates(
     val tellersaanwezig: String? = null,
     val metersnet: String? = null,
     val geluid: String? = null,
-    val equipment: String? = null
+    val equipment: String? = null,
+    // Time fields (stored as epoch seconds string)
+    val begintijd: String? = null,
+    val eindtijd: String? = null,
+    // Telpost
+    val telpostid: String? = null
 )

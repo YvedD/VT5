@@ -437,7 +437,10 @@ class TellingBeheerToolset(
             tellersaanwezig = updates.tellersaanwezig ?: envelope.tellersaanwezig,
             metersnet = updates.metersnet ?: envelope.metersnet,
             geluid = updates.geluid ?: envelope.geluid,
-            equipment = updates.equipment ?: envelope.equipment
+            equipment = updates.equipment ?: envelope.equipment,
+            begintijd = updates.begintijd ?: envelope.begintijd,
+            eindtijd = updates.eindtijd ?: envelope.eindtijd,
+            telpostid = updates.telpostid ?: envelope.telpostid
         )
     }
     
