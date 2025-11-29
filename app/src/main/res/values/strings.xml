@@ -105,7 +105,14 @@
     <string name="beheer_gearchiveerd">Gearchiveerd</string>
     <string name="beheer_terug">Terug naar lijst</string>
     <string name="beheer_soort_id">Soort ID</string>
+    <string name="beheer_soort">Soort</string>
     <string name="beheer_aantal">Aantal</string>
+    <string name="beheer_aantalterug">Aantal terug</string>
+    <string name="beheer_lokaal">Lokaal</string>
+    <string name="beheer_richting">Richting</string>
+    <string name="beheer_leeftijd">Leeftijd</string>
+    <string name="beheer_geslacht">Geslacht</string>
+    <string name="beheer_kleed">Kleed</string>
     <string name="beheer_tellers">Tellers</string>
     <string name="beheer_opmerkingen">Opmerkingen</string>
     <string name="beheer_telpost">Telpost</string>
@@ -124,6 +131,7 @@
     <string name="beheer_upload_fout_titel">Upload mislukt</string>
     <string name="beheer_upload_fout_msg">Kon telling niet uploaden:\n%1$s\n\nDe telling is wel lokaal opgeslagen.</string>
     <string name="beheer_geen_credentials">Geen credentials beschikbaar. Ga naar Installatie om in te loggen.</string>
+    <string name="beheer_record_volledig_bewerken">Record volledig bewerken</string>
 
     <!-- SoortSelectieScherm -->
     <string name="soort_no_species_download">Geen soorten gevonden. Download eerst serverdata.</string>

@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Soort selectie met zoekbare dropdown -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:hint="@string/beheer_soort"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+            app:boxStrokeColor="@color/vt5_light_blue"
+            app:hintTextColor="@color/vt5_light_blue">
+
+            <AutoCompleteTextView
+                android:id="@+id/acSoort"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text"
+                android:textColor="@color/vt5_on_surface" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Aantal hoofdrichting -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:hint="@string/beheer_aantal"
+            app:boxStrokeColor="@color/vt5_light_blue"
+            app:hintTextColor="@color/vt5_light_blue">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etAantal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="number"
+                android:textColor="@color/vt5_on_surface" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Aantal terug -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:hint="@string/beheer_aantalterug"
+            app:boxStrokeColor="@color/vt5_light_blue"
+            app:hintTextColor="@color/vt5_light_blue">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etAantalterug"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="number"
+                android:textColor="@color/vt5_on_surface" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Aantal lokaal -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:hint="@string/beheer_lokaal"
+            app:boxStrokeColor="@color/vt5_light_blue"
+            app:hintTextColor="@color/vt5_light_blue">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etLokaal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="number"
+                android:textColor="@color/vt5_on_surface" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Richting dropdown -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:hint="@string/beheer_richting"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+            app:boxStrokeColor="@color/vt5_light_blue"
+            app:hintTextColor="@color/vt5_light_blue">
+
+            <AutoCompleteTextView
+                android:id="@+id/acRichting"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="none"
+                android:textColor="@color/vt5_on_surface" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Leeftijd dropdown -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:hint="@string/beheer_leeftijd"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+            app:boxStrokeColor="@color/vt5_light_blue"
+            app:hintTextColor="@color/vt5_light_blue">
+
+            <AutoCompleteTextView
+                android:id="@+id/acLeeftijd"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="none"
+                android:textColor="@color/vt5_on_surface" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Geslacht dropdown -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:hint="@string/beheer_geslacht"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+            app:boxStrokeColor="@color/vt5_light_blue"
+            app:hintTextColor="@color/vt5_light_blue">
+
+            <AutoCompleteTextView
+                android:id="@+id/acGeslacht"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="none"
+                android:textColor="@color/vt5_on_surface" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Kleed dropdown -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:hint="@string/beheer_kleed"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+            app:boxStrokeColor="@color/vt5_light_blue"
+            app:hintTextColor="@color/vt5_light_blue">
+
+            <AutoCompleteTextView
+                android:id="@+id/acKleed"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="none"
+                android:textColor="@color/vt5_on_surface" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- Opmerkingen -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/beheer_opmerkingen"
+            app:boxStrokeColor="@color/vt5_light_blue"
+            app:hintTextColor="@color/vt5_light_blue">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etRecordOpmerkingen"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="textMultiLine"
+                android:minLines="2"
+                android:textColor="@color/vt5_on_surface" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+    </LinearLayout>
+</ScrollView>

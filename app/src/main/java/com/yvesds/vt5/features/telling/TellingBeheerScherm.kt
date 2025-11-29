@@ -26,9 +26,11 @@ import com.google.android.material.textfield.TextInputLayout
 import com.yvesds.vt5.R
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
 import com.yvesds.vt5.core.secure.CredentialsStore
+import com.yvesds.vt5.features.annotation.AnnotationsManager
 import com.yvesds.vt5.features.serverdata.model.DataSnapshot
 import com.yvesds.vt5.features.serverdata.model.ServerDataCache
 import com.yvesds.vt5.features.serverdata.model.SiteItem
+import com.yvesds.vt5.features.serverdata.model.SpeciesItem
 import com.yvesds.vt5.net.ServerTellingDataItem
 import com.yvesds.vt5.net.ServerTellingEnvelope
 import com.yvesds.vt5.net.TrektellenApi
@@ -472,76 +474,240 @@ class TellingBeheerScherm : AppCompatActivity() {
     }
     
     private fun showAddRecordDialog() {
-        val envelope = currentEnvelope ?: return
-        
-        val dialogView = layoutInflater.inflate(R.layout.dialog_edit_record, null)
-        
-        val etSoortId = dialogView.findViewById<TextInputEditText>(R.id.etSoortId)
-        val etAantal = dialogView.findViewById<TextInputEditText>(R.id.etAantal)
-        val etOpmerkingen = dialogView.findViewById<TextInputEditText>(R.id.etRecordOpmerkingen)
-        
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.beheer_record_toevoegen))
-            .setView(dialogView)
-            .setPositiveButton("Toevoegen") { _, _ ->
-                val soortId = etSoortId.text?.toString()?.trim() ?: ""
-                val aantal = etAantal.text?.toString()?.toIntOrNull() ?: 1
-                val opmerkingen = etOpmerkingen.text?.toString() ?: ""
-                
-                if (soortId.isBlank()) {
-                    Toast.makeText(this, "Soort ID is verplicht", Toast.LENGTH_SHORT).show()
-                    return@setPositiveButton
-                }
-                
-                val newRecord = ServerTellingDataItem(
-                    soortid = soortId,
-                    aantal = aantal.toString(),
-                    totaalaantal = aantal.toString(),
-                    opmerkingen = opmerkingen
-                )
-                
-                currentEnvelope = toolset.addRecord(envelope, newRecord, generateId = true)
-                hasUnsavedChanges = true
-                currentEnvelope?.let { updateRecordsList(it) }
-            }
-            .setNegativeButton("Annuleren", null)
-            .show()
+        showFullRecordDialog(null, null)
     }
     
     private fun showEditRecordDialog(index: Int, item: ServerTellingDataItem) {
+        showFullRecordDialog(index, item)
+    }
+    
+    /**
+     * Show a comprehensive dialog for editing or adding a record.
+     * Includes species selection with searchable dropdown and all annotation fields.
+     * 
+     * @param index Record index (null for adding new record)
+     * @param existingItem Existing record to edit (null for adding new record)
+     */
+    private fun showFullRecordDialog(index: Int?, existingItem: ServerTellingDataItem?) {
         val envelope = currentEnvelope ?: return
+        val isEditing = index != null && existingItem != null
         
-        val dialogView = layoutInflater.inflate(R.layout.dialog_edit_record, null)
+        val dialogView = layoutInflater.inflate(R.layout.dialog_edit_record_full, null)
         
-        val etSoortId = dialogView.findViewById<TextInputEditText>(R.id.etSoortId)
+        // Find all views
+        val acSoort = dialogView.findViewById<AutoCompleteTextView>(R.id.acSoort)
         val etAantal = dialogView.findViewById<TextInputEditText>(R.id.etAantal)
+        val etAantalterug = dialogView.findViewById<TextInputEditText>(R.id.etAantalterug)
+        val etLokaal = dialogView.findViewById<TextInputEditText>(R.id.etLokaal)
+        val acRichting = dialogView.findViewById<AutoCompleteTextView>(R.id.acRichting)
+        val acLeeftijd = dialogView.findViewById<AutoCompleteTextView>(R.id.acLeeftijd)
+        val acGeslacht = dialogView.findViewById<AutoCompleteTextView>(R.id.acGeslacht)
+        val acKleed = dialogView.findViewById<AutoCompleteTextView>(R.id.acKleed)
         val etOpmerkingen = dialogView.findViewById<TextInputEditText>(R.id.etRecordOpmerkingen)
         
-        etSoortId.setText(item.soortid)
-        etAantal.setText(item.aantal)
-        etOpmerkingen.setText(item.opmerkingen)
+        // State variables
+        var selectedSoortId = existingItem?.soortid ?: ""
+        var selectedRichting = existingItem?.richting ?: ""
+        var selectedLeeftijd = existingItem?.leeftijd ?: ""
+        var selectedGeslacht = existingItem?.geslacht ?: ""
+        var selectedKleed = existingItem?.kleed ?: ""
+        
+        // Prefill existing values
+        if (isEditing) {
+            acSoort.setText(existingItem!!.soortid)
+            etAantal.setText(existingItem.aantal)
+            etAantalterug.setText(existingItem.aantalterug)
+            etLokaal.setText(existingItem.lokaal)
+            acRichting.setText(existingItem.richting)
+            acLeeftijd.setText(existingItem.leeftijd)
+            acGeslacht.setText(existingItem.geslacht)
+            acKleed.setText(existingItem.kleed)
+            etOpmerkingen.setText(existingItem.opmerkingen)
+        }
+        
+        // Load species and annotation data
+        lifecycleScope.launch {
+            try {
+                // Load species data
+                val snapshot = withContext(Dispatchers.IO) {
+                    ServerDataCache.getOrLoad(this@TellingBeheerScherm)
+                }
+                
+                // Populate species dropdown
+                val species = snapshot.speciesById.values.toList()
+                    .sortedBy { it.soortnaam.lowercase(Locale.getDefault()) }
+                
+                val speciesLabels = species.map { "${it.soortnaam} (${it.soortid})" }
+                val speciesIds = species.map { it.soortid }
+                
+                val speciesAdapter = ArrayAdapter(
+                    this@TellingBeheerScherm,
+                    android.R.layout.simple_dropdown_item_1line,
+                    speciesLabels
+                )
+                acSoort.setAdapter(speciesAdapter)
+                acSoort.threshold = 1 // Start filtering after 1 character
+                
+                // Set current species display name if editing
+                if (isEditing && selectedSoortId.isNotBlank()) {
+                    val currentIdx = speciesIds.indexOf(selectedSoortId)
+                    if (currentIdx >= 0) {
+                        acSoort.setText(speciesLabels[currentIdx], false)
+                    }
+                }
+                
+                acSoort.setOnItemClickListener { _, _, pos, _ ->
+                    // Filter to find actual match
+                    val selectedLabel = acSoort.adapter.getItem(pos) as String
+                    val idx = speciesLabels.indexOf(selectedLabel)
+                    if (idx >= 0) {
+                        selectedSoortId = speciesIds[idx]
+                    }
+                }
+                
+                // Also handle manual text entry (allow typing soortid directly)
+                acSoort.setOnFocusChangeListener { _, hasFocus ->
+                    if (!hasFocus) {
+                        val text = acSoort.text.toString().trim()
+                        // Check if it's a known soortid
+                        if (speciesIds.contains(text)) {
+                            selectedSoortId = text
+                        } else {
+                            // Check if it matches a label
+                            val idx = speciesLabels.indexOfFirst { it.equals(text, ignoreCase = true) }
+                            if (idx >= 0) {
+                                selectedSoortId = speciesIds[idx]
+                            } else {
+                                // Just use the entered text as soortid
+                                selectedSoortId = text
+                            }
+                        }
+                    }
+                }
+                
+                // Load annotations
+                withContext(Dispatchers.IO) {
+                    AnnotationsManager.loadCache(this@TellingBeheerScherm)
+                }
+                val annotations = AnnotationsManager.getCached()
+                
+                // Populate richting dropdown
+                val richtingOptions = listOf("", "ZW", "NO")
+                val richtingAdapter = ArrayAdapter(this@TellingBeheerScherm, android.R.layout.simple_list_item_1, richtingOptions)
+                acRichting.setAdapter(richtingAdapter)
+                acRichting.setOnItemClickListener { _, _, pos, _ ->
+                    selectedRichting = richtingOptions[pos]
+                }
+                
+                // Populate leeftijd dropdown
+                val leeftijdOptions = listOf("") + (annotations["leeftijd"]?.map { it.waarde } ?: emptyList())
+                val leeftijdLabels = listOf("(geen)") + (annotations["leeftijd"]?.map { it.tekst } ?: emptyList())
+                val leeftijdAdapter = ArrayAdapter(this@TellingBeheerScherm, android.R.layout.simple_list_item_1, leeftijdLabels)
+                acLeeftijd.setAdapter(leeftijdAdapter)
+                if (selectedLeeftijd.isNotBlank()) {
+                    val idx = leeftijdOptions.indexOf(selectedLeeftijd)
+                    if (idx >= 0) acLeeftijd.setText(leeftijdLabels[idx], false)
+                }
+                acLeeftijd.setOnItemClickListener { _, _, pos, _ ->
+                    selectedLeeftijd = leeftijdOptions[pos]
+                }
+                
+                // Populate geslacht dropdown
+                val geslachtOptions = listOf("") + (annotations["geslacht"]?.map { it.waarde } ?: emptyList())
+                val geslachtLabels = listOf("(geen)") + (annotations["geslacht"]?.map { it.tekst } ?: emptyList())
+                val geslachtAdapter = ArrayAdapter(this@TellingBeheerScherm, android.R.layout.simple_list_item_1, geslachtLabels)
+                acGeslacht.setAdapter(geslachtAdapter)
+                if (selectedGeslacht.isNotBlank()) {
+                    val idx = geslachtOptions.indexOf(selectedGeslacht)
+                    if (idx >= 0) acGeslacht.setText(geslachtLabels[idx], false)
+                }
+                acGeslacht.setOnItemClickListener { _, _, pos, _ ->
+                    selectedGeslacht = geslachtOptions[pos]
+                }
+                
+                // Populate kleed dropdown
+                val kleedOptions = listOf("") + (annotations["kleed"]?.map { it.waarde } ?: emptyList())
+                val kleedLabels = listOf("(geen)") + (annotations["kleed"]?.map { it.tekst } ?: emptyList())
+                val kleedAdapter = ArrayAdapter(this@TellingBeheerScherm, android.R.layout.simple_list_item_1, kleedLabels)
+                acKleed.setAdapter(kleedAdapter)
+                if (selectedKleed.isNotBlank()) {
+                    val idx = kleedOptions.indexOf(selectedKleed)
+                    if (idx >= 0) acKleed.setText(kleedLabels[idx], false)
+                }
+                acKleed.setOnItemClickListener { _, _, pos, _ ->
+                    selectedKleed = kleedOptions[pos]
+                }
+                
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to load species/annotation data: ${e.message}", e)
+                Toast.makeText(this@TellingBeheerScherm, "Kon soorten niet laden", Toast.LENGTH_SHORT).show()
+            }
+        }
+        
+        val title = if (isEditing) {
+            getString(R.string.beheer_record_volledig_bewerken)
+        } else {
+            getString(R.string.beheer_record_toevoegen)
+        }
         
         AlertDialog.Builder(this)
-            .setTitle(getString(R.string.beheer_record_bewerken))
+            .setTitle(title)
             .setView(dialogView)
-            .setPositiveButton("Opslaan") { _, _ ->
-                val soortId = etSoortId.text?.toString()?.trim() ?: ""
-                val aantal = etAantal.text?.toString()?.toIntOrNull() ?: 1
-                val opmerkingen = etOpmerkingen.text?.toString() ?: ""
+            .setPositiveButton(if (isEditing) "Opslaan" else "Toevoegen") { _, _ ->
+                // Get final soortid from the text field if not set
+                if (selectedSoortId.isBlank()) {
+                    val text = acSoort.text.toString().trim()
+                    // Try to extract soortid from "naam (id)" format
+                    val match = Regex("\\(([^)]+)\\)$").find(text)
+                    selectedSoortId = match?.groupValues?.get(1) ?: text
+                }
                 
-                if (soortId.isBlank()) {
-                    Toast.makeText(this, "Soort ID is verplicht", Toast.LENGTH_SHORT).show()
+                if (selectedSoortId.isBlank()) {
+                    Toast.makeText(this, "Soort is verplicht", Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
                 
-                val updatedRecord = item.copy(
-                    soortid = soortId,
-                    aantal = aantal.toString(),
-                    totaalaantal = aantal.toString(),
-                    opmerkingen = opmerkingen
-                )
+                val aantal = etAantal.text?.toString()?.trim() ?: ""
+                val aantalterug = etAantalterug.text?.toString()?.trim() ?: ""
+                val lokaal = etLokaal.text?.toString()?.trim() ?: ""
+                val opmerkingen = etOpmerkingen.text?.toString() ?: ""
                 
-                currentEnvelope = toolset.updateRecord(envelope, index, updatedRecord)
+                // Calculate totaalaantal
+                val aantalInt = aantal.toIntOrNull() ?: 0
+                val aantalterugInt = aantalterug.toIntOrNull() ?: 0
+                val lokaalInt = lokaal.toIntOrNull() ?: 0
+                val totaal = aantalInt + aantalterugInt + lokaalInt
+                
+                if (isEditing) {
+                    val updatedRecord = existingItem!!.copy(
+                        soortid = selectedSoortId,
+                        aantal = aantal,
+                        aantalterug = aantalterug,
+                        lokaal = lokaal,
+                        totaalaantal = totaal.toString(),
+                        richting = selectedRichting,
+                        leeftijd = selectedLeeftijd,
+                        geslacht = selectedGeslacht,
+                        kleed = selectedKleed,
+                        opmerkingen = opmerkingen
+                    )
+                    currentEnvelope = toolset.updateRecord(envelope, index!!, updatedRecord)
+                } else {
+                    val newRecord = ServerTellingDataItem(
+                        soortid = selectedSoortId,
+                        aantal = aantal.ifBlank { "0" },
+                        aantalterug = aantalterug,
+                        lokaal = lokaal,
+                        totaalaantal = totaal.toString(),
+                        richting = selectedRichting,
+                        leeftijd = selectedLeeftijd,
+                        geslacht = selectedGeslacht,
+                        kleed = selectedKleed,
+                        opmerkingen = opmerkingen
+                    )
+                    currentEnvelope = toolset.addRecord(envelope, newRecord, generateId = true)
+                }
+                
                 hasUnsavedChanges = true
                 currentEnvelope?.let { updateRecordsList(it) }
             }
