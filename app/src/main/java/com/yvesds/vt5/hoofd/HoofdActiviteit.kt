@@ -14,6 +14,7 @@ import com.yvesds.vt5.core.app.HourlyAlarmManager
 import com.yvesds.vt5.core.app.AlarmTestHelper
 import com.yvesds.vt5.features.metadata.ui.MetadataScherm
 import com.yvesds.vt5.features.opstart.ui.InstallatieScherm
+import com.yvesds.vt5.features.telling.TellingBeheerScherm
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -26,6 +27,7 @@ import kotlinx.serialization.ExperimentalSerializationApi
  * 1. (Her)Installatie → InstallatieScherm
  * 2. Invoeren telpostgegevens → MetadataScherm  
  * 3. Afsluiten → Veilige app shutdown met cleanup
+ * 4. Bewerk tellingen → TellingBeheerScherm
  */
 class HoofdActiviteit : AppCompatActivity() {
     private val TAG = "HoofdActiviteit"
@@ -38,6 +40,7 @@ class HoofdActiviteit : AppCompatActivity() {
         val btnInstall   = findViewById<MaterialButton>(R.id.btnInstall)
         val btnVerder    = findViewById<MaterialButton>(R.id.btnVerder)
         val btnAfsluiten = findViewById<MaterialButton>(R.id.btnAfsluiten)
+        val btnBewerkTellingen = findViewById<MaterialButton>(R.id.btnBewerkTellingen)
         
         // Alarm sectie - altijd zichtbaar
         setupAlarmSection()
@@ -73,6 +76,13 @@ class HoofdActiviteit : AppCompatActivity() {
         btnAfsluiten.setOnClickListener {
             it.isEnabled = false
             shutdownAndExit()
+        }
+        
+        // Bewerk tellingen knop
+        btnBewerkTellingen.setOnClickListener {
+            it.isEnabled = false
+            startActivity(Intent(this, TellingBeheerScherm::class.java))
+            it.isEnabled = true
         }
     }
 

@@ -83,6 +83,31 @@
     <string name="hoofd_alarm_disabled">Uurlijks alarm is uitgeschakeld</string>
     <string name="hoofd_alarm_test">Test Alarm</string>
     <string name="hoofd_alarm_toggle">Toggle Alarm</string>
+    <string name="hoofd_bewerk_tellingen">Bewerk tellingen</string>
+
+    <!-- TellingBeheerScherm -->
+    <string name="beheer_titel">Beheer Opgeslagen Tellingen</string>
+    <string name="beheer_geen_tellingen">Geen opgeslagen tellingen gevonden</string>
+    <string name="beheer_laden">Tellingen laden…</string>
+    <string name="beheer_verwijder_bevestig_titel">Telling verwijderen?</string>
+    <string name="beheer_verwijder_bevestig_msg">Weet je zeker dat je deze telling wilt verwijderen?\n\n%1$s</string>
+    <string name="beheer_verwijderd">Telling verwijderd</string>
+    <string name="beheer_verwijder_fout">Kon telling niet verwijderen</string>
+    <string name="beheer_record_toevoegen">Record toevoegen</string>
+    <string name="beheer_record_bewerken">Record bewerken</string>
+    <string name="beheer_record_verwijderen">Record verwijderen</string>
+    <string name="beheer_metadata_bewerken">Metadata bewerken</string>
+    <string name="beheer_opslaan">Wijzigingen opslaan</string>
+    <string name="beheer_opgeslagen">Wijzigingen opgeslagen</string>
+    <string name="beheer_opslaan_fout">Kon wijzigingen niet opslaan</string>
+    <string name="beheer_telling_info">%1$d records • %2$d soorten</string>
+    <string name="beheer_actieve_telling">Actieve telling</string>
+    <string name="beheer_gearchiveerd">Gearchiveerd</string>
+    <string name="beheer_terug">Terug naar lijst</string>
+    <string name="beheer_soort_id">Soort ID</string>
+    <string name="beheer_aantal">Aantal</string>
+    <string name="beheer_tellers">Tellers</string>
+    <string name="beheer_opmerkingen">Opmerkingen</string>
 
     <!-- SoortSelectieScherm -->
     <string name="soort_no_species_download">Geen soorten gevonden. Download eerst serverdata.</string>
