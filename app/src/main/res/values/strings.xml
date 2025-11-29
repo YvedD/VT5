@@ -113,6 +113,8 @@
     <string name="beheer_leeftijd">Leeftijd</string>
     <string name="beheer_geslacht">Geslacht</string>
     <string name="beheer_kleed">Kleed</string>
+    <string name="beheer_markeren">Markeren</string>
+    <string name="beheer_markeren_lokaal">Markeren Lokaal</string>
     <string name="beheer_tellers">Tellers</string>
     <string name="beheer_opmerkingen">Opmerkingen</string>
     <string name="beheer_telpost">Telpost</string>

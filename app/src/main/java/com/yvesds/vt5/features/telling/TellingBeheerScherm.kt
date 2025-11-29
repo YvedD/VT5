@@ -503,6 +503,8 @@ class TellingBeheerScherm : AppCompatActivity() {
         val acLeeftijd = dialogView.findViewById<AutoCompleteTextView>(R.id.acLeeftijd)
         val acGeslacht = dialogView.findViewById<AutoCompleteTextView>(R.id.acGeslacht)
         val acKleed = dialogView.findViewById<AutoCompleteTextView>(R.id.acKleed)
+        val cbMarkeren = dialogView.findViewById<android.widget.CheckBox>(R.id.cbMarkeren)
+        val cbMarkerenLokaal = dialogView.findViewById<android.widget.CheckBox>(R.id.cbMarkerenLokaal)
         val etOpmerkingen = dialogView.findViewById<TextInputEditText>(R.id.etRecordOpmerkingen)
         
         // State variables
@@ -522,6 +524,8 @@ class TellingBeheerScherm : AppCompatActivity() {
             acLeeftijd.setText(existingItem.leeftijd)
             acGeslacht.setText(existingItem.geslacht)
             acKleed.setText(existingItem.kleed)
+            cbMarkeren.isChecked = existingItem.markeren == "1"
+            cbMarkerenLokaal.isChecked = existingItem.markerenlokaal == "1"
             etOpmerkingen.setText(existingItem.opmerkingen)
         }
         
@@ -599,8 +603,8 @@ class TellingBeheerScherm : AppCompatActivity() {
                     selectedRichting = richtingOptions[pos]
                 }
                 
-                // Populate leeftijd dropdown
-                val leeftijdOptions = listOf("") + (annotations["leeftijd"]?.map { it.waarde } ?: emptyList())
+                // Populate leeftijd dropdown - use waarde (server code) for values
+                val leeftijdOptions = listOf("") + (annotations["leeftijd"]?.map { it.waarde ?: "" } ?: emptyList())
                 val leeftijdLabels = listOf("(geen)") + (annotations["leeftijd"]?.map { it.tekst } ?: emptyList())
                 val leeftijdAdapter = ArrayAdapter(this@TellingBeheerScherm, android.R.layout.simple_list_item_1, leeftijdLabels)
                 acLeeftijd.setAdapter(leeftijdAdapter)
@@ -612,8 +616,8 @@ class TellingBeheerScherm : AppCompatActivity() {
                     selectedLeeftijd = leeftijdOptions[pos]
                 }
                 
-                // Populate geslacht dropdown
-                val geslachtOptions = listOf("") + (annotations["geslacht"]?.map { it.waarde } ?: emptyList())
+                // Populate geslacht dropdown - use waarde (server code) for values
+                val geslachtOptions = listOf("") + (annotations["geslacht"]?.map { it.waarde ?: "" } ?: emptyList())
                 val geslachtLabels = listOf("(geen)") + (annotations["geslacht"]?.map { it.tekst } ?: emptyList())
                 val geslachtAdapter = ArrayAdapter(this@TellingBeheerScherm, android.R.layout.simple_list_item_1, geslachtLabels)
                 acGeslacht.setAdapter(geslachtAdapter)
@@ -625,8 +629,8 @@ class TellingBeheerScherm : AppCompatActivity() {
                     selectedGeslacht = geslachtOptions[pos]
                 }
                 
-                // Populate kleed dropdown
-                val kleedOptions = listOf("") + (annotations["kleed"]?.map { it.waarde } ?: emptyList())
+                // Populate kleed dropdown - use waarde (server code) for values
+                val kleedOptions = listOf("") + (annotations["kleed"]?.map { it.waarde ?: "" } ?: emptyList())
                 val kleedLabels = listOf("(geen)") + (annotations["kleed"]?.map { it.tekst } ?: emptyList())
                 val kleedAdapter = ArrayAdapter(this@TellingBeheerScherm, android.R.layout.simple_list_item_1, kleedLabels)
                 acKleed.setAdapter(kleedAdapter)
@@ -671,6 +675,8 @@ class TellingBeheerScherm : AppCompatActivity() {
                 val aantalterug = etAantalterug.text?.toString()?.trim() ?: ""
                 val lokaal = etLokaal.text?.toString()?.trim() ?: ""
                 val opmerkingen = etOpmerkingen.text?.toString() ?: ""
+                val markeren = if (cbMarkeren.isChecked) "1" else ""
+                val markerenlokaal = if (cbMarkerenLokaal.isChecked) "1" else ""
                 
                 // Calculate totaalaantal
                 val aantalInt = aantal.toIntOrNull() ?: 0
@@ -689,6 +695,8 @@ class TellingBeheerScherm : AppCompatActivity() {
                         leeftijd = selectedLeeftijd,
                         geslacht = selectedGeslacht,
                         kleed = selectedKleed,
+                        markeren = markeren,
+                        markerenlokaal = markerenlokaal,
                         opmerkingen = opmerkingen
                     )
                     currentEnvelope = toolset.updateRecord(envelope, index!!, updatedRecord)
@@ -703,6 +711,8 @@ class TellingBeheerScherm : AppCompatActivity() {
                         leeftijd = selectedLeeftijd,
                         geslacht = selectedGeslacht,
                         kleed = selectedKleed,
+                        markeren = markeren,
+                        markerenlokaal = markerenlokaal,
                         opmerkingen = opmerkingen
                     )
                     currentEnvelope = toolset.addRecord(envelope, newRecord, generateId = true)

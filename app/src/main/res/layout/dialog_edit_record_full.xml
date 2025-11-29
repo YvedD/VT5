@@ -152,6 +152,30 @@
                 android:textColor="@color/vt5_on_surface" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- Checkboxes row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:orientation="horizontal"
+            android:gravity="start">
+
+            <CheckBox
+                android:id="@+id/cbMarkeren"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/beheer_markeren"
+                android:textColor="@color/vt5_on_surface" />
+
+            <CheckBox
+                android:id="@+id/cbMarkerenLokaal"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:text="@string/beheer_markeren_lokaal"
+                android:textColor="@color/vt5_on_surface" />
+        </LinearLayout>
+
         <!-- Opmerkingen -->
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="match_parent"
