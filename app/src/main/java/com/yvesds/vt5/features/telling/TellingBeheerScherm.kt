@@ -874,13 +874,16 @@ class TellingBeheerScherm : AppCompatActivity() {
                 // Show uploading toast
                 Toast.makeText(this@TellingBeheerScherm, getString(R.string.beheer_uploading), Toast.LENGTH_SHORT).show()
                 
-                // Prepare final envelope with current timestamp
+                // Prepare final envelope with current timestamp and sanitized data
                 val nowFormatted = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
-                val finalEnvelope = envelope.copy(
+                val preparedEnvelope = envelope.copy(
                     uploadtijdstip = nowFormatted,
                     nrec = envelope.data.size.toString(),
                     nsoort = envelope.data.map { it.soortid }.toSet().size.toString()
                 )
+                
+                // Sanitize all records to ensure proper values (no empty strings for numeric fields)
+                val finalEnvelope = sanitizeEnvelopeForUpload(preparedEnvelope)
                 
                 // Upload to server
                 val baseUrl = "https://trektellen.nl"
@@ -932,6 +935,48 @@ class TellingBeheerScherm : AppCompatActivity() {
                     .show()
             }
         }
+    }
+    
+    /**
+     * Sanitize all records in an envelope to ensure all fields have valid string values.
+     * Server does not accept null values - empty strings "" are OK.
+     * For numeric fields, we use "0" as the default when empty/blank.
+     */
+    private fun sanitizeEnvelopeForUpload(envelope: ServerTellingEnvelope): ServerTellingEnvelope {
+        val sanitizedData = envelope.data.map { record ->
+            record.copy(
+                // IDs - ensure not null, empty string is OK
+                idLocal = record.idLocal,
+                tellingid = record.tellingid,
+                soortid = record.soortid,
+                // Numeric fields: use "0" if blank (server may require numeric values)
+                aantal = record.aantal.ifBlank { "0" },
+                aantalterug = record.aantalterug.ifBlank { "0" },
+                lokaal = record.lokaal.ifBlank { "0" },
+                aantal_plus = record.aantal_plus.ifBlank { "0" },
+                aantalterug_plus = record.aantalterug_plus.ifBlank { "0" },
+                lokaal_plus = record.lokaal_plus.ifBlank { "0" },
+                markeren = record.markeren.ifBlank { "0" },
+                markerenlokaal = record.markerenlokaal.ifBlank { "0" },
+                totaalaantal = record.totaalaantal.ifBlank { "0" },
+                // String fields: keep as-is (empty string is OK for server)
+                richting = record.richting,
+                richtingterug = record.richtingterug,
+                sightingdirection = record.sightingdirection,
+                geslacht = record.geslacht,
+                leeftijd = record.leeftijd,
+                kleed = record.kleed,
+                opmerkingen = record.opmerkingen,
+                trektype = record.trektype,
+                teltype = record.teltype,
+                location = record.location,
+                height = record.height,
+                tijdstip = record.tijdstip,
+                groupid = record.groupid,
+                uploadtijdstip = record.uploadtijdstip
+            )
+        }
+        return envelope.copy(data = sanitizedData)
     }
     
     /**
