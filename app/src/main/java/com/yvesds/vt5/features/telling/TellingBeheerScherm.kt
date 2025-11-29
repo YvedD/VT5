@@ -2,6 +2,7 @@ package com.yvesds.vt5.features.telling
 
 import android.app.DatePickerDialog
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -24,11 +25,13 @@ import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
 import com.yvesds.vt5.R
 import com.yvesds.vt5.core.opslag.SaFStorageHelper
+import com.yvesds.vt5.core.secure.CredentialsStore
 import com.yvesds.vt5.features.serverdata.model.DataSnapshot
 import com.yvesds.vt5.features.serverdata.model.ServerDataCache
 import com.yvesds.vt5.features.serverdata.model.SiteItem
 import com.yvesds.vt5.net.ServerTellingDataItem
 import com.yvesds.vt5.net.ServerTellingEnvelope
+import com.yvesds.vt5.net.TrektellenApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -46,6 +49,7 @@ import java.util.Locale
  * - Records bewerken, toevoegen, verwijderen
  * - Metadata bewerken
  * - Telling verwijderen
+ * - Opslaan en uploaden naar server
  */
 class TellingBeheerScherm : AppCompatActivity() {
     
@@ -594,6 +598,24 @@ class TellingBeheerScherm : AppCompatActivity() {
         val filename = currentFilename ?: return
         val envelope = currentEnvelope ?: return
         
+        // Show confirmation dialog for upload
+        AlertDialog.Builder(this)
+            .setTitle(getString(R.string.beheer_upload_bevestig_titel))
+            .setMessage(getString(R.string.beheer_upload_bevestig_msg))
+            .setPositiveButton(getString(R.string.beheer_upload_en_opslaan)) { _, _ ->
+                performSaveAndUpload(filename, envelope)
+            }
+            .setNegativeButton(getString(R.string.beheer_alleen_opslaan)) { _, _ ->
+                performSaveOnly(filename, envelope)
+            }
+            .setNeutralButton("Annuleren", null)
+            .show()
+    }
+    
+    /**
+     * Save locally only without uploading to server.
+     */
+    private fun performSaveOnly(filename: String, envelope: ServerTellingEnvelope) {
         lifecycleScope.launch {
             try {
                 val success = withContext(Dispatchers.IO) {
@@ -607,8 +629,122 @@ class TellingBeheerScherm : AppCompatActivity() {
                     Toast.makeText(this@TellingBeheerScherm, getString(R.string.beheer_opslaan_fout), Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
+                Log.w(TAG, "Save only failed: ${e.message}", e)
                 Toast.makeText(this@TellingBeheerScherm, "Fout: ${e.message}", Toast.LENGTH_SHORT).show()
             }
+        }
+    }
+    
+    /**
+     * Save locally and upload to server (like Afronden in TellingScherm).
+     */
+    private fun performSaveAndUpload(filename: String, envelope: ServerTellingEnvelope) {
+        lifecycleScope.launch {
+            try {
+                // First save locally
+                val saveSuccess = withContext(Dispatchers.IO) {
+                    toolset.saveTelling(envelope, filename)
+                }
+                
+                if (!saveSuccess) {
+                    Toast.makeText(this@TellingBeheerScherm, getString(R.string.beheer_opslaan_fout), Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                
+                // Get credentials
+                val creds = CredentialsStore(this@TellingBeheerScherm)
+                val user = creds.getUsername().orEmpty()
+                val pass = creds.getPassword().orEmpty()
+                
+                if (user.isBlank() || pass.isBlank()) {
+                    AlertDialog.Builder(this@TellingBeheerScherm)
+                        .setTitle(getString(R.string.beheer_upload_fout_titel))
+                        .setMessage(getString(R.string.beheer_geen_credentials))
+                        .setPositiveButton("OK", null)
+                        .show()
+                    return@launch
+                }
+                
+                // Show uploading toast
+                Toast.makeText(this@TellingBeheerScherm, getString(R.string.beheer_uploading), Toast.LENGTH_SHORT).show()
+                
+                // Prepare final envelope with current timestamp
+                val nowFormatted = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+                val finalEnvelope = envelope.copy(
+                    uploadtijdstip = nowFormatted,
+                    nrec = envelope.data.size.toString(),
+                    nsoort = envelope.data.map { it.soortid }.toSet().size.toString()
+                )
+                
+                // Upload to server
+                val baseUrl = "https://trektellen.nl"
+                val language = "dutch"
+                val versie = "1845"
+                
+                val (ok, resp) = withContext(Dispatchers.IO) {
+                    try {
+                        TrektellenApi.postCountsSave(baseUrl, language, versie, user, pass, listOf(finalEnvelope))
+                    } catch (ex: Exception) {
+                        Log.w(TAG, "postCountsSave exception: ${ex.message}", ex)
+                        false to (ex.message ?: "exception")
+                    }
+                }
+                
+                if (ok) {
+                    hasUnsavedChanges = false
+                    
+                    // Parse returned onlineId if available
+                    val returnedOnlineId = parseOnlineIdFromResponse(resp)
+                    if (!returnedOnlineId.isNullOrBlank() && returnedOnlineId != envelope.onlineid) {
+                        // Update envelope with new onlineId and save again
+                        val updatedEnvelope = finalEnvelope.copy(onlineid = returnedOnlineId)
+                        currentEnvelope = updatedEnvelope
+                        withContext(Dispatchers.IO) {
+                            toolset.saveTelling(updatedEnvelope, filename)
+                        }
+                        updateDetailView(updatedEnvelope)
+                    }
+                    
+                    AlertDialog.Builder(this@TellingBeheerScherm)
+                        .setTitle(getString(R.string.beheer_upload_succes_titel))
+                        .setMessage(getString(R.string.beheer_upload_succes_msg))
+                        .setPositiveButton("OK", null)
+                        .show()
+                } else {
+                    AlertDialog.Builder(this@TellingBeheerScherm)
+                        .setTitle(getString(R.string.beheer_upload_fout_titel))
+                        .setMessage(getString(R.string.beheer_upload_fout_msg, resp))
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Save and upload failed: ${e.message}", e)
+                AlertDialog.Builder(this@TellingBeheerScherm)
+                    .setTitle(getString(R.string.beheer_upload_fout_titel))
+                    .setMessage("Fout: ${e.message}")
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
+        }
+    }
+    
+    /**
+     * Parse onlineId from server response.
+     * Response format is typically: "onlineid|timestamp" or just contains onlineId.
+     */
+    private fun parseOnlineIdFromResponse(response: String): String? {
+        return try {
+            val trimmed = response.trim()
+            if (trimmed.contains("|")) {
+                trimmed.split("|").firstOrNull()?.trim()
+            } else {
+                // Try to extract a number from the response
+                val match = Regex("\\d+").find(trimmed)
+                match?.value
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse onlineId: ${e.message}")
+            null
         }
     }
     
