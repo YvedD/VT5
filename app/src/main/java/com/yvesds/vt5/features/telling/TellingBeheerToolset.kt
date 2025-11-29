@@ -43,6 +43,7 @@ class TellingBeheerToolset(
         private const val COUNTS_DIR = "counts"
         private const val VT5_DIR = "VT5"
         private const val ACTIVE_FILENAME = "active_telling.json"
+        private const val MAX_FILENAME_ID_LENGTH = 50
         
         private val PRETTY_JSON: Json by lazy { 
             Json { 
@@ -200,7 +201,7 @@ class TellingBeheerToolset(
         // Probeer SAF eerste
         var savedToSaf = false
         try {
-            val countsDir = getCountsDirSaf() ?: createCountsDirSaf()
+            val countsDir = ensureCountsDirSaf()
             if (countsDir != null) {
                 // Verwijder bestaand bestand indien aanwezig
                 val existingFile = countsDir.findFile(targetFilename)
@@ -332,7 +333,10 @@ class TellingBeheerToolset(
         generateId: Boolean = true
     ): ServerTellingEnvelope {
         val newRecord = if (generateId) {
-            val maxId = envelope.data.maxOfOrNull { it.idLocal.toIntOrNull() ?: 0 } ?: 0
+            // Generate new ID: find max numeric ID and increment
+            // Non-numeric IDs are treated as 0 to ensure we always get a valid next ID
+            val existingNumericIds = envelope.data.mapNotNull { it.idLocal.toIntOrNull() }
+            val maxId = existingNumericIds.maxOrNull() ?: 0
             val newId = (maxId + 1).toString()
             record.copy(
                 idLocal = newId,
@@ -487,27 +491,38 @@ class TellingBeheerToolset(
     // PRIVATE HELPERS
     // ========================================================================
     
+    /**
+     * Get the counts directory from SAF.
+     * Uses SaFStorageHelper.getCountsDir() for consistency.
+     */
     private fun getCountsDirSaf(): DocumentFile? {
         return try {
-            val vt5Dir = safHelper.getVt5DirIfExists() ?: return null
-            vt5Dir.findFile(COUNTS_DIR)?.takeIf { it.isDirectory }
+            safHelper.getCountsDir()
         } catch (e: Exception) {
             Log.w(TAG, "getCountsDirSaf failed: ${e.message}", e)
             null
         }
     }
     
-    private fun createCountsDirSaf(): DocumentFile? {
+    /**
+     * Ensure counts directory exists and return it.
+     * Creates the directory if it doesn't exist.
+     */
+    private fun ensureCountsDirSaf(): DocumentFile? {
         return try {
-            val vt5Dir = safHelper.getVt5DirIfExists()
-            if (vt5Dir == null) {
-                safHelper.ensureFolders()
-                safHelper.getVt5DirIfExists()?.findFile(COUNTS_DIR)
-            } else {
-                vt5Dir.findFile(COUNTS_DIR) ?: vt5Dir.createDirectory(COUNTS_DIR)
+            // First try to get existing counts dir
+            safHelper.getCountsDir()?.let { return it }
+            
+            // If not found, ensure all VT5 folders exist (including counts)
+            if (!safHelper.ensureFolders()) {
+                Log.w(TAG, "ensureFolders failed")
+                return null
             }
+            
+            // Now try to get counts dir again
+            safHelper.getCountsDir()
         } catch (e: Exception) {
-            Log.w(TAG, "createCountsDirSaf failed: ${e.message}", e)
+            Log.w(TAG, "ensureCountsDirSaf failed: ${e.message}", e)
             null
         }
     }
@@ -626,8 +641,9 @@ class TellingBeheerToolset(
     
     /**
      * Sanitize een string voor gebruik in een bestandsnaam.
+     * Vervangt ongeldige tekens en beperkt lengte tot MAX_FILENAME_ID_LENGTH.
      */
     private fun sanitizeFilename(input: String): String {
-        return input.replace(Regex("[^a-zA-Z0-9_-]"), "_").take(50)
+        return input.replace(Regex("[^a-zA-Z0-9_-]"), "_").take(MAX_FILENAME_ID_LENGTH)
     }
 }
