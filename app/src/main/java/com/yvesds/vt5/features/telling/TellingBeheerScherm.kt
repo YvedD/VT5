@@ -671,12 +671,21 @@ class TellingBeheerScherm : AppCompatActivity() {
                     return@setPositiveButton
                 }
                 
-                val aantal = etAantal.text?.toString()?.trim() ?: ""
-                val aantalterug = etAantalterug.text?.toString()?.trim() ?: ""
-                val lokaal = etLokaal.text?.toString()?.trim() ?: ""
+                // All numeric fields must be "0" when empty/blank, not ""
+                // Server expects string values, empty strings must be "" for non-numeric fields
+                val aantalRaw = etAantal.text?.toString()?.trim() ?: ""
+                val aantalterugRaw = etAantalterug.text?.toString()?.trim() ?: ""
+                val lokaalRaw = etLokaal.text?.toString()?.trim() ?: ""
                 val opmerkingen = etOpmerkingen.text?.toString() ?: ""
-                val markeren = if (cbMarkeren.isChecked) "1" else ""
-                val markerenlokaal = if (cbMarkerenLokaal.isChecked) "1" else ""
+                
+                // Numeric fields: use "0" when blank
+                val aantal = aantalRaw.ifBlank { "0" }
+                val aantalterug = aantalterugRaw.ifBlank { "0" }
+                val lokaal = lokaalRaw.ifBlank { "0" }
+                
+                // Checkboxes: "0" or "1" (never "")
+                val markeren = if (cbMarkeren.isChecked) "1" else "0"
+                val markerenlokaal = if (cbMarkerenLokaal.isChecked) "1" else "0"
                 
                 // Calculate totaalaantal
                 val aantalInt = aantal.toIntOrNull() ?: 0
@@ -701,19 +710,40 @@ class TellingBeheerScherm : AppCompatActivity() {
                     )
                     currentEnvelope = toolset.updateRecord(envelope, index!!, updatedRecord)
                 } else {
+                    // Create new record with all fields properly set
+                    // Numeric fields must be "0" when blank, not ""
+                    val nowEpoch = (System.currentTimeMillis() / 1000L).toString()
+                    val currentTimestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                        .format(Date())
+                    
                     val newRecord = ServerTellingDataItem(
+                        // IDs will be set by addRecord
+                        idLocal = "",
+                        tellingid = "",
                         soortid = selectedSoortId,
-                        aantal = aantal.ifBlank { "0" },
-                        aantalterug = aantalterug,
-                        lokaal = lokaal,
-                        totaalaantal = totaal.toString(),
+                        aantal = aantal,
                         richting = selectedRichting,
-                        leeftijd = selectedLeeftijd,
-                        geslacht = selectedGeslacht,
-                        kleed = selectedKleed,
+                        aantalterug = aantalterug,
+                        richtingterug = "",
+                        sightingdirection = "",
+                        lokaal = lokaal,
+                        aantal_plus = "0",
+                        aantalterug_plus = "0",
+                        lokaal_plus = "0",
                         markeren = markeren,
                         markerenlokaal = markerenlokaal,
-                        opmerkingen = opmerkingen
+                        geslacht = selectedGeslacht,
+                        leeftijd = selectedLeeftijd,
+                        kleed = selectedKleed,
+                        opmerkingen = opmerkingen,
+                        trektype = "",
+                        teltype = "",
+                        location = "",
+                        height = "",
+                        tijdstip = nowEpoch,
+                        groupid = "",
+                        uploadtijdstip = currentTimestamp,
+                        totaalaantal = totaal.toString()
                     )
                     currentEnvelope = toolset.addRecord(envelope, newRecord, generateId = true)
                 }
