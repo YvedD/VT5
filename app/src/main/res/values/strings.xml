@@ -84,6 +84,15 @@
     <string name="hoofd_alarm_test">Test Alarm</string>
     <string name="hoofd_alarm_toggle">Toggle Alarm</string>
     <string name="hoofd_bewerk_tellingen">Bewerk tellingen</string>
+    <string name="hoofd_opkuis_exports">Opkuis submap \'exports\'</string>
+    <string name="hoofd_opkuis_bevestig_titel">Exports opkuisen?</string>
+    <string name="hoofd_opkuis_bevestig_msg">Wil je alle bestanden verwijderen behalve de 10 meest recente?\n\n%1$d bestanden zullen verwijderd worden.</string>
+    <string name="hoofd_opkuis_ja">Ja</string>
+    <string name="hoofd_opkuis_nee">Nee</string>
+    <string name="hoofd_opkuis_succes">%1$d bestanden verwijderd</string>
+    <string name="hoofd_opkuis_geen_bestanden">Geen oude bestanden om te verwijderen</string>
+    <string name="hoofd_opkuis_fout">Fout bij opkuisen: %1$s</string>
+    <string name="hoofd_opkuis_laden">Exports laden…</string>
 
     <!-- TellingBeheerScherm -->
     <string name="beheer_titel">Beheer Opgeslagen Tellingen</string>

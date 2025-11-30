@@ -99,4 +99,14 @@
         android:text="@string/hoofd_bewerk_tellingen"
         android:textSize="14sp" />
 
+    <!-- Exports opkuis sectie -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnOpkuisExports"
+        style="@style/Widget.VT5.Button.Outlined"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/hoofd_opkuis_exports"
+        android:textSize="14sp" />
+
 </LinearLayout>
