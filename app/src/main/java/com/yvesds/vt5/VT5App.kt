@@ -165,6 +165,7 @@ class VT5App : Application() {
                 ignoreUnknownKeys = true
                 explicitNulls = false
                 encodeDefaults = true  // Always include all fields, even empty strings
+                coerceInputValues = true  // Convert null to default values when decoding
             }
         }
 
