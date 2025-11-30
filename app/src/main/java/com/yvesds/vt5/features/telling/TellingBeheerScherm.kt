@@ -14,6 +14,7 @@ import android.widget.LinearLayout
 import android.widget.NumberPicker
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -98,9 +99,32 @@ class TellingBeheerScherm : AppCompatActivity() {
         safHelper = SaFStorageHelper(this)
         toolset = TellingBeheerToolset(this, safHelper)
         
+        setupBackPressedCallback()
         initViews()
         setupListeners()
         loadTellingenList()
+    }
+    
+    /**
+     * Setup OnBackPressedCallback voor moderne back button handling.
+     * Vervangt deprecated onBackPressed() override.
+     */
+    private fun setupBackPressedCallback() {
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (layoutDetail.visibility == View.VISIBLE) {
+                    if (hasUnsavedChanges) {
+                        showUnsavedChangesDialog()
+                    } else {
+                        showListView()
+                    }
+                } else {
+                    // Disable this callback and let the system handle the back press
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        })
     }
     
     private fun initViews() {
@@ -1018,19 +1042,6 @@ class TellingBeheerScherm : AppCompatActivity() {
         tvDetailInfo.text = getString(R.string.beheer_telling_info, envelope.data.size, 
             envelope.data.map { it.soortid }.toSet().size)
         tvDetailTelpost.text = "Telpost: ${envelope.telpostid} • Tellers: ${envelope.tellers}"
-    }
-    
-    @Deprecated("Deprecated in Java")
-    override fun onBackPressed() {
-        if (layoutDetail.visibility == View.VISIBLE) {
-            if (hasUnsavedChanges) {
-                showUnsavedChangesDialog()
-            } else {
-                showListView()
-            }
-        } else {
-            super.onBackPressed()
-        }
     }
     
     // ========================================================================

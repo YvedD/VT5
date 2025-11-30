@@ -2,6 +2,7 @@ package com.yvesds.vt5.splash
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
@@ -66,7 +67,17 @@ class SplashActiviteit : AppCompatActivity() {
             startActivity(Intent(this, HoofdActiviteit::class.java))
             finish()
             // Fade animatie voor een vloeiende overgang
-            overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+            // Gebruik moderne overrideActivityTransition (API 34+) of fallback voor oudere APIs
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                overrideActivityTransition(
+                    OVERRIDE_TRANSITION_CLOSE,
+                    android.R.anim.fade_in,
+                    android.R.anim.fade_out
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
+            }
         }
     }
 }
