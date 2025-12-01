@@ -65,11 +65,17 @@ class TellingAfrondHandler(
 
     /**
      * Handle the complete Afronden (finalize and upload) flow.
+     * 
+     * @param pendingRecords List of records to include in the envelope
+     * @param pendingBackupDocs List of backup document files to clean up on success
+     * @param pendingBackupInternalPaths List of internal backup paths to clean up on success
+     * @param metadataUpdates Optional metadata updates (begintijd, eindtijd, opmerkingen)
      */
     suspend fun handleAfronden(
         pendingRecords: List<ServerTellingDataItem>,
         pendingBackupDocs: List<DocumentFile>,
-        pendingBackupInternalPaths: List<String>
+        pendingBackupInternalPaths: List<String>,
+        metadataUpdates: MetadataUpdates? = null
     ): AfrondResult = withContext(Dispatchers.IO) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         
@@ -104,14 +110,23 @@ class TellingAfrondHandler(
         val envelopeWithOnline = dataProcessor.applySavedOnlineIdToEnvelope(envelopeList, savedOnlineId)
         persistSavedEnvelopeJson(prefs, envelopeWithOnline)
 
-        // 3. Build final envelope with current time and records
+        // 3. Build final envelope with times and records
         val nowEpoch = (System.currentTimeMillis() / 1000L)
         val nowEpochStr = nowEpoch.toString()
         val nowFormatted = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
 
         val baseEnv = envelopeWithOnline[0]
+        
+        // Apply metadata updates if provided (begintijd, eindtijd, opmerkingen)
+        // Otherwise use defaults: keep original begintijd, set eindtijd to now
+        val effectiveBegintijd = metadataUpdates?.begintijd ?: baseEnv.begintijd
+        val effectiveEindtijd = metadataUpdates?.eindtijd ?: nowEpochStr
+        val effectiveOpmerkingen = metadataUpdates?.opmerkingen ?: baseEnv.opmerkingen
+        
         val envWithTimes = baseEnv.copy(
-            eindtijd = nowEpochStr, 
+            begintijd = effectiveBegintijd,
+            eindtijd = effectiveEindtijd,
+            opmerkingen = effectiveOpmerkingen,
             uploadtijdstip = nowFormatted
         )
 
