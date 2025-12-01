@@ -263,6 +263,9 @@ class TellingBeheerScherm : AppCompatActivity() {
     
     private fun updateRecordsList(envelope: ServerTellingEnvelope) {
         recordsAdapter.submitList(envelope.data.mapIndexed { index, item -> index to item })
+        // Force RecyclerView to recalculate layout after data change
+        // This is needed because rvRecords is inside a ScrollView with wrap_content height
+        rvRecords.requestLayout()
     }
     
     private fun showEditMetadataDialog(envelope: ServerTellingEnvelope) {
@@ -773,7 +776,10 @@ class TellingBeheerScherm : AppCompatActivity() {
                 }
                 
                 hasUnsavedChanges = true
-                currentEnvelope?.let { updateRecordsList(it) }
+                currentEnvelope?.let { 
+                    updateRecordsList(it)
+                    updateDetailView(it)
+                }
             }
             .setNegativeButton("Annuleren", null)
             .show()
@@ -788,7 +794,10 @@ class TellingBeheerScherm : AppCompatActivity() {
             .setPositiveButton("Verwijderen") { _, _ ->
                 currentEnvelope = toolset.deleteRecord(envelope, index)
                 hasUnsavedChanges = true
-                currentEnvelope?.let { updateRecordsList(it) }
+                currentEnvelope?.let { 
+                    updateRecordsList(it)
+                    updateDetailView(it)
+                }
             }
             .setNegativeButton("Annuleren", null)
             .show()
