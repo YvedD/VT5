@@ -1,7 +1,6 @@
 package com.yvesds.vt5.features.telling
 
 import android.app.Dialog
-import android.content.Context
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
@@ -11,10 +10,8 @@ import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.DialogFragment
 import com.yvesds.vt5.R
 import com.yvesds.vt5.databinding.DialogAfrondConfirmBinding
-import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
-import java.util.Locale
 
 /**
  * AfrondConfirmDialog: Confirmation dialog for finalizing a telling.
@@ -86,10 +83,10 @@ class AfrondConfirmDialog : DialogFragment() {
     private var eindtijdHour = 0
     private var eindtijdMinute = 0
     
-    // Date for epoch conversion (from begintijd)
-    private var dateYear = 0
-    private var dateMonth = 0
-    private var dateDay = 0
+    // Date for epoch conversion (from begintijd) - initialized with current date as safe default
+    private var dateYear = Calendar.getInstance().get(Calendar.YEAR)
+    private var dateMonth = Calendar.getInstance().get(Calendar.MONTH)
+    private var dateDay = Calendar.getInstance().get(Calendar.DAY_OF_MONTH)
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         binding = DialogAfrondConfirmBinding.inflate(LayoutInflater.from(context))
@@ -148,7 +145,12 @@ class AfrondConfirmDialog : DialogFragment() {
      */
     private fun parseEpochToDateTime(epochStr: String, isBegin: Boolean) {
         try {
-            val epochSeconds = epochStr.toLongOrNull() ?: return
+            val epochSeconds = epochStr.toLongOrNull()
+            if (epochSeconds == null) {
+                Log.w(TAG, "Failed to parse epoch string to Long: '$epochStr', using current time as fallback")
+                setFallbackTime(isBegin)
+                return
+            }
             val date = Date(epochSeconds * 1000L)
             val cal = Calendar.getInstance()
             cal.time = date
@@ -165,18 +167,24 @@ class AfrondConfirmDialog : DialogFragment() {
             }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to parse epoch: ${e.message}")
-            // Use current time as fallback
-            val now = Calendar.getInstance()
-            if (isBegin) {
-                dateYear = now.get(Calendar.YEAR)
-                dateMonth = now.get(Calendar.MONTH)
-                dateDay = now.get(Calendar.DAY_OF_MONTH)
-                begintijdHour = now.get(Calendar.HOUR_OF_DAY)
-                begintijdMinute = now.get(Calendar.MINUTE)
-            } else {
-                eindtijdHour = now.get(Calendar.HOUR_OF_DAY)
-                eindtijdMinute = now.get(Calendar.MINUTE)
-            }
+            setFallbackTime(isBegin)
+        }
+    }
+    
+    /**
+     * Set fallback time values to current time.
+     */
+    private fun setFallbackTime(isBegin: Boolean) {
+        val now = Calendar.getInstance()
+        if (isBegin) {
+            dateYear = now.get(Calendar.YEAR)
+            dateMonth = now.get(Calendar.MONTH)
+            dateDay = now.get(Calendar.DAY_OF_MONTH)
+            begintijdHour = now.get(Calendar.HOUR_OF_DAY)
+            begintijdMinute = now.get(Calendar.MINUTE)
+        } else {
+            eindtijdHour = now.get(Calendar.HOUR_OF_DAY)
+            eindtijdMinute = now.get(Calendar.MINUTE)
         }
     }
 

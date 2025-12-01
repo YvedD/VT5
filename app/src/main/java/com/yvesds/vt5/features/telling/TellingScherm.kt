@@ -594,7 +594,7 @@ class TellingScherm : AppCompatActivity() {
                 savedEnvelopeJson
             )
             
-            if (envelopeList.isNullOrEmpty()) {
+            if (envelopeList.isEmpty()) {
                 val nowEpoch = (System.currentTimeMillis() / 1000L).toString()
                 return EnvelopeData(nowEpoch, nowEpoch, "")
             }
