@@ -19,6 +19,8 @@ class TellingLogManager(
         private val RE_ASR_PREFIX = Regex("(?i)^\\s*asr:\\s*")
         private val RE_TRIM_RAW_NUMBER = Regex("\\s+\\d+(?:[.,]\\d+)?\$")
         private val RE_TRAILING_NUMBER = Regex("^(.*?)(?:\\s+(\\d+)(?:[.,]\\d+)?)?\$")
+        // Pattern for "name -> +N" format used in formatted partials (e.g., "grauwehands -> +15")
+        private val RE_ARROW_COUNT = Regex("^(.+?)\\s*->\\s*\\+?(\\d+)$")
     }
 
     // Storage for log entries
@@ -117,7 +119,10 @@ class TellingLogManager(
 
     /**
      * Parse display text to extract name and count.
-     * Examples: "Buizerd 3" -> ("Buizerd", 3), "Buizerd" -> ("Buizerd", 1)
+     * Examples: 
+     * - "Buizerd 3" -> ("Buizerd", 3)
+     * - "Buizerd" -> ("Buizerd", 1)
+     * - "grauwehands -> +15" -> ("grauwehands", 15)  (formatted partial)
      */
     fun parseNameAndCountFromDisplay(text: String): Pair<String, Int> {
         var workingText = text.trim()
@@ -125,7 +130,16 @@ class TellingLogManager(
         // Strip "asr:" prefix if present
         workingText = workingText.replace(RE_ASR_PREFIX, "")
         
-        // Try to match trailing number
+        // First, try to match the "name -> +N" format used in formatted partials
+        // This is the format created by upsertPartialLog() for recognized species+count
+        val arrowMatch = RE_ARROW_COUNT.find(workingText)
+        if (arrowMatch != null) {
+            val nameOnly = arrowMatch.groups[1]?.value?.trim().orEmpty()
+            val count = arrowMatch.groups[2]?.value?.toIntOrNull() ?: 1
+            return nameOnly to count
+        }
+        
+        // Fallback: try to match trailing number (e.g., "Buizerd 3")
         val match = RE_TRAILING_NUMBER.find(workingText)
         if (match != null) {
             val nameOnly = (match.groups[1]?.value ?: workingText).trim()
