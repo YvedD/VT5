@@ -504,7 +504,11 @@ class TellingScherm : AppCompatActivity() {
                             
                             if (count > 0) {
                                 lifecycleScope.launch {
+                                    // Add species to tiles (creates tile if not present, or increases count)
                                     speciesManager.addSpeciesToTilesIfNeeded(speciesId, canonical, count)
+                                    // Add to finals log (green text) and collect record for server upload
+                                    addFinalLog("$canonical -> +$count")
+                                    speciesManager.collectFinalAsRecord(speciesId, count)
                                 }
                             }
                         },
