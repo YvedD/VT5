@@ -158,6 +158,9 @@
     <string name="dialog_confirm_finish">Afronden bevestigen</string>
     <string name="dialog_finish_success">Afronden geslaagd</string>
     <string name="dialog_choose_species">Kies soort</string>
+    <string name="afrond_confirm_info">Controleer en pas eventueel de begin- en eindtijd aan, en voeg opmerkingen toe indien nodig.</string>
+    <string name="afrond_confirm_upload">Uploaden</string>
+    <string name="afrond_time_picker_title">Tijd kiezen</string>
 
     <!-- AliasEditor &amp; AddAliasDialog -->
     <string name="alias_reload_complete">Aliassen herladen: klaar</string>

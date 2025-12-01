@@ -530,25 +530,86 @@ class TellingScherm : AppCompatActivity() {
 
     /**
      * Handle Afronden button with confirmation dialog.
+     * Shows a popup to allow editing begintijd, eindtijd, and opmerkingen.
      */
     private fun handleAfrondenWithConfirmation() {
-        val builder = AlertDialog.Builder(this)
-            .setTitle(getString(R.string.dialog_confirm_finish))
-            .setMessage("Weet je zeker dat je wilt afronden en de telling uploaden?")
-            .setPositiveButton("Ja") { _, _ ->
+        // Get current envelope data to show as defaults in dialog
+        val envelopeData = getCurrentEnvelopeData()
+        
+        val dialog = AfrondConfirmDialog.newInstance(
+            begintijdEpoch = envelopeData.begintijd,
+            eindtijdEpoch = envelopeData.eindtijd,
+            opmerkingen = envelopeData.opmerkingen
+        )
+        
+        dialog.listener = object : AfrondConfirmDialog.AfrondConfirmListener {
+            override fun onAfrondConfirmed(begintijdEpoch: String, eindtijdEpoch: String, opmerkingen: String) {
                 lifecycleScope.launch {
-                    val dialog = ProgressDialogHelper.show(this@TellingScherm, "Bezig met afronden upload...")
+                    val progressDialog = ProgressDialogHelper.show(this@TellingScherm, "Bezig met afronden upload...")
                     try { 
-                        handleAfronden() 
+                        handleAfronden(
+                            MetadataUpdates(
+                                begintijd = begintijdEpoch,
+                                eindtijd = eindtijdEpoch,
+                                opmerkingen = opmerkingen
+                            )
+                        )
                     } finally { 
-                        dialog.dismiss() 
+                        progressDialog.dismiss() 
                     }
                 }
             }
-            .setNegativeButton("Nee", null)
+            
+            override fun onAfrondCancelled() {
+                // User cancelled - do nothing
+            }
+        }
         
-        val dlg = builder.show()
-        dialogHelper.styleAlertDialogTextToWhite(dlg)
+        dialog.show(supportFragmentManager, "afrondConfirm")
+    }
+    
+    /**
+     * Data class to hold current envelope metadata for the confirm dialog.
+     */
+    private data class EnvelopeData(
+        val begintijd: String,
+        val eindtijd: String,
+        val opmerkingen: String
+    )
+    
+    /**
+     * Get current envelope data from saved preferences.
+     */
+    private fun getCurrentEnvelopeData(): EnvelopeData {
+        return try {
+            val savedEnvelopeJson = prefs.getString("pref_saved_envelope_json", null)
+            if (savedEnvelopeJson.isNullOrBlank()) {
+                // Return defaults with current time
+                val nowEpoch = (System.currentTimeMillis() / 1000L).toString()
+                return EnvelopeData(nowEpoch, nowEpoch, "")
+            }
+            
+            val envelopeList = VT5App.json.decodeFromString(
+                ListSerializer(ServerTellingEnvelope.serializer()),
+                savedEnvelopeJson
+            )
+            
+            if (envelopeList.isNullOrEmpty()) {
+                val nowEpoch = (System.currentTimeMillis() / 1000L).toString()
+                return EnvelopeData(nowEpoch, nowEpoch, "")
+            }
+            
+            val envelope = envelopeList[0]
+            EnvelopeData(
+                begintijd = envelope.begintijd,
+                eindtijd = envelope.eindtijd.ifBlank { (System.currentTimeMillis() / 1000L).toString() },
+                opmerkingen = envelope.opmerkingen
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to get envelope data: ${e.message}")
+            val nowEpoch = (System.currentTimeMillis() / 1000L).toString()
+            EnvelopeData(nowEpoch, nowEpoch, "")
+        }
     }
 
     /**
@@ -900,12 +961,15 @@ class TellingScherm : AppCompatActivity() {
     // Afronden: build counts_save envelope with saved metadata + pendingRecords, POST and handle response
     /**
      * Handle Afronden (finalize and upload) using afrondHandler.
+     * 
+     * @param metadataUpdates Optional updates to begintijd, eindtijd, and opmerkingen
      */
-    private suspend fun handleAfronden() {
+    private suspend fun handleAfronden(metadataUpdates: MetadataUpdates? = null) {
         val result = afrondHandler.handleAfronden(
             pendingRecords = synchronized(pendingRecords) { ArrayList(pendingRecords) },
             pendingBackupDocs = pendingBackupDocs,
-            pendingBackupInternalPaths = pendingBackupInternalPaths
+            pendingBackupInternalPaths = pendingBackupInternalPaths,
+            metadataUpdates = metadataUpdates
         )
 
         withContext(Dispatchers.Main) {
