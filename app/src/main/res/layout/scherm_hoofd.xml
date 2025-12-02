@@ -109,4 +109,14 @@
         android:text="@string/hoofd_opkuis_exports"
         android:textSize="14sp" />
 
+    <!-- Instellingen sectie -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnInstellingen"
+        style="@style/Widget.VT5.Button.Outlined"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/hoofd_instellingen"
+        android:textSize="14sp" />
+
 </LinearLayout>

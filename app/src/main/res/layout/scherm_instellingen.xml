@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/vt5_black"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <TextView
+        android:id="@+id/tvTitel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/instellingen_titel"
+        android:textColor="@color/vt5_on_surface"
+        android:textSize="22sp"
+        android:paddingBottom="16dp" />
+
+    <!-- Placeholder 1 -->
+    <TextView
+        android:id="@+id/tvPlaceholder1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/instellingen_placeholder1"
+        android:textColor="@color/vt5_on_surface"
+        android:textSize="16sp"
+        android:paddingVertical="12dp" />
+
+    <View
+        android:id="@+id/divider1"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/vt5_on_surface"
+        android:alpha="0.3" />
+
+    <!-- Placeholder 2 -->
+    <TextView
+        android:id="@+id/tvPlaceholder2"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/instellingen_placeholder2"
+        android:textColor="@color/vt5_on_surface"
+        android:textSize="16sp"
+        android:paddingVertical="12dp" />
+
+    <View
+        android:id="@+id/divider2"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/vt5_on_surface"
+        android:alpha="0.3" />
+
+    <!-- Placeholder 3 -->
+    <TextView
+        android:id="@+id/tvPlaceholder3"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/instellingen_placeholder3"
+        android:textColor="@color/vt5_on_surface"
+        android:textSize="16sp"
+        android:paddingVertical="12dp" />
+
+</LinearLayout>

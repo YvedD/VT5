@@ -93,6 +93,13 @@
     <string name="hoofd_opkuis_geen_bestanden">Geen oude bestanden om te verwijderen</string>
     <string name="hoofd_opkuis_fout">Fout bij opkuisen: %1$s</string>
     <string name="hoofd_opkuis_laden">Exports laden…</string>
+    <string name="hoofd_instellingen">Instellingen</string>
+
+    <!-- InstellingenScherm -->
+    <string name="instellingen_titel">Instellingen</string>
+    <string name="instellingen_placeholder1">Placeholder 1 (later in te vullen)</string>
+    <string name="instellingen_placeholder2">Placeholder 2 (later in te vullen)</string>
+    <string name="instellingen_placeholder3">Placeholder 3 (later in te vullen)</string>
 
     <!-- TellingBeheerScherm -->
     <string name="beheer_titel">Beheer Opgeslagen Tellingen</string>
