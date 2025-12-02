@@ -72,7 +72,7 @@ class SpeechLogAdapter :
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val vb = ItemSpeechLogBinding.inflate(LayoutInflater.from(parent.context), parent, false)
         // Initialiseer cache bij eerste ViewHolder creatie
-        cachedTextSizeSp = InstellingenScherm.getLettergrootteSp(parent.context).toFloat()
+        cachedTextSizeSp = InstellingenScherm.getLettergrootteLogSp(parent.context).toFloat()
         return VH(vb)
     }
 

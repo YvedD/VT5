@@ -67,7 +67,7 @@ class SpeciesTileAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val vb = ItemSpeciesTileBinding.inflate(LayoutInflater.from(parent.context), parent, false)
         // Initialiseer cache bij eerste ViewHolder creatie
-        cachedTextSizeSp = InstellingenScherm.getLettergrootteSp(parent.context).toFloat()
+        cachedTextSizeSp = InstellingenScherm.getLettergroottTegelsSp(parent.context).toFloat()
         return VH(vb)
     }
 

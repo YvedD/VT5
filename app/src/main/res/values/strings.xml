@@ -97,15 +97,10 @@
 
     <!-- InstellingenScherm -->
     <string name="instellingen_titel">Instellingen</string>
-    <string name="instellingen_lettergrootte_label">Lettergrootte (logregels &amp; tegels):</string>
-    <string name="instellingen_placeholder2">Placeholder 2 (later in te vullen)</string>
+    <string name="instellingen_lettergrootte_log_label">Lettergrootte logregels (partial/final):</string>
+    <string name="instellingen_lettergrootte_tegels_label">Lettergrootte tegels (soortnaam + aantallen):</string>
+    <string name="instellingen_sp_eenheid">sp</string>
     <string name="instellingen_placeholder3">Placeholder 3 (later in te vullen)</string>
-    <string-array name="lettergrootte_opties">
-        <item>Klein (14sp)</item>
-        <item>Normaal (17sp)</item>
-        <item>Groot (20sp)</item>
-        <item>Extra groot (24sp)</item>
-    </string-array>
 
     <!-- TellingBeheerScherm -->
     <string name="beheer_titel">Beheer Opgeslagen Tellingen</string>

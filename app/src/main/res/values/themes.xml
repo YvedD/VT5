@@ -26,4 +26,9 @@
         <item name="android:windowContentOverlay">@null</item>
     </style>
 
+    <!-- NumberPicker stijl voor instellingen -->
+    <style name="Theme.VT5.NumberPicker" parent="Theme.VT5.Dark">
+        <item name="android:textColorPrimary">@color/vt5_white</item>
+    </style>
+
 </resources>

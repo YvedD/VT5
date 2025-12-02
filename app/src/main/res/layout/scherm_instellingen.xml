@@ -49,44 +49,80 @@
         android:orientation="vertical"
         android:padding="20dp">
 
-        <!-- Lettergrootte instelling -->
+        <!-- Lettergrootte logregels -->
         <TextView
-            android:id="@+id/tvLettergrootteLabel"
+            android:id="@+id/tvLettergrootteLogLabel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/instellingen_lettergrootte_label"
+            android:text="@string/instellingen_lettergrootte_log_label"
             android:textColor="@color/vt5_on_surface"
             android:textSize="16sp"
             android:paddingBottom="8dp" />
 
-        <Spinner
-            android:id="@+id/spinnerLettergrootte"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@drawable/vt5_spinner_bg"
-            android:padding="12dp"
-            android:popupBackground="@color/vt5_dark_gray" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <NumberPicker
+                android:id="@+id/npLettergrootteLog"
+                android:layout_width="80dp"
+                android:layout_height="wrap_content"
+                android:theme="@style/Theme.VT5.NumberPicker" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/instellingen_sp_eenheid"
+                android:textColor="@color/vt5_on_surface"
+                android:textSize="16sp"
+                android:paddingStart="8dp" />
+        </LinearLayout>
 
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
             android:layout_marginTop="16dp"
+            android:layout_marginBottom="16dp"
             android:background="@color/vt5_on_surface"
             android:alpha="0.3" />
 
-        <!-- Placeholder 2 -->
+        <!-- Lettergrootte tegels -->
         <TextView
-            android:id="@+id/tvPlaceholder2"
+            android:id="@+id/tvLettergrootteTegelsLabel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/instellingen_placeholder2"
+            android:text="@string/instellingen_lettergrootte_tegels_label"
             android:textColor="@color/vt5_on_surface"
             android:textSize="16sp"
-            android:paddingVertical="12dp" />
+            android:paddingBottom="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <NumberPicker
+                android:id="@+id/npLettergrootteTegels"
+                android:layout_width="80dp"
+                android:layout_height="wrap_content"
+                android:theme="@style/Theme.VT5.NumberPicker" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/instellingen_sp_eenheid"
+                android:textColor="@color/vt5_on_surface"
+                android:textSize="16sp"
+                android:paddingStart="8dp" />
+        </LinearLayout>
 
         <View
             android:layout_width="match_parent"
             android:layout_height="1dp"
+            android:layout_marginTop="16dp"
             android:background="@color/vt5_on_surface"
             android:alpha="0.3" />
 

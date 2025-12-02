@@ -710,17 +710,19 @@ class TellingScherm : AppCompatActivity() {
         }
         
         // Update lettergrootte in adapters als instellingen zijn gewijzigd
-        val textSizeSp = com.yvesds.vt5.hoofd.InstellingenScherm.getLettergrootteSp(this)
+        val logTextSizeSp = com.yvesds.vt5.hoofd.InstellingenScherm.getLettergrootteLogSp(this)
+        val tegelsTextSizeSp = com.yvesds.vt5.hoofd.InstellingenScherm.getLettergroottTegelsSp(this)
+        
         if (::partialsAdapter.isInitialized) {
-            partialsAdapter.updateTextSize(textSizeSp)
+            partialsAdapter.updateTextSize(logTextSizeSp)
             partialsAdapter.notifyDataSetChanged()
         }
         if (::finalsAdapter.isInitialized) {
-            finalsAdapter.updateTextSize(textSizeSp)
+            finalsAdapter.updateTextSize(logTextSizeSp)
             finalsAdapter.notifyDataSetChanged()
         }
         if (::tilesAdapter.isInitialized) {
-            tilesAdapter.updateTextSize(textSizeSp)
+            tilesAdapter.updateTextSize(tegelsTextSizeSp)
             tilesAdapter.notifyDataSetChanged()
         }
     }
