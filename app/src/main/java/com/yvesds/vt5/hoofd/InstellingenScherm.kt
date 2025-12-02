@@ -24,9 +24,8 @@ class InstellingenScherm : AppCompatActivity() {
         const val PREF_LETTERGROOTTE_LOG_SP = "pref_lettergrootte_log_sp"
         const val PREF_LETTERGROOTTE_TEGELS_SP = "pref_lettergrootte_tegels_sp"
         
-        // Oude key voor backwards compatibility
-        @Deprecated("Gebruik PREF_LETTERGROOTTE_LOG_SP of PREF_LETTERGROOTTE_TEGELS_SP")
-        const val PREF_LETTERGROOTTE_SP = "pref_lettergrootte_sp"
+        // Oude key - alleen intern gebruikt voor backwards compatibility bij migratie
+        private const val LEGACY_PREF_LETTERGROOTTE_SP = "pref_lettergrootte_sp"
         
         // Lettergrootte bereik in sp
         const val MIN_LETTERGROOTTE_SP = 10
@@ -34,31 +33,26 @@ class InstellingenScherm : AppCompatActivity() {
         const val DEFAULT_LETTERGROOTTE_SP = 17
         
         /**
-         * Haal de huidige lettergrootte voor logregels op uit SharedPreferences
+         * Haal de huidige lettergrootte voor logregels op uit SharedPreferences.
+         * Bij eerste gebruik wordt de legacy waarde gemigreerd indien aanwezig.
          */
         fun getLettergrootteLogSp(context: Context): Int {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             // Check eerst nieuwe key, dan oude key voor backwards compatibility
             return prefs.getInt(PREF_LETTERGROOTTE_LOG_SP, 
-                prefs.getInt(PREF_LETTERGROOTTE_SP, DEFAULT_LETTERGROOTTE_SP))
+                prefs.getInt(LEGACY_PREF_LETTERGROOTTE_SP, DEFAULT_LETTERGROOTTE_SP))
         }
         
         /**
-         * Haal de huidige lettergrootte voor tegels op uit SharedPreferences
+         * Haal de huidige lettergrootte voor tegels op uit SharedPreferences.
+         * Bij eerste gebruik wordt de legacy waarde gemigreerd indien aanwezig.
          */
         fun getLettergroottTegelsSp(context: Context): Int {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             // Check eerst nieuwe key, dan oude key voor backwards compatibility
             return prefs.getInt(PREF_LETTERGROOTTE_TEGELS_SP, 
-                prefs.getInt(PREF_LETTERGROOTTE_SP, DEFAULT_LETTERGROOTTE_SP))
+                prefs.getInt(LEGACY_PREF_LETTERGROOTTE_SP, DEFAULT_LETTERGROOTTE_SP))
         }
-        
-        /**
-         * @deprecated Gebruik getLettergrootteLogSp of getLettergrootteTegelsPs
-         */
-        @Deprecated("Gebruik getLettergrootteLogSp of getLettergrootteTegelsPs", 
-            ReplaceWith("getLettergrootteLogSp(context)"))
-        fun getLettergrootteSp(context: Context): Int = getLettergrootteLogSp(context)
     }
     
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -85,9 +79,9 @@ class InstellingenScherm : AppCompatActivity() {
         npLog.maxValue = MAX_LETTERGROOTTE_SP
         npLog.wrapSelectorWheel = false
         
-        // Huidige waarde laden (met backwards compatibility)
+        // Huidige waarde laden (met backwards compatibility via legacy key)
         val currentLogSp = prefs.getInt(PREF_LETTERGROOTTE_LOG_SP, 
-            prefs.getInt(PREF_LETTERGROOTTE_SP, DEFAULT_LETTERGROOTTE_SP))
+            prefs.getInt(LEGACY_PREF_LETTERGROOTTE_SP, DEFAULT_LETTERGROOTTE_SP))
         npLog.value = currentLogSp.coerceIn(MIN_LETTERGROOTTE_SP, MAX_LETTERGROOTTE_SP)
         
         npLog.setOnValueChangedListener { _, _, newVal ->
@@ -102,9 +96,9 @@ class InstellingenScherm : AppCompatActivity() {
         npTegels.maxValue = MAX_LETTERGROOTTE_SP
         npTegels.wrapSelectorWheel = false
         
-        // Huidige waarde laden (met backwards compatibility)
+        // Huidige waarde laden (met backwards compatibility via legacy key)
         val currentTegelsSp = prefs.getInt(PREF_LETTERGROOTTE_TEGELS_SP, 
-            prefs.getInt(PREF_LETTERGROOTTE_SP, DEFAULT_LETTERGROOTTE_SP))
+            prefs.getInt(LEGACY_PREF_LETTERGROOTTE_SP, DEFAULT_LETTERGROOTTE_SP))
         npTegels.value = currentTegelsSp.coerceIn(MIN_LETTERGROOTTE_SP, MAX_LETTERGROOTTE_SP)
         
         npTegels.setOnValueChangedListener { _, _, newVal ->
