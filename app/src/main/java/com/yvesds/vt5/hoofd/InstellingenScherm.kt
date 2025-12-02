@@ -24,9 +24,6 @@ class InstellingenScherm : AppCompatActivity() {
         const val PREF_LETTERGROOTTE_LOG_SP = "pref_lettergrootte_log_sp"
         const val PREF_LETTERGROOTTE_TEGELS_SP = "pref_lettergrootte_tegels_sp"
         
-        // Oude key - alleen intern gebruikt voor backwards compatibility bij migratie
-        private const val LEGACY_PREF_LETTERGROOTTE_SP = "pref_lettergrootte_sp"
-        
         // Lettergrootte bereik in sp
         const val MIN_LETTERGROOTTE_SP = 10
         const val MAX_LETTERGROOTTE_SP = 30
@@ -34,24 +31,18 @@ class InstellingenScherm : AppCompatActivity() {
         
         /**
          * Haal de huidige lettergrootte voor logregels op uit SharedPreferences.
-         * Bij eerste gebruik wordt de legacy waarde gemigreerd indien aanwezig.
          */
         fun getLettergrootteLogSp(context: Context): Int {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            // Check eerst nieuwe key, dan oude key voor backwards compatibility
-            return prefs.getInt(PREF_LETTERGROOTTE_LOG_SP, 
-                prefs.getInt(LEGACY_PREF_LETTERGROOTTE_SP, DEFAULT_LETTERGROOTTE_SP))
+            return prefs.getInt(PREF_LETTERGROOTTE_LOG_SP, DEFAULT_LETTERGROOTTE_SP)
         }
         
         /**
          * Haal de huidige lettergrootte voor tegels op uit SharedPreferences.
-         * Bij eerste gebruik wordt de legacy waarde gemigreerd indien aanwezig.
          */
         fun getLettergroottTegelsSp(context: Context): Int {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            // Check eerst nieuwe key, dan oude key voor backwards compatibility
-            return prefs.getInt(PREF_LETTERGROOTTE_TEGELS_SP, 
-                prefs.getInt(LEGACY_PREF_LETTERGROOTTE_SP, DEFAULT_LETTERGROOTTE_SP))
+            return prefs.getInt(PREF_LETTERGROOTTE_TEGELS_SP, DEFAULT_LETTERGROOTTE_SP)
         }
     }
     
@@ -78,11 +69,8 @@ class InstellingenScherm : AppCompatActivity() {
         npLog.minValue = MIN_LETTERGROOTTE_SP
         npLog.maxValue = MAX_LETTERGROOTTE_SP
         npLog.wrapSelectorWheel = false
-        
-        // Huidige waarde laden (met backwards compatibility via legacy key)
-        val currentLogSp = prefs.getInt(PREF_LETTERGROOTTE_LOG_SP, 
-            prefs.getInt(LEGACY_PREF_LETTERGROOTTE_SP, DEFAULT_LETTERGROOTTE_SP))
-        npLog.value = currentLogSp.coerceIn(MIN_LETTERGROOTTE_SP, MAX_LETTERGROOTTE_SP)
+        npLog.value = prefs.getInt(PREF_LETTERGROOTTE_LOG_SP, DEFAULT_LETTERGROOTTE_SP)
+            .coerceIn(MIN_LETTERGROOTTE_SP, MAX_LETTERGROOTTE_SP)
         
         npLog.setOnValueChangedListener { _, _, newVal ->
             prefs.edit {
@@ -95,11 +83,8 @@ class InstellingenScherm : AppCompatActivity() {
         npTegels.minValue = MIN_LETTERGROOTTE_SP
         npTegels.maxValue = MAX_LETTERGROOTTE_SP
         npTegels.wrapSelectorWheel = false
-        
-        // Huidige waarde laden (met backwards compatibility via legacy key)
-        val currentTegelsSp = prefs.getInt(PREF_LETTERGROOTTE_TEGELS_SP, 
-            prefs.getInt(LEGACY_PREF_LETTERGROOTTE_SP, DEFAULT_LETTERGROOTTE_SP))
-        npTegels.value = currentTegelsSp.coerceIn(MIN_LETTERGROOTTE_SP, MAX_LETTERGROOTTE_SP)
+        npTegels.value = prefs.getInt(PREF_LETTERGROOTTE_TEGELS_SP, DEFAULT_LETTERGROOTTE_SP)
+            .coerceIn(MIN_LETTERGROOTTE_SP, MAX_LETTERGROOTTE_SP)
         
         npTegels.setOnValueChangedListener { _, _, newVal ->
             prefs.edit {
