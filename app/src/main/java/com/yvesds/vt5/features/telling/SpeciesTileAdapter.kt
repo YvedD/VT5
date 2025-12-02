@@ -1,17 +1,20 @@
 package com.yvesds.vt5.features.telling
 
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.yvesds.vt5.databinding.ItemSpeciesTileBinding
+import com.yvesds.vt5.hoofd.InstellingenScherm
 
 /**
  * Adapter voor soort-tegels met optimalisaties voor efficiente updates:
  * - Efficiënt DiffUtil met payloads voor alleen aantal-wijzigingen
  * - ViewHolder pattern met bindingadapter pattern
  * - Stabiele IDs voor betere animaties
+ * - Lettergrootte is nu configureerbaar via InstellingenScherm (gecached voor performance)
  */
 class SpeciesTileAdapter(
     private val onTileClick: (position: Int) -> Unit
@@ -20,6 +23,9 @@ class SpeciesTileAdapter(
     init {
         setHasStableIds(true)
     }
+    
+    // Gecachede lettergrootte voor betere performance
+    private var cachedTextSizeSp: Float = InstellingenScherm.DEFAULT_LETTERGROOTTE_SP.toFloat()
 
     object Diff : DiffUtil.ItemCallback<TellingScherm.SoortRow>() {
         override fun areItemsTheSame(
@@ -50,9 +56,18 @@ class SpeciesTileAdapter(
     }
 
     class VH(val vb: ItemSpeciesTileBinding) : RecyclerView.ViewHolder(vb.root)
+    
+    /**
+     * Update de gecachede lettergrootte. Roep dit aan bij onResume van de Activity.
+     */
+    fun updateTextSize(textSizeSp: Int) {
+        cachedTextSizeSp = textSizeSp.toFloat()
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val vb = ItemSpeciesTileBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+        // Initialiseer cache bij eerste ViewHolder creatie
+        cachedTextSizeSp = InstellingenScherm.getLettergrootteSp(parent.context).toFloat()
         return VH(vb)
     }
 
@@ -61,6 +76,11 @@ class SpeciesTileAdapter(
         holder.vb.tvName.text = row.naam
         holder.vb.tvCountMain.text = row.countMain.toString()
         holder.vb.tvCountReturn.text = row.countReturn.toString()
+        
+        // Pas gecachede lettergrootte toe
+        holder.vb.tvName.setTextSize(TypedValue.COMPLEX_UNIT_SP, cachedTextSizeSp)
+        holder.vb.tvCountMain.setTextSize(TypedValue.COMPLEX_UNIT_SP, cachedTextSizeSp)
+        holder.vb.tvCountReturn.setTextSize(TypedValue.COMPLEX_UNIT_SP, cachedTextSizeSp)
 
         holder.vb.tileRoot.setOnClickListener {
             val pos = holder.bindingAdapterPosition
@@ -80,6 +100,10 @@ class SpeciesTileAdapter(
                 if (countMain != null && countReturn != null) {
                     holder.vb.tvCountMain.text = countMain.toString()
                     holder.vb.tvCountReturn.text = countReturn.toString()
+                    
+                    // Pas ook gecachede lettergrootte toe bij payload updates
+                    holder.vb.tvCountMain.setTextSize(TypedValue.COMPLEX_UNIT_SP, cachedTextSizeSp)
+                    holder.vb.tvCountReturn.setTextSize(TypedValue.COMPLEX_UNIT_SP, cachedTextSizeSp)
                     return
                 }
             }

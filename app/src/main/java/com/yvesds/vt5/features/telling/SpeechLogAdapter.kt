@@ -1,12 +1,14 @@
 package com.yvesds.vt5.features.telling
 
 import android.graphics.Color
+import android.util.TypedValue
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.yvesds.vt5.databinding.ItemSpeechLogBinding
+import com.yvesds.vt5.hoofd.InstellingenScherm
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -23,6 +25,7 @@ import java.util.Locale
  *     - "alias"  -> amber (example)
  *     - others  -> default text color
  * - Keeps minimal work in onBindViewHolder and relies on TellingScherm to provide already-processed row.tekst.
+ * - Lettergrootte is nu configureerbaar via InstellingenScherm (gecached voor performance)
  */
 class SpeechLogAdapter :
     ListAdapter<TellingScherm.SpeechLogRow, SpeechLogAdapter.VH>(Diff) {
@@ -30,6 +33,9 @@ class SpeechLogAdapter :
     init {
         setHasStableIds(true)
     }
+    
+    // Gecachede lettergrootte voor betere performance
+    private var cachedTextSizeSp: Float = InstellingenScherm.DEFAULT_LETTERGROOTTE_SP.toFloat()
 
     object Diff : DiffUtil.ItemCallback<TellingScherm.SpeechLogRow>() {
         override fun areItemsTheSame(
@@ -55,9 +61,18 @@ class SpeechLogAdapter :
      * additional work here. Default false for cheaper binds.
      */
     var showPartialsInRow: Boolean = false
+    
+    /**
+     * Update de gecachede lettergrootte. Roep dit aan bij onResume van de Activity.
+     */
+    fun updateTextSize(textSizeSp: Int) {
+        cachedTextSizeSp = textSizeSp.toFloat()
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
         val vb = ItemSpeechLogBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+        // Initialiseer cache bij eerste ViewHolder creatie
+        cachedTextSizeSp = InstellingenScherm.getLettergrootteSp(parent.context).toFloat()
         return VH(vb)
     }
 
@@ -69,6 +84,9 @@ class SpeechLogAdapter :
         // Use the already-prepared text from TellingScherm; keep adapter logic minimal.
         val displayText = row.tekst ?: ""
         holder.vb.tvMsg.text = displayText
+        
+        // Pas gecachede lettergrootte toe
+        holder.vb.tvMsg.setTextSize(TypedValue.COMPLEX_UNIT_SP, cachedTextSizeSp)
 
         // Precomputed color constants (no parseColor allocations per bind)
         val COLOR_FINAL = 0xFF00C853.toInt() // bright green

@@ -708,6 +708,21 @@ class TellingScherm : AppCompatActivity() {
         if (::alarmHandler.isInitialized) {
             alarmHandler.startMonitoring()
         }
+        
+        // Update lettergrootte in adapters als instellingen zijn gewijzigd
+        val textSizeSp = com.yvesds.vt5.hoofd.InstellingenScherm.getLettergrootteSp(this)
+        if (::partialsAdapter.isInitialized) {
+            partialsAdapter.updateTextSize(textSizeSp)
+            partialsAdapter.notifyDataSetChanged()
+        }
+        if (::finalsAdapter.isInitialized) {
+            finalsAdapter.updateTextSize(textSizeSp)
+            finalsAdapter.notifyDataSetChanged()
+        }
+        if (::tilesAdapter.isInitialized) {
+            tilesAdapter.updateTextSize(textSizeSp)
+            tilesAdapter.notifyDataSetChanged()
+        }
     }
     
     override fun onPause() {
