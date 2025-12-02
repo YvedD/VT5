@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/vt5_black"
+    android:orientation="vertical">
+
+    <!-- Header met terugknop -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="16dp"
+        android:gravity="center_vertical">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnTerug"
+            style="@style/Widget.VT5.Button.Outlined"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="←"
+            android:textSize="18sp"
+            android:minWidth="48dp" />
+
+        <TextView
+            android:id="@+id/tvTitel"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="12dp"
+            android:text="@string/instellingen_titel"
+            android:textColor="@color/vt5_on_surface"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Divider -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/vt5_on_surface"
+        android:alpha="0.3" />
+
+    <!-- Content -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <!-- Lettergrootte logregels -->
+        <TextView
+            android:id="@+id/tvLettergrootteLogLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/instellingen_lettergrootte_log_label"
+            android:textColor="@color/vt5_on_surface"
+            android:textSize="16sp"
+            android:paddingBottom="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <NumberPicker
+                android:id="@+id/npLettergrootteLog"
+                android:layout_width="80dp"
+                android:layout_height="wrap_content"
+                android:theme="@style/Theme.VT5.NumberPicker" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/instellingen_sp_eenheid"
+                android:textColor="@color/vt5_on_surface"
+                android:textSize="16sp"
+                android:paddingStart="8dp" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="16dp"
+            android:background="@color/vt5_on_surface"
+            android:alpha="0.3" />
+
+        <!-- Lettergrootte tegels -->
+        <TextView
+            android:id="@+id/tvLettergrootteTegelsLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/instellingen_lettergrootte_tegels_label"
+            android:textColor="@color/vt5_on_surface"
+            android:textSize="16sp"
+            android:paddingBottom="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <NumberPicker
+                android:id="@+id/npLettergrootteTegels"
+                android:layout_width="80dp"
+                android:layout_height="wrap_content"
+                android:theme="@style/Theme.VT5.NumberPicker" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/instellingen_sp_eenheid"
+                android:textColor="@color/vt5_on_surface"
+                android:textSize="16sp"
+                android:paddingStart="8dp" />
+        </LinearLayout>
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="16dp"
+            android:background="@color/vt5_on_surface"
+            android:alpha="0.3" />
+
+        <!-- Placeholder 3 -->
+        <TextView
+            android:id="@+id/tvPlaceholder3"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/instellingen_placeholder3"
+            android:textColor="@color/vt5_on_surface"
+            android:textSize="16sp"
+            android:paddingVertical="12dp" />
+
+    </LinearLayout>
+
+</LinearLayout>

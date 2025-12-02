@@ -49,6 +49,7 @@ class HoofdActiviteit : AppCompatActivity() {
         val btnAfsluiten = findViewById<MaterialButton>(R.id.btnAfsluiten)
         val btnBewerkTellingen = findViewById<MaterialButton>(R.id.btnBewerkTellingen)
         val btnOpkuisExports = findViewById<MaterialButton>(R.id.btnOpkuisExports)
+        val btnInstellingen = findViewById<MaterialButton>(R.id.btnInstellingen)
         
         // Alarm sectie - altijd zichtbaar
         setupAlarmSection()
@@ -97,6 +98,13 @@ class HoofdActiviteit : AppCompatActivity() {
         btnOpkuisExports.setOnClickListener {
             it.isEnabled = false
             showExportsCleanupConfirmation()
+            it.isEnabled = true
+        }
+        
+        // Instellingen knop
+        btnInstellingen.setOnClickListener {
+            it.isEnabled = false
+            startActivity(Intent(this, InstellingenScherm::class.java))
             it.isEnabled = true
         }
     }

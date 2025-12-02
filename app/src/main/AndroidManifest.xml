@@ -42,6 +42,12 @@
             android:exported="false"
             android:screenOrientation="sensorPortrait" />
 
+        <!-- InstellingenScherm -->
+        <activity
+            android:name=".hoofd.InstellingenScherm"
+            android:exported="false"
+            android:screenOrientation="sensorPortrait" />
+
         <!-- InstallatieScherm -->
         <activity
             android:name=".features.opstart.ui.InstallatieScherm"
