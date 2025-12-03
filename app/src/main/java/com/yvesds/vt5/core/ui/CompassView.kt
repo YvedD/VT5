@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RectF
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -18,13 +19,13 @@ import kotlin.math.min
 import kotlin.math.sin
 
 /**
- * CompassView - Een grafische kompasweergave met bewegende naald
+ * CompassView - Een grafische kompasweergave met bewegende naald en knoppen rondom
  * 
  * Gebruikt de rotatie vector sensor of accelerometer+magnetometer
  * om de huidige richting te bepalen en weer te geven.
  * 
- * De gebruiker kan op een van de 16 windrichtingen tikken om deze te selecteren.
- * De geselecteerde richting wordt gemarkeerd.
+ * De gebruiker kan op een van de 16 windrichting-knoppen tikken om deze te selecteren.
+ * Een tweede tik deselecteert de knop. Geselecteerde knop wordt blauw.
  */
 class CompassView @JvmOverloads constructor(
     context: Context,
@@ -33,10 +34,10 @@ class CompassView @JvmOverloads constructor(
 ) : View(context, attrs, defStyleAttr), SensorEventListener {
 
     companion object {
-        // Touch area bounds - defines the ring where user can tap to select direction
-        // Using a larger area for easier touch detection
-        private const val TOUCH_AREA_INNER_RADIUS_FACTOR = 0.3f
-        private const val TOUCH_AREA_OUTER_RADIUS_FACTOR = 1.15f
+        // Button dimensions relative to radius
+        private const val BUTTON_WIDTH_FACTOR = 0.28f  // Width of each button
+        private const val BUTTON_HEIGHT_FACTOR = 0.14f // Height of each button
+        private const val BUTTON_DISTANCE_FACTOR = 1.15f // Distance from center to button center
         
         // 16-punts windroos in graden (beginnend bij Noord = 0°)
         private val DIRECTION_ANGLES = floatArrayOf(
@@ -101,7 +102,7 @@ class CompassView @JvmOverloads constructor(
     private val paintCircle = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#2196F3") // Blue 500
         style = Paint.Style.STROKE
-        strokeWidth = 4f
+        strokeWidth = 3f
     }
 
     private val paintCircleFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -113,35 +114,46 @@ class CompassView @JvmOverloads constructor(
         style = Paint.Style.FILL
     }
 
-    private val paintText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    // Button paints
+    private val paintButtonNormal = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#424242") // Dark gray background
+        style = Paint.Style.FILL
+    }
+    
+    private val paintButtonSelected = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#2196F3") // Blue 500 - app theme color
+        style = Paint.Style.FILL
+    }
+    
+    private val paintButtonBorder = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#757575") // Gray border
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+    }
+    
+    private val paintButtonBorderSelected = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#1976D2") // Darker blue border when selected
+        style = Paint.Style.STROKE
+        strokeWidth = 2f
+    }
+
+    private val paintButtonText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textAlign = Paint.Align.CENTER
+        textSize = 24f
+        isFakeBoldText = true
+    }
+
+    private val paintAzimuthText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         textAlign = Paint.Align.CENTER
         textSize = 28f
     }
 
-    private val paintCardinalText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        textAlign = Paint.Align.CENTER
-        textSize = 36f
-        isFakeBoldText = true
-    }
-
-    private val paintDirectionMarker = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#4CAF50") // Green 500
-        style = Paint.Style.FILL
-    }
-
-    private val paintSelectedMarker = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#F44336") // Red 500 - indicates selected direction
-        style = Paint.Style.FILL
-    }
-
-    private val paintTouchArea = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#33FFFFFF") // Transparant wit
-        style = Paint.Style.FILL
-    }
-
     private val needlePath = Path()
+    
+    // Button rectangles for hit testing
+    private val buttonRects = Array(16) { RectF() }
 
     // Afmetingen
     private var centerX = 0f
@@ -231,62 +243,82 @@ class CompassView @JvmOverloads constructor(
         super.onSizeChanged(w, h, oldw, oldh)
         centerX = w / 2f
         centerY = h / 2f
-        radius = min(w, h) / 2f * 0.85f
+        // Make radius smaller to leave room for buttons around the edge
+        radius = min(w, h) / 2f * 0.55f
 
-        // Update text grootte gebaseerd op radius
-        paintText.textSize = radius * 0.12f
-        paintCardinalText.textSize = radius * 0.16f
+        // Update text sizes based on radius
+        paintButtonText.textSize = radius * 0.18f
+        paintAzimuthText.textSize = radius * 0.2f
+        
+        // Calculate button rectangles for hit testing
+        calculateButtonRects()
+    }
+    
+    private fun calculateButtonRects() {
+        val buttonWidth = radius * BUTTON_WIDTH_FACTOR * 2.2f
+        val buttonHeight = radius * BUTTON_HEIGHT_FACTOR * 2.2f
+        val buttonDistance = radius * BUTTON_DISTANCE_FACTOR * 1.35f
+        
+        for (i in DIRECTION_ANGLES.indices) {
+            val angle = DIRECTION_ANGLES[i]
+            val angleRad = Math.toRadians((angle - 90).toDouble())
+            
+            val buttonCenterX = centerX + (buttonDistance * cos(angleRad)).toFloat()
+            val buttonCenterY = centerY + (buttonDistance * sin(angleRad)).toFloat()
+            
+            buttonRects[i].set(
+                buttonCenterX - buttonWidth / 2,
+                buttonCenterY - buttonHeight / 2,
+                buttonCenterX + buttonWidth / 2,
+                buttonCenterY + buttonHeight / 2
+            )
+        }
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        // Teken achtergrond cirkel
+        // Teken achtergrond cirkel (smaller now)
         canvas.drawCircle(centerX, centerY, radius, paintCircleFill)
         canvas.drawCircle(centerX, centerY, radius, paintCircle)
-        canvas.drawCircle(centerX, centerY, radius * 0.6f, paintCircle)
-
-        // Teken de 16 windrichtingen
-        for (i in DIRECTION_ANGLES.indices) {
-            val angle = DIRECTION_ANGLES[i]
-            val angleRad = Math.toRadians((angle - 90).toDouble()) // -90 om N bovenaan te zetten
-
-            // Teken richting markers (punten op buitenring)
-            val markerRadius = if (i % 2 == 0) radius * 0.08f else radius * 0.05f
-            val markerDistance = radius * 0.92f
-            val markerX = centerX + (markerDistance * cos(angleRad)).toFloat()
-            val markerY = centerY + (markerDistance * sin(angleRad)).toFloat()
-
-            val paint = if (i == selectedDirectionIndex) paintSelectedMarker else paintDirectionMarker
-            canvas.drawCircle(markerX, markerY, markerRadius, paint)
-
-            // Teken labels
-            val labelDistance = radius * 0.75f
-            val labelX = centerX + (labelDistance * cos(angleRad)).toFloat()
-            val labelY = centerY + (labelDistance * sin(angleRad)).toFloat()
-
-            val textPaint = if (i % 4 == 0) paintCardinalText else paintText
-            
-            // Correctie voor text baseline
-            val textBounds = android.graphics.Rect()
-            textPaint.getTextBounds(DIRECTION_LABELS[i], 0, DIRECTION_LABELS[i].length, textBounds)
-            val textHeight = textBounds.height()
-
-            canvas.drawText(DIRECTION_LABELS[i], labelX, labelY + textHeight / 2f, textPaint)
-        }
 
         // Teken kompasnaald (roterende met sensor data)
         drawNeedle(canvas)
 
         // Teken huidige graden in het midden
         val azimuthText = "${currentAzimuth.toInt()}°"
-        paintText.textSize = radius * 0.14f
-        canvas.drawText(azimuthText, centerX, centerY + radius * 0.05f, paintText)
+        canvas.drawText(azimuthText, centerX, centerY + radius * 0.35f, paintAzimuthText)
+        
+        // Teken de 16 windrichting-knoppen rondom de cirkel
+        drawDirectionButtons(canvas)
+    }
+    
+    private fun drawDirectionButtons(canvas: Canvas) {
+        val cornerRadius = radius * 0.06f
+        
+        for (i in DIRECTION_ANGLES.indices) {
+            val rect = buttonRects[i]
+            val isSelected = i == selectedDirectionIndex
+            
+            // Draw button background
+            val bgPaint = if (isSelected) paintButtonSelected else paintButtonNormal
+            canvas.drawRoundRect(rect, cornerRadius, cornerRadius, bgPaint)
+            
+            // Draw button border
+            val borderPaint = if (isSelected) paintButtonBorderSelected else paintButtonBorder
+            canvas.drawRoundRect(rect, cornerRadius, cornerRadius, borderPaint)
+            
+            // Draw button text
+            val textBounds = android.graphics.Rect()
+            paintButtonText.getTextBounds(DIRECTION_LABELS[i], 0, DIRECTION_LABELS[i].length, textBounds)
+            val textY = rect.centerY() + textBounds.height() / 2f
+            canvas.drawText(DIRECTION_LABELS[i], rect.centerX(), textY, paintButtonText)
+        }
     }
 
     private fun drawNeedle(canvas: Canvas) {
-        val needleLength = radius * 0.5f
-        val needleWidth = radius * 0.08f
+        val needleLength = radius * 0.7f
+        val needleWidth = radius * 0.12f
 
         canvas.save()
         canvas.rotate(-currentAzimuth, centerX, centerY)
@@ -310,7 +342,7 @@ class CompassView @JvmOverloads constructor(
         canvas.drawPath(needlePath, paintNeedle)
 
         // Middenpunt
-        canvas.drawCircle(centerX, centerY, needleWidth * 0.8f, paintCircle)
+        canvas.drawCircle(centerX, centerY, needleWidth * 0.6f, paintCircle)
 
         canvas.restore()
     }
@@ -320,38 +352,24 @@ class CompassView @JvmOverloads constructor(
             val touchX = event.x
             val touchY = event.y
 
-            // Bereken hoek van touch relatief tot center
-            val dx = touchX - centerX
-            val dy = touchY - centerY
-
-            // Check of touch binnen kompas ring is (tussen inner en outer radius)
-            val distance = kotlin.math.sqrt(dx * dx + dy * dy)
-            val innerBound = radius * TOUCH_AREA_INNER_RADIUS_FACTOR
-            val outerBound = radius * TOUCH_AREA_OUTER_RADIUS_FACTOR
-            if (distance > innerBound && distance < outerBound) {
-                // Bereken hoek (0 = rechts, dus we moeten corrigeren)
-                var angle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
-                angle += 90f // Correctie voor N bovenaan
-                if (angle < 0) angle += 360f
-                if (angle >= 360f) angle -= 360f
-
-                // Vind dichtsbijzijnde richting
-                val directionIndex = findClosestDirection(angle)
-                
-                // Toggle: if tapping the same direction, deselect it
-                if (directionIndex == selectedDirectionIndex) {
-                    selectedDirectionIndex = -1
-                    onDirectionDeselectedListener?.invoke()
-                } else {
-                    selectedDirectionIndex = directionIndex
-                    val label = DIRECTION_LABELS[directionIndex]
-                    val code = DIRECTION_CODES[directionIndex]
-                    onDirectionSelectedListener?.invoke(directionIndex, label, code)
+            // Check if touch is on any button
+            for (i in buttonRects.indices) {
+                if (buttonRects[i].contains(touchX, touchY)) {
+                    // Toggle: if tapping the same direction, deselect it
+                    if (i == selectedDirectionIndex) {
+                        selectedDirectionIndex = -1
+                        onDirectionDeselectedListener?.invoke()
+                    } else {
+                        selectedDirectionIndex = i
+                        val label = DIRECTION_LABELS[i]
+                        val code = DIRECTION_CODES[i]
+                        onDirectionSelectedListener?.invoke(i, label, code)
+                    }
+                    
+                    invalidate()
+                    performClick()
+                    return true
                 }
-                
-                invalidate()
-                performClick()
-                return true
             }
         }
         return super.onTouchEvent(event)
@@ -360,23 +378,6 @@ class CompassView @JvmOverloads constructor(
     override fun performClick(): Boolean {
         super.performClick()
         return true
-    }
-
-    private fun findClosestDirection(angle: Float): Int {
-        var minDiff = Float.MAX_VALUE
-        var closestIndex = 0
-
-        for (i in DIRECTION_ANGLES.indices) {
-            var diff = kotlin.math.abs(angle - DIRECTION_ANGLES[i])
-            // Handle wrap-around (bijv. 359° is dicht bij 0°)
-            if (diff > 180f) diff = 360f - diff
-
-            if (diff < minDiff) {
-                minDiff = diff
-                closestIndex = i
-            }
-        }
-        return closestIndex
     }
 
     /**
