@@ -69,12 +69,12 @@ class AnnotatieScherm : AppCompatActivity() {
     private var activeCompassDialog: Dialog? = null
     private var activeCompassNeedleView: CompassNeedleView? = null
     
-    // Direction button data: Dutch label -> English code mapping
+    // Direction button data: Dutch label -> lowercase code for sightingdirection field (matches codes.json windoms)
     private val directionLabelToCode = mapOf(
-        "N" to "N", "NNO" to "NNE", "NO" to "NE", "ONO" to "ENE",
-        "O" to "E", "OZO" to "ESE", "ZO" to "SE", "ZZO" to "SSE",
-        "Z" to "S", "ZZW" to "SSW", "ZW" to "SW", "WZW" to "WSW",
-        "W" to "W", "WNW" to "WNW", "NW" to "NW", "NNW" to "NNW"
+        "N" to "n", "NNO" to "nno", "NO" to "no", "ONO" to "ono",
+        "O" to "o", "OZO" to "ozo", "ZO" to "zo", "ZZO" to "zzo",
+        "Z" to "z", "ZZW" to "zzw", "ZW" to "zw", "WZW" to "wzw",
+        "W" to "w", "WNW" to "wnw", "NW" to "nw", "NNW" to "nnw"
     )
     
     // Direction button IDs for compass dialog
