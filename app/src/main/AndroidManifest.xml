@@ -1,13 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.BLUETOOTH" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
-    
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+
     <!-- Permissies voor uurlijks alarm -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
@@ -19,7 +20,8 @@
 
     <application
         android:name=".VT5App"
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@drawable/vt5"
         android:label="@string/app_name"
         android:supportsRtl="true"
@@ -29,7 +31,8 @@
             android:name=".splash.SplashActiviteit"
             android:exported="true"
             android:theme="@style/Theme.VT5.Splash"
-            android:screenOrientation="sensorPortrait">
+            android:screenOrientation="sensorPortrait"
+            tools:ignore="LockedOrientationActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
@@ -40,33 +43,38 @@
         <activity
             android:name=".hoofd.HoofdActiviteit"
             android:exported="false"
-            android:screenOrientation="sensorPortrait" />
+            android:screenOrientation="sensorPortrait"
+            tools:ignore="LockedOrientationActivity" />
 
         <!-- InstellingenScherm -->
         <activity
             android:name=".hoofd.InstellingenScherm"
             android:exported="false"
-            android:screenOrientation="sensorPortrait" />
+            android:screenOrientation="sensorPortrait"
+            tools:ignore="LockedOrientationActivity" />
 
         <!-- InstallatieScherm -->
         <activity
             android:name=".features.opstart.ui.InstallatieScherm"
             android:exported="false"
-            android:screenOrientation="sensorPortrait" />
+            android:screenOrientation="sensorPortrait"
+            tools:ignore="LockedOrientationActivity" />
 
         <!-- Nieuw: MetadataScherm -->
         <activity
             android:name=".features.metadata.ui.MetadataScherm"
             android:exported="false"
             android:windowSoftInputMode="stateHidden|adjustResize"
-            android:screenOrientation="sensorPortrait" />
+            android:screenOrientation="sensorPortrait"
+            tools:ignore="LockedOrientationActivity" />
 
         <!-- SoortSelectieScherm -->
         <activity
             android:name=".features.soort.ui.SoortSelectieScherm"
             android:exported="false"
             android:windowSoftInputMode="stateHidden|adjustResize"
-            android:screenOrientation="sensorPortrait" />
+            android:screenOrientation="sensorPortrait"
+            tools:ignore="LockedOrientationActivity" />
 
         <!-- TellingScherm -->
         <activity
@@ -74,28 +82,32 @@
             android:exported="false"
             android:launchMode="singleTop"
             android:windowSoftInputMode="stateHidden|adjustResize"
-            android:screenOrientation="sensorPortrait" />
+            android:screenOrientation="sensorPortrait"
+            tools:ignore="LockedOrientationActivity" />
 
         <activity
             android:name="com.yvesds.vt5.features.telling.HuidigeStandScherm"
             android:exported="false"
             android:windowSoftInputMode="stateHidden|adjustResize"
-            android:screenOrientation="sensorPortrait" />
+            android:screenOrientation="sensorPortrait"
+            tools:ignore="LockedOrientationActivity" />
 
         <!-- AnnotatieScherm (nieuw) -->
         <activity
             android:name=".features.telling.AnnotatieScherm"
             android:exported="false"
             android:windowSoftInputMode="stateHidden|adjustResize"
-            android:screenOrientation="sensorPortrait" />
+            android:screenOrientation="sensorPortrait"
+            tools:ignore="LockedOrientationActivity" />
 
         <!-- TellingBeheerScherm -->
         <activity
             android:name=".features.telling.TellingBeheerScherm"
             android:exported="false"
             android:windowSoftInputMode="stateHidden|adjustResize"
-            android:screenOrientation="sensorPortrait" />
-        
+            android:screenOrientation="sensorPortrait"
+            tools:ignore="LockedOrientationActivity" />
+
         <!-- Uurlijks alarm receivers -->
         <receiver
             android:name=".core.app.HourlyAlarmManager$HourlyAlarmReceiver"
