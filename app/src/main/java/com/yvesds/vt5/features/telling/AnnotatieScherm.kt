@@ -485,6 +485,9 @@ class AnnotatieScherm : AppCompatActivity() {
         updateDirectionButtonColors(directionButtons, initialLabel, normalColor, selectedColor)
         updateCompassSelectionText(tvSelectedDirection, selectedSightingDirection)
         
+        // Track previous label for remarks tag management
+        var previousLabel: String? = initialLabel
+        
         // Set up click handlers for all direction buttons
         directionButtons.forEach { btn ->
             btn.setOnClickListener {
@@ -493,13 +496,24 @@ class AnnotatieScherm : AppCompatActivity() {
                 
                 // Toggle: if same button tapped again, deselect
                 if (selectedSightingDirection == code) {
+                    // Remove tag from remarks when deselecting
+                    removeTagFromRemarks(label)
+                    
                     selectedSightingDirection = null
                     updateDirectionButtonColors(directionButtons, null, normalColor, selectedColor)
                     updateCompassSelectionText(tvSelectedDirection, null)
+                    previousLabel = null
                 } else {
+                    // Remove previous direction tag from remarks if any
+                    previousLabel?.let { removeTagFromRemarks(it) }
+                    
+                    // Add new direction tag to remarks
+                    addTagToRemarks(label)
+                    
                     selectedSightingDirection = code
                     updateDirectionButtonColors(directionButtons, label, normalColor, selectedColor)
                     updateCompassSelectionText(tvSelectedDirection, code)
+                    previousLabel = label
                 }
                 // Update the main view display as well
                 updateSightingDirectionDisplay()
@@ -511,6 +525,17 @@ class AnnotatieScherm : AppCompatActivity() {
         
         btnCancel.setOnClickListener {
             // Cancel reverts to the original selection (before opening dialog)
+            // Remove current tag from remarks if different from original
+            previousLabel?.let { currentLabel ->
+                if (currentLabel != initialLabel) {
+                    removeTagFromRemarks(currentLabel)
+                }
+            }
+            // Restore original tag if there was one
+            if (initialLabel != null && previousLabel != initialLabel) {
+                addTagToRemarks(initialLabel)
+            }
+            
             selectedSightingDirection = originalDirection
             updateSightingDirectionDisplay()
             cleanupCompassDialog()
@@ -518,10 +543,14 @@ class AnnotatieScherm : AppCompatActivity() {
         }
         
         btnClear.setOnClickListener {
+            // Remove current tag from remarks
+            previousLabel?.let { removeTagFromRemarks(it) }
+            
             selectedSightingDirection = null
             updateDirectionButtonColors(directionButtons, null, normalColor, selectedColor)
             updateCompassSelectionText(tvSelectedDirection, null)
             updateSightingDirectionDisplay()
+            previousLabel = null
         }
         
         btnOk.setOnClickListener {
