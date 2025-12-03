@@ -69,12 +69,12 @@ class AnnotatieScherm : AppCompatActivity() {
     private var activeCompassDialog: Dialog? = null
     private var activeCompassNeedleView: CompassNeedleView? = null
     
-    // Direction button data: Dutch label -> lowercase code for sightingdirection field (matches codes.json windoms)
+    // Direction button data: Dutch label -> uppercase English code for sightingdirection field (matches codes.json sightingdirection)
     private val directionLabelToCode = mapOf(
-        "N" to "n", "NNO" to "nno", "NO" to "no", "ONO" to "ono",
-        "O" to "o", "OZO" to "ozo", "ZO" to "zo", "ZZO" to "zzo",
-        "Z" to "z", "ZZW" to "zzw", "ZW" to "zw", "WZW" to "wzw",
-        "W" to "w", "WNW" to "wnw", "NW" to "nw", "NNW" to "nnw"
+        "N" to "N", "NNO" to "NNE", "NO" to "NE", "ONO" to "ENE",
+        "O" to "E", "OZO" to "ESE", "ZO" to "SE", "ZZO" to "SSE",
+        "Z" to "S", "ZZW" to "SSW", "ZW" to "SW", "WZW" to "WSW",
+        "W" to "W", "WNW" to "WNW", "NW" to "NW", "NNW" to "NNW"
     )
     
     // Direction button IDs for compass dialog
@@ -207,9 +207,8 @@ class AnnotatieScherm : AppCompatActivity() {
             // Sighting direction from compass
             selectedSightingDirection?.let { direction ->
                 resultMap["sightingdirection"] = direction
-                // Find the Dutch label for display
-                val dirIndex = CompassView.DIRECTION_CODES.indexOf(direction)
-                val label = if (dirIndex >= 0) CompassView.DIRECTION_LABELS[dirIndex] else direction
+                // Find the Dutch label for display (reverse lookup in directionLabelToCode)
+                val label = directionLabelToCode.entries.find { it.value == direction }?.key ?: direction
                 selectedLabels.add("Richting: $label")
             }
 
