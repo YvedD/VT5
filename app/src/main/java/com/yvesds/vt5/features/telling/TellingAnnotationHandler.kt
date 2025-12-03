@@ -214,6 +214,9 @@ class TellingAnnotationHandler(
             val newOpmerkingen = map["opmerkingen"] ?: map["remarks"] ?: old.opmerkingen
             val newTeltype = map["teltype_C"] ?: old.teltype
             
+            // Handle sightingdirection from compass selection
+            val newSightingDirection = map["sightingdirection"] ?: old.sightingdirection
+            
             // DEBUG: Log count overrides
             if (map.containsKey("aantal")) {
             }
@@ -222,15 +225,15 @@ class TellingAnnotationHandler(
             if (map.containsKey("lokaal")) {
             }
             
-            // Handle direction fields based on ZW/NO checkboxes
+            // Handle direction fields based on ZW/NO checkboxes (legacy)
             var newRichting = old.richting
             var newRichtingterug = old.richtingterug
             
-            // If ZW checkbox is checked, set main direction
+            // If ZW checkbox is checked, set main direction (legacy)
             if (map["ZW"] == "1") {
                 newRichting = RICHTING_ZW
             }
-            // If NO checkbox is checked, set return direction
+            // If NO checkbox is checked, set return direction (legacy)
             if (map["NO"] == "1") {
                 newRichtingterug = RICHTING_NO
             }
@@ -261,6 +264,7 @@ class TellingAnnotationHandler(
                 aantalterug = newAantalterug,
                 richting = newRichting,
                 richtingterug = newRichtingterug,
+                sightingdirection = newSightingDirection,
                 opmerkingen = newOpmerkingen,
                 teltype = newTeltype,
                 totaalaantal = newTotaalaantal,
