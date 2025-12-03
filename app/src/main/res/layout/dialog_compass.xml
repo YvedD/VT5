@@ -51,6 +51,7 @@
             android:text="N" />
 
         <!-- Row 2: NNW and NNO -->
+
         <Button
             android:id="@+id/btn_dir_nnw"
             style="@style/CompassDirectionButton"
