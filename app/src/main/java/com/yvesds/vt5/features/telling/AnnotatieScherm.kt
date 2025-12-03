@@ -144,6 +144,15 @@ class AnnotatieScherm : AppCompatActivity() {
             showCompassDialog()
         }
 
+        // Wire Tally checkbox to add/remove [Handteller] tag in remarks
+        findViewById<CheckBox>(R.id.cb_tally)?.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked) {
+                addTagToRemarks("Handteller")
+            } else {
+                removeTagFromRemarks("Handteller")
+            }
+        }
+
         // Wire action buttons
         findViewById<Button>(R.id.btn_cancel).setOnClickListener {
             setResult(Activity.RESULT_CANCELED)
