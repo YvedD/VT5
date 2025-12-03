@@ -226,4 +226,16 @@
 
     <string name="tile_species_name">Soortnaam</string>
     <string name="tile_count">0</string>
+
+    <!-- Compass strings -->
+    <string name="compass_title">Waarnemingsrichting</string>
+    <string name="compass_instruction">Tik op een knop om richting te kiezen, tik nogmaals om te wissen</string>
+    <string name="compass_content_description">Kompas voor selecteren waarnemingsrichting</string>
+    <string name="compass_no_selection">Geen richting geselecteerd</string>
+    <string name="compass_selected">Geselecteerd: %1$s</string>
+    <string name="compass_cancel">Annuleren</string>
+    <string name="compass_clear">Wissen</string>
+    <string name="compass_ok">OK</string>
+    <string name="compass_select">🧭 Kompas</string>
+    <string name="annotation_sighting_direction">Richting:</string>
 </resources>

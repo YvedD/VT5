@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@color/design_dark_default_color_background"
+    android:orientation="vertical"
+    android:padding="8dp">
+
+    <TextView
+        android:id="@+id/tv_compass_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:paddingBottom="4dp"
+        android:text="@string/compass_title"
+        android:textColor="@android:color/white"
+        android:textSize="16sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/tv_compass_instruction"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:paddingBottom="8dp"
+        android:text="@string/compass_instruction"
+        android:textColor="@android:color/darker_gray"
+        android:textSize="11sp" />
+
+    <!-- Compass with buttons around it -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="360dp"
+        android:layout_gravity="center">
+
+        <!-- Central compass needle -->
+        <com.yvesds.vt5.core.ui.CompassNeedleView
+            android:id="@+id/compass_needle_view"
+            android:layout_width="120dp"
+            android:layout_height="120dp"
+            android:layout_gravity="center"
+            android:contentDescription="@string/compass_content_description" />
+
+        <!-- Direction buttons arranged in a circle -->
+        <!-- Row 1: N (top center) -->
+        <Button
+            android:id="@+id/btn_dir_n"
+            style="@style/CompassDirectionButton"
+            android:layout_gravity="top|center_horizontal"
+            android:layout_marginTop="0dp"
+            android:text="N" />
+
+        <!-- Row 2: NNW and NNO -->
+        <Button
+            android:id="@+id/btn_dir_nnw"
+            style="@style/CompassDirectionButton"
+            android:layout_gravity="top|start"
+            android:layout_marginStart="60dp"
+            android:layout_marginTop="25dp"
+            android:text="NNW" />
+
+        <Button
+            android:id="@+id/btn_dir_nno"
+            style="@style/CompassDirectionButton"
+            android:layout_gravity="top|end"
+            android:layout_marginTop="25dp"
+            android:layout_marginEnd="60dp"
+            android:text="NNO" />
+
+        <!-- Row 3: NW and NO -->
+        <Button
+            android:id="@+id/btn_dir_nw"
+            style="@style/CompassDirectionButton"
+            android:layout_gravity="top|start"
+            android:layout_marginStart="15dp"
+            android:layout_marginTop="70dp"
+            android:text="NW" />
+
+        <Button
+            android:id="@+id/btn_dir_no"
+            style="@style/CompassDirectionButton"
+            android:layout_gravity="top|end"
+            android:layout_marginTop="70dp"
+            android:layout_marginEnd="15dp"
+            android:text="NO" />
+
+        <!-- Row 4: WNW and ONO -->
+        <Button
+            android:id="@+id/btn_dir_wnw"
+            style="@style/CompassDirectionButton"
+            android:layout_gravity="start|center_vertical"
+            android:layout_marginStart="0dp"
+            android:layout_marginTop="-60dp"
+            android:text="WNW" />
+
+        <Button
+            android:id="@+id/btn_dir_ono"
+            style="@style/CompassDirectionButton"
+            android:layout_gravity="end|center_vertical"
+            android:layout_marginTop="-60dp"
+            android:layout_marginEnd="0dp"
+            android:text="ONO" />
+
+        <!-- Row 5: W and O (center sides) -->
+        <Button
+            android:id="@+id/btn_dir_w"
+            style="@style/CompassDirectionButton"
+            android:layout_gravity="start|center_vertical"
+            android:layout_marginStart="0dp"
+            android:text="W" />
+
+        <Button
+            android:id="@+id/btn_dir_o"
+            style="@style/CompassDirectionButton"
+            android:layout_gravity="end|center_vertical"
+            android:layout_marginEnd="0dp"
+            android:text="O" />
+
+        <!-- Row 6: WSW and OZO -->
+        <Button
+            android:id="@+id/btn_dir_wzw"
+            style="@style/CompassDirectionButton"
+            android:layout_gravity="start|center_vertical"
+            android:layout_marginStart="0dp"
+            android:layout_marginTop="60dp"
+            android:text="WZW" />
+
+        <Button
+            android:id="@+id/btn_dir_ozo"
+            style="@style/CompassDirectionButton"
+            android:layout_gravity="end|center_vertical"
+            android:layout_marginTop="60dp"
+            android:layout_marginEnd="0dp"
+            android:text="OZO" />
+
+        <!-- Row 7: ZW and ZO -->
+        <Button
+            android:id="@+id/btn_dir_zw"
+            style="@style/CompassDirectionButton"
+            android:layout_gravity="bottom|start"
+            android:layout_marginStart="15dp"
+            android:layout_marginBottom="70dp"
+            android:text="ZW" />
+
+        <Button
+            android:id="@+id/btn_dir_zo"
+            style="@style/CompassDirectionButton"
+            android:layout_gravity="bottom|end"
+            android:layout_marginEnd="15dp"
+            android:layout_marginBottom="70dp"
+            android:text="ZO" />
+
+        <!-- Row 8: ZZW and ZZO -->
+        <Button
+            android:id="@+id/btn_dir_zzw"
+            style="@style/CompassDirectionButton"
+            android:layout_gravity="bottom|start"
+            android:layout_marginStart="60dp"
+            android:layout_marginBottom="25dp"
+            android:text="ZZW" />
+
+        <Button
+            android:id="@+id/btn_dir_zzo"
+            style="@style/CompassDirectionButton"
+            android:layout_gravity="bottom|end"
+            android:layout_marginEnd="60dp"
+            android:layout_marginBottom="25dp"
+            android:text="ZZO" />
+
+        <!-- Row 9: Z (bottom center) -->
+        <Button
+            android:id="@+id/btn_dir_z"
+            style="@style/CompassDirectionButton"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="0dp"
+            android:text="Z" />
+
+    </FrameLayout>
+
+    <TextView
+        android:id="@+id/tv_selected_direction"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:paddingTop="8dp"
+        android:text="@string/compass_no_selection"
+        android:textColor="@android:color/white"
+        android:textSize="14sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="end"
+        android:orientation="horizontal"
+        android:paddingTop="8dp">
+
+        <Button
+            android:id="@+id/btn_compass_cancel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/compass_cancel" />
+
+        <Button
+            android:id="@+id/btn_compass_clear"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="@string/compass_clear" />
+
+        <Button
+            android:id="@+id/btn_compass_ok"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="@string/compass_ok" />
+
+    </LinearLayout>
+
+</LinearLayout>

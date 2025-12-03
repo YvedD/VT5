@@ -31,6 +31,11 @@ class TellingAnnotationHandler(
         // Direction constants based on seasonal patterns
         private const val RICHTING_ZW = "w"  // West/Southwest (seasonal direction)
         private const val RICHTING_NO = "o"  // East/Northeast (counter-seasonal direction)
+        
+        // Regex to extract trailing number from text like "Buizerd 5"
+        // Group 1: species name (everything before the number)
+        // Group 2: count (the trailing number)
+        private val RE_TRAILING_NUMBER = Regex("""^(.+?)\s+(\d+)\s*$""")
     }
 
     // Callback for annotation application
@@ -57,6 +62,7 @@ class TellingAnnotationHandler(
     /**
      * Launch AnnotatieScherm for a specific log row.
      * Prefills count fields with existing record values if a matching pending record is found.
+     * Falls back to parsing the count from the text if no record is found.
      */
     fun launchAnnotatieScherm(text: String, timestamp: Long, rowPosition: Int) {
         val intent = Intent(activity, AnnotatieScherm::class.java).apply {
@@ -77,14 +83,29 @@ class TellingAnnotationHandler(
                 pendingRecords.firstOrNull { it.tijdstip == timestamp.toString() }
             }
             
-            // Prefill count values if record found
-            matchingRecord?.let { record ->
-                putExtra(AnnotatieScherm.EXTRA_RECORD_AANTAL, record.aantal)
-                putExtra(AnnotatieScherm.EXTRA_RECORD_AANTALTERUG, record.aantalterug)
-                putExtra(AnnotatieScherm.EXTRA_LOKAAL, record.lokaal)
+            // Prefill count values - either from record or parse from text
+            if (matchingRecord != null) {
+                // Use record values
+                putExtra(AnnotatieScherm.EXTRA_RECORD_AANTAL, matchingRecord.aantal)
+                putExtra(AnnotatieScherm.EXTRA_RECORD_AANTALTERUG, matchingRecord.aantalterug)
+                putExtra(AnnotatieScherm.EXTRA_LOKAAL, matchingRecord.lokaal)
+            } else {
+                // Fallback: parse count from text (e.g., "Buizerd 5" -> 5)
+                val countFromText = parseCountFromText(text)
+                if (countFromText > 0) {
+                    putExtra(AnnotatieScherm.EXTRA_RECORD_AANTAL, countFromText.toString())
+                }
             }
         }
         annotationLauncher.launch(intent)
+    }
+    
+    /**
+     * Parse count from text like "Buizerd 5" -> 5
+     */
+    private fun parseCountFromText(text: String): Int {
+        val match = RE_TRAILING_NUMBER.find(text.trim())
+        return match?.groups?.get(2)?.value?.toIntOrNull() ?: 0
     }
 
     /**
@@ -214,6 +235,9 @@ class TellingAnnotationHandler(
             val newOpmerkingen = map["opmerkingen"] ?: map["remarks"] ?: old.opmerkingen
             val newTeltype = map["teltype_C"] ?: old.teltype
             
+            // Handle sightingdirection from compass selection
+            val newSightingDirection = map["sightingdirection"] ?: old.sightingdirection
+            
             // DEBUG: Log count overrides
             if (map.containsKey("aantal")) {
             }
@@ -222,15 +246,15 @@ class TellingAnnotationHandler(
             if (map.containsKey("lokaal")) {
             }
             
-            // Handle direction fields based on ZW/NO checkboxes
+            // Handle direction fields based on ZW/NO checkboxes (legacy)
             var newRichting = old.richting
             var newRichtingterug = old.richtingterug
             
-            // If ZW checkbox is checked, set main direction
+            // If ZW checkbox is checked, set main direction (legacy)
             if (map["ZW"] == "1") {
                 newRichting = RICHTING_ZW
             }
-            // If NO checkbox is checked, set return direction
+            // If NO checkbox is checked, set return direction (legacy)
             if (map["NO"] == "1") {
                 newRichtingterug = RICHTING_NO
             }
@@ -261,6 +285,7 @@ class TellingAnnotationHandler(
                 aantalterug = newAantalterug,
                 richting = newRichting,
                 richtingterug = newRichtingterug,
+                sightingdirection = newSightingDirection,
                 opmerkingen = newOpmerkingen,
                 teltype = newTeltype,
                 totaalaantal = newTotaalaantal,

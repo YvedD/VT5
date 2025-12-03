@@ -1,16 +1,22 @@
 package com.yvesds.vt5.features.telling
 
 import android.app.Activity
+import android.app.Dialog
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
 import android.view.View
+import android.view.Window
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.AppCompatToggleButton
 import androidx.lifecycle.lifecycleScope
+import com.google.android.material.button.MaterialButton
 import com.yvesds.vt5.R
+import com.yvesds.vt5.core.ui.CompassNeedleView
+import com.yvesds.vt5.core.ui.CompassView
 import com.yvesds.vt5.core.ui.ProgressDialogHelper
 import com.yvesds.vt5.features.annotation.AnnotationsManager
 import com.yvesds.vt5.features.annotation.AnnotationOption
@@ -56,6 +62,29 @@ class AnnotatieScherm : AppCompatActivity() {
     
     // Reference to remarks EditText for location/height auto-tagging
     private lateinit var etOpmerkingen: EditText
+    
+    // Selected sighting direction (code from windoms, e.g., "N", "NNE", etc.)
+    private var selectedSightingDirection: String? = null
+    
+    // Track active compass dialog and view for proper sensor cleanup
+    private var activeCompassDialog: Dialog? = null
+    private var activeCompassNeedleView: CompassNeedleView? = null
+    
+    // Direction button data: Dutch label -> uppercase English code for sightingdirection field (matches codes.json sightingdirection)
+    private val directionLabelToCode = mapOf(
+        "N" to "N", "NNO" to "NNE", "NO" to "NE", "ONO" to "ENE",
+        "O" to "E", "OZO" to "ESE", "ZO" to "SE", "ZZO" to "SSE",
+        "Z" to "S", "ZZW" to "SSW", "ZW" to "SW", "WZW" to "WSW",
+        "W" to "W", "WNW" to "WNW", "NW" to "NW", "NNW" to "NNW"
+    )
+    
+    // Direction button IDs for compass dialog
+    private val directionButtonIds = listOf(
+        R.id.btn_dir_n, R.id.btn_dir_nno, R.id.btn_dir_no, R.id.btn_dir_ono,
+        R.id.btn_dir_o, R.id.btn_dir_ozo, R.id.btn_dir_zo, R.id.btn_dir_zzo,
+        R.id.btn_dir_z, R.id.btn_dir_zzw, R.id.btn_dir_zw, R.id.btn_dir_wzw,
+        R.id.btn_dir_w, R.id.btn_dir_wnw, R.id.btn_dir_nw, R.id.btn_dir_nnw
+    )
 
     // Pre-drawn button IDs per column (layout contains these)
     private val leeftijdBtnIds = listOf(
@@ -110,6 +139,20 @@ class AnnotatieScherm : AppCompatActivity() {
             }
         }
 
+        // Wire compass button
+        findViewById<Button>(R.id.btn_compass).setOnClickListener {
+            showCompassDialog()
+        }
+
+        // Wire Tally checkbox to add/remove [Handteller] tag in remarks
+        findViewById<CheckBox>(R.id.cb_tally)?.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked) {
+                addTagToRemarks("Handteller")
+            } else {
+                removeTagFromRemarks("Handteller")
+            }
+        }
+
         // Wire action buttons
         findViewById<Button>(R.id.btn_cancel).setOnClickListener {
             setResult(Activity.RESULT_CANCELED)
@@ -132,14 +175,6 @@ class AnnotatieScherm : AppCompatActivity() {
                 }
             }
             // Checkboxes
-            findViewById<CheckBox>(R.id.cb_zw)?.takeIf { it.isChecked }?.let {
-                resultMap["ZW"] = "1"
-                selectedLabels.add("ZW")
-            }
-            findViewById<CheckBox>(R.id.cb_no)?.takeIf { it.isChecked }?.let {
-                resultMap["NO"] = "1"
-                selectedLabels.add("NO")
-            }
             findViewById<CheckBox>(R.id.cb_markeren)?.takeIf { it.isChecked }?.let {
                 resultMap["markeren"] = "1"
                 selectedLabels.add("Markeren")
@@ -177,6 +212,14 @@ class AnnotatieScherm : AppCompatActivity() {
             findViewById<EditText>(R.id.et_opmerkingen)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
                 resultMap["opmerkingen"] = it
                 selectedLabels.add("Opm: $it")
+            }
+            
+            // Sighting direction from compass
+            selectedSightingDirection?.let { direction ->
+                resultMap["sightingdirection"] = direction
+                // Find the Dutch label for display (reverse lookup in directionLabelToCode)
+                val label = directionLabelToCode.entries.find { it.value == direction }?.key ?: direction
+                selectedLabels.add("Richting: $label")
             }
 
             val payload = json.encodeToString(resultMap)
@@ -410,4 +453,193 @@ class AnnotatieScherm : AppCompatActivity() {
      * Delegates to SeizoenUtils for consistent behavior across the app.
      */
     private fun isZwSeizoen(): Boolean = SeizoenUtils.isZwSeizoen()
+    
+    /**
+     * Shows the compass dialog for selecting sighting direction.
+     * The compass uses device sensors to show a real moving needle.
+     * User can tap on any of the 16 wind direction buttons to select it.
+     */
+    private fun showCompassDialog() {
+        // Store original direction to restore on cancel
+        val originalDirection = selectedSightingDirection
+        
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(R.layout.dialog_compass)
+        dialog.setCancelable(true)
+        
+        val compassNeedleView = dialog.findViewById<CompassNeedleView>(R.id.compass_needle_view)
+        val tvSelectedDirection = dialog.findViewById<TextView>(R.id.tv_selected_direction)
+        val btnCancel = dialog.findViewById<Button>(R.id.btn_compass_cancel)
+        val btnClear = dialog.findViewById<Button>(R.id.btn_compass_clear)
+        val btnOk = dialog.findViewById<Button>(R.id.btn_compass_ok)
+        
+        // Track active dialog and compass view for cleanup on activity destroy
+        activeCompassDialog = dialog
+        activeCompassNeedleView = compassNeedleView
+        
+        // Get all direction buttons using predefined ID list
+        val directionButtons = directionButtonIds.map { id ->
+            dialog.findViewById<MaterialButton>(id)
+        }
+        
+        // Colors for button states
+        val normalColor = getColor(R.color.vt5_dark_gray)
+        val selectedColor = getColor(R.color.vt5_light_blue)
+        
+        // Set initial selection if already selected
+        val initialLabel = selectedSightingDirection?.let { code ->
+            directionLabelToCode.entries.find { it.value == code }?.key
+        }
+        updateDirectionButtonColors(directionButtons, initialLabel, normalColor, selectedColor)
+        updateCompassSelectionText(tvSelectedDirection, selectedSightingDirection)
+        
+        // Track previous label for remarks tag management
+        var previousLabel: String? = initialLabel
+        
+        // Set up click handlers for all direction buttons
+        directionButtons.forEach { btn ->
+            btn.setOnClickListener {
+                val label = btn.text.toString()
+                val code = directionLabelToCode[label] ?: label
+                
+                // Toggle: if same button tapped again, deselect
+                if (selectedSightingDirection == code) {
+                    // Remove tag from remarks when deselecting
+                    removeTagFromRemarks(label)
+                    
+                    selectedSightingDirection = null
+                    updateDirectionButtonColors(directionButtons, null, normalColor, selectedColor)
+                    updateCompassSelectionText(tvSelectedDirection, null)
+                    previousLabel = null
+                } else {
+                    // Remove previous direction tag from remarks if any
+                    previousLabel?.let { removeTagFromRemarks(it) }
+                    
+                    // Add new direction tag to remarks
+                    addTagToRemarks(label)
+                    
+                    selectedSightingDirection = code
+                    updateDirectionButtonColors(directionButtons, label, normalColor, selectedColor)
+                    updateCompassSelectionText(tvSelectedDirection, code)
+                    previousLabel = label
+                }
+                // Update the main view display as well
+                updateSightingDirectionDisplay()
+            }
+        }
+        
+        // Start sensors when dialog is shown
+        compassNeedleView.startSensors()
+        
+        btnCancel.setOnClickListener {
+            // Cancel reverts to the original selection (before opening dialog)
+            // Remove current tag from remarks if different from original
+            previousLabel?.let { currentLabel ->
+                if (currentLabel != initialLabel) {
+                    removeTagFromRemarks(currentLabel)
+                }
+            }
+            // Restore original tag if there was one
+            if (initialLabel != null && previousLabel != initialLabel) {
+                addTagToRemarks(initialLabel)
+            }
+            
+            selectedSightingDirection = originalDirection
+            updateSightingDirectionDisplay()
+            cleanupCompassDialog()
+            dialog.dismiss()
+        }
+        
+        btnClear.setOnClickListener {
+            // Remove current tag from remarks
+            previousLabel?.let { removeTagFromRemarks(it) }
+            
+            selectedSightingDirection = null
+            updateDirectionButtonColors(directionButtons, null, normalColor, selectedColor)
+            updateCompassSelectionText(tvSelectedDirection, null)
+            updateSightingDirectionDisplay()
+            previousLabel = null
+        }
+        
+        btnOk.setOnClickListener {
+            // Selection is already stored, just close the dialog
+            cleanupCompassDialog()
+            dialog.dismiss()
+        }
+        
+        // Stop sensors when dialog is dismissed (by back button, etc.)
+        dialog.setOnDismissListener {
+            cleanupCompassDialog()
+        }
+        
+        dialog.show()
+        
+        // Set dialog width to match parent with some margin
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.95).toInt(),
+            android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+    }
+    
+    /**
+     * Updates the background colors of direction buttons based on selection.
+     */
+    private fun updateDirectionButtonColors(
+        buttons: List<MaterialButton>,
+        selectedLabel: String?,
+        normalColor: Int,
+        selectedColor: Int
+    ) {
+        buttons.forEach { btn ->
+            val isSelected = btn.text.toString() == selectedLabel
+            btn.backgroundTintList = ColorStateList.valueOf(
+                if (isSelected) selectedColor else normalColor
+            )
+        }
+    }
+    
+    /**
+     * Cleans up the compass dialog resources, stopping sensors.
+     */
+    private fun cleanupCompassDialog() {
+        activeCompassNeedleView?.stopSensors()
+        activeCompassNeedleView = null
+        activeCompassDialog = null
+    }
+    
+    override fun onDestroy() {
+        // Ensure compass sensors are stopped if activity is destroyed while dialog is showing
+        cleanupCompassDialog()
+        super.onDestroy()
+    }
+    
+    /**
+     * Updates the text showing the selected direction in the compass dialog.
+     */
+    private fun updateCompassSelectionText(textView: TextView, directionCode: String?) {
+        if (directionCode == null) {
+            textView.text = getString(R.string.compass_no_selection)
+        } else {
+            // Find the Dutch label for the English code
+            val label = directionLabelToCode.entries.find { it.value == directionCode }?.key ?: directionCode
+            textView.text = getString(R.string.compass_selected, label)
+        }
+    }
+    
+    /**
+     * Updates the sighting direction display in the main annotation screen.
+     */
+    private fun updateSightingDirectionDisplay() {
+        val tvSelectedDirection = findViewById<TextView>(R.id.tv_selected_sighting_direction)
+        
+        if (selectedSightingDirection != null) {
+            // Find the Dutch label for the English code
+            val label = directionLabelToCode.entries.find { it.value == selectedSightingDirection }?.key 
+                ?: selectedSightingDirection
+            tvSelectedDirection?.text = label
+        } else {
+            tvSelectedDirection?.text = ""
+        }
+    }
 }
