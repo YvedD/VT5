@@ -1,6 +1,5 @@
 package com.yvesds.vt5.features.telling
 
-import android.app.Activity
 import android.app.Dialog
 import android.content.Intent
 import android.content.res.ColorStateList
@@ -9,7 +8,10 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.view.Window
-import android.widget.*
+import android.widget.Button
+import android.widget.CheckBox
+import android.widget.EditText
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.AppCompatToggleButton
 import androidx.lifecycle.lifecycleScope
@@ -17,8 +19,8 @@ import com.google.android.material.button.MaterialButton
 import com.yvesds.vt5.R
 import com.yvesds.vt5.core.ui.CompassNeedleView
 import com.yvesds.vt5.core.ui.ProgressDialogHelper
-import com.yvesds.vt5.features.annotation.AnnotationsManager
 import com.yvesds.vt5.features.annotation.AnnotationOption
+import com.yvesds.vt5.features.annotation.AnnotationsManager
 import com.yvesds.vt5.utils.SeizoenUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -154,7 +156,7 @@ class AnnotatieScherm : AppCompatActivity() {
 
         // Wire action buttons
         findViewById<Button>(R.id.btn_cancel).setOnClickListener {
-            setResult(Activity.RESULT_CANCELED)
+            setResult(RESULT_CANCELED)
             finish()
         }
         findViewById<Button>(R.id.btn_ok).setOnClickListener {
@@ -235,7 +237,7 @@ class AnnotatieScherm : AppCompatActivity() {
                 putExtra("extra_row_pos", rowPosition)
             }
 
-            setResult(Activity.RESULT_OK, out)
+            setResult(RESULT_OK, out)
             finish()
         }
     }
@@ -244,11 +246,11 @@ class AnnotatieScherm : AppCompatActivity() {
         val cache = AnnotationsManager.getCached()
 
         // mapping group -> preIds + container id
-        applyOptionsToPreDrawn("leeftijd", cache["leeftijd"].orEmpty(), leeftijdBtnIds, R.id.col_leeftijd)
-        applyOptionsToPreDrawn("geslacht", cache["geslacht"].orEmpty(), geslachtBtnIds, R.id.col_geslacht)
-        applyOptionsToPreDrawn("kleed", cache["kleed"].orEmpty(), kleedBtnIds, R.id.col_kleed)
-        applyOptionsToPreDrawn("location", cache["location"].orEmpty(), locationBtnIds, R.id.col_location)
-        applyOptionsToPreDrawn("height", cache["height"].orEmpty(), heightBtnIds, R.id.col_height)
+        applyOptionsToPreDrawn("leeftijd", cache["leeftijd"].orEmpty(), leeftijdBtnIds)
+        applyOptionsToPreDrawn("geslacht", cache["geslacht"].orEmpty(), geslachtBtnIds)
+        applyOptionsToPreDrawn("kleed", cache["kleed"].orEmpty(), kleedBtnIds)
+        applyOptionsToPreDrawn("location", cache["location"].orEmpty(), locationBtnIds)
+        applyOptionsToPreDrawn("height", cache["height"].orEmpty(), heightBtnIds)
     }
 
     /**
@@ -256,7 +258,7 @@ class AnnotatieScherm : AppCompatActivity() {
      * - If options.size <= preIds.size: fill first N buttons, hide rest.
      * - All buttons are pre-drawn in the layout; no dynamic button creation.
      */
-    private fun applyOptionsToPreDrawn(group: String, options: List<AnnotationOption>, preIds: List<Int>, containerId: Int) {
+    private fun applyOptionsToPreDrawn(group: String, options: List<AnnotationOption>, preIds: List<Int>) {
         val btnList = mutableListOf<AppCompatToggleButton>()
 
         // Fill pre-drawn buttons
