@@ -94,7 +94,7 @@ class CompassView @JvmOverloads constructor(
     // Callback voor richting selectie
     var onDirectionSelectedListener: ((index: Int, label: String, code: String) -> Unit)? = null
     
-    // Callback voor deselectie (wanneer gebruiker op dezelfde richting tikt om te ontdoen)
+    // Callback voor deselectie (wanneer gebruiker op dezelfde richting tikt om deze ongedaan te maken)
     var onDirectionDeselectedListener: (() -> Unit)? = null
 
     // Paint objecten
