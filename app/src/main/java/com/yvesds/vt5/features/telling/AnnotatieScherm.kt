@@ -16,7 +16,6 @@ import androidx.lifecycle.lifecycleScope
 import com.google.android.material.button.MaterialButton
 import com.yvesds.vt5.R
 import com.yvesds.vt5.core.ui.CompassNeedleView
-import com.yvesds.vt5.core.ui.CompassView
 import com.yvesds.vt5.core.ui.ProgressDialogHelper
 import com.yvesds.vt5.features.annotation.AnnotationsManager
 import com.yvesds.vt5.features.annotation.AnnotationOption
@@ -47,7 +46,7 @@ class AnnotatieScherm : AppCompatActivity() {
         // Legacy keys expected by older code paths (keeps TellingScherm compile+runtime compatible)
         const val EXTRA_TEXT = "extra_text"
         const val EXTRA_TS = "extra_ts"
-        
+
         // Keys for prefilling count fields from existing record values
         // These are the raw record values, which need season-based mapping to UI fields
         const val EXTRA_RECORD_AANTAL = "extra_record_aantal"           // record.aantal (main direction)
@@ -59,17 +58,17 @@ class AnnotatieScherm : AppCompatActivity() {
 
     // Map groupName -> list of ToggleButtons
     private val groupButtons = mutableMapOf<String, MutableList<AppCompatToggleButton>>()
-    
+
     // Reference to remarks EditText for location/height auto-tagging
     private lateinit var etOpmerkingen: EditText
-    
+
     // Selected sighting direction (code from windoms, e.g., "N", "NNE", etc.)
     private var selectedSightingDirection: String? = null
-    
+
     // Track active compass dialog and view for proper sensor cleanup
     private var activeCompassDialog: Dialog? = null
     private var activeCompassNeedleView: CompassNeedleView? = null
-    
+
     // Direction button data: Dutch label -> uppercase English code for sightingdirection field (matches codes.json sightingdirection)
     private val directionLabelToCode = mapOf(
         "N" to "N", "NNO" to "NNE", "NO" to "NE", "ONO" to "ENE",
@@ -77,7 +76,7 @@ class AnnotatieScherm : AppCompatActivity() {
         "Z" to "S", "ZZW" to "SSW", "ZW" to "SW", "WZW" to "WSW",
         "W" to "W", "WNW" to "WNW", "NW" to "NW", "NNW" to "NNW"
     )
-    
+
     // Direction button IDs for compass dialog
     private val directionButtonIds = listOf(
         R.id.btn_dir_n, R.id.btn_dir_nno, R.id.btn_dir_no, R.id.btn_dir_ono,
@@ -128,10 +127,10 @@ class AnnotatieScherm : AppCompatActivity() {
                 }
                 // populate the pre-drawn buttons
                 populateAllColumnsFromCache()
-                
+
                 // Update count field labels based on current season
                 updateCountFieldLabels()
-                
+
                 // Prefill count fields with existing record values if provided
                 prefillCountFields()
             } finally {
@@ -162,7 +161,7 @@ class AnnotatieScherm : AppCompatActivity() {
             val resultMap = mutableMapOf<String, String?>()
             val selectedLabels = mutableListOf<String>()
 
-            
+
             // For each group collect the selected option and label for summary
             for ((group, btns) in groupButtons) {
                 val selectedOpt = btns.firstOrNull { it.isChecked }?.tag as? AnnotationOption
@@ -170,7 +169,7 @@ class AnnotatieScherm : AppCompatActivity() {
                     val storeKey = if (selectedOpt.veld.isNotBlank()) selectedOpt.veld else group
                     resultMap[storeKey] = selectedOpt.waarde
                     selectedLabels.add(selectedOpt.tekst)
-                    
+
                     // DEBUG: Log each selected option
                 }
             }
@@ -194,7 +193,7 @@ class AnnotatieScherm : AppCompatActivity() {
             val isZwSeizoen = isZwSeizoen()
             val mainLabel = if (isZwSeizoen) "ZW" else "NO"
             val returnLabel = if (isZwSeizoen) "NO" else "ZW"
-            
+
             findViewById<EditText>(R.id.et_aantal)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
                 resultMap["aantal"] = it
                 selectedLabels.add("$mainLabel: $it")
@@ -207,13 +206,13 @@ class AnnotatieScherm : AppCompatActivity() {
                 resultMap["lokaal"] = it
                 selectedLabels.add("Lokaal: $it")
             }
-            
+
             // Remarks/Comments
             findViewById<EditText>(R.id.et_opmerkingen)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
                 resultMap["opmerkingen"] = it
                 selectedLabels.add("Opm: $it")
             }
-            
+
             // Sighting direction from compass
             selectedSightingDirection?.let { direction ->
                 resultMap["sightingdirection"] = direction
@@ -223,14 +222,6 @@ class AnnotatieScherm : AppCompatActivity() {
             }
 
             val payload = json.encodeToString(resultMap)
-
-            // DEBUG: Log complete resultMap
-            resultMap.forEach { (key, value) ->
-            }
-            if (resultMap.containsKey("kleed")) {
-            } else {
-                Log.w("AnnotatieScherm", "*** WARNING: resultMap does NOT contain 'kleed' key! ***")
-            }
 
             // Build legacy summary text and timestamp for backward compatibility
             val summaryText = if (selectedLabels.isEmpty()) "" else selectedLabels.joinToString(", ")
@@ -243,9 +234,7 @@ class AnnotatieScherm : AppCompatActivity() {
                 // CRITICAL FIX: Preserve row position so handler can match the correct record
                 putExtra("extra_row_pos", rowPosition)
             }
-            
-            // DEBUG: Log outgoing Intent extras
-            
+
             setResult(Activity.RESULT_OK, out)
             finish()
         }
@@ -268,7 +257,6 @@ class AnnotatieScherm : AppCompatActivity() {
      * - All buttons are pre-drawn in the layout; no dynamic button creation.
      */
     private fun applyOptionsToPreDrawn(group: String, options: List<AnnotationOption>, preIds: List<Int>, containerId: Int) {
-        val container = findViewById<LinearLayout>(containerId) ?: return
         val btnList = mutableListOf<AppCompatToggleButton>()
 
         // Fill pre-drawn buttons
@@ -308,7 +296,7 @@ class AnnotatieScherm : AppCompatActivity() {
             // DEBUG: Log button click with value from tag
             val selectedOpt = clicked.tag as? AnnotationOption
             if (selectedOpt != null) {
-                
+
                 // For location and height groups, add tag to remarks
                 if (group == "location" || group == "height") {
                     addTagToRemarks(selectedOpt.tekst)
@@ -316,7 +304,7 @@ class AnnotatieScherm : AppCompatActivity() {
             } else {
                 Log.w("AnnotatieScherm", "Button $group clicked but tag is null or not AnnotationOption!")
             }
-            
+
             // Single-select: uncheck other buttons in the group
             for (btn in list) {
                 if (btn === clicked) {
@@ -337,7 +325,7 @@ class AnnotatieScherm : AppCompatActivity() {
             }
         } else {
             // toggled off
-            
+
             // Remove tag from remarks if this is a location/height button
             if (group == "location" || group == "height") {
                 val opt = clicked.tag as? AnnotationOption
@@ -345,7 +333,7 @@ class AnnotatieScherm : AppCompatActivity() {
                     removeTagFromRemarks(opt.tekst)
                 }
             }
-            
+
             setToggleColor(clicked)
         }
     }
@@ -356,32 +344,32 @@ class AnnotatieScherm : AppCompatActivity() {
     private fun addTagToRemarks(tag: String) {
         val current = etOpmerkingen.text.toString()
         val formattedTag = "[$tag]"
-        
+
         // Check if tag already exists
         if (current.contains(formattedTag)) {
             return
         }
-        
+
         // Add tag without separator (tags are adjacent)
         val newText = if (current.isBlank()) {
             formattedTag
         } else {
             "$current$formattedTag"
         }
-        
+
         etOpmerkingen.setText(newText)
     }
-    
+
     /**
      * Remove a tag from the remarks field
      */
     private fun removeTagFromRemarks(tag: String) {
         val current = etOpmerkingen.text.toString()
         val formattedTag = "[$tag]"
-        
+
         // Remove the tag
         val newText = current.replace(formattedTag, "")
-        
+
         etOpmerkingen.setText(newText)
     }
 
@@ -395,11 +383,11 @@ class AnnotatieScherm : AppCompatActivity() {
         // Refresh drawable state to apply the selector based on isChecked
         btn.refreshDrawableState()
     }
-    
+
     /**
      * Prefill count fields with existing record values if provided via Intent extras.
      * This allows the user to see the current counts from the speech input and modify them.
-     * 
+     *
      * The mapping from record fields to UI fields depends on the season:
      * - In ZW seizoen (Jul-Dec): record.aantal → et_aantal_zw, record.aantalterug → et_aantal_no
      * - In NO seizoen (Jan-Jun): record.aantal → et_aantal_no, record.aantalterug → et_aantal_zw
@@ -409,7 +397,7 @@ class AnnotatieScherm : AppCompatActivity() {
         val recordAantal = intent.getStringExtra(EXTRA_RECORD_AANTAL)
         val recordAantalterug = intent.getStringExtra(EXTRA_RECORD_AANTALTERUG)
         val lokaal = intent.getStringExtra(EXTRA_LOKAAL)
-        
+
         // Direct mapping - labels are already adjusted based on season
         // et_aantal always corresponds to record.aantal
         // et_aantalterug always corresponds to record.aantalterug
@@ -419,13 +407,13 @@ class AnnotatieScherm : AppCompatActivity() {
         recordAantalterug?.takeIf { it.isNotBlank() && it != "0" }?.let { value ->
             findViewById<EditText>(R.id.et_aantalterug)?.setText(value)
         }
-        
+
         // Prefill lokaal count field (this is direction-independent)
         lokaal?.takeIf { it.isNotBlank() && it != "0" }?.let { value ->
             findViewById<EditText>(R.id.et_aantal_lokaal)?.setText(value)
         }
     }
-    
+
     /**
      * Update the count field labels based on the current season.
      * In ZW seizoen (Jul-Dec): "Aantal ZW :" and "Aantal NO :"
@@ -433,10 +421,10 @@ class AnnotatieScherm : AppCompatActivity() {
      */
     private fun updateCountFieldLabels() {
         val isZwSeizoen = isZwSeizoen()
-        
+
         val labelAantal = findViewById<TextView>(R.id.tv_label_aantal)
         val labelAantalterug = findViewById<TextView>(R.id.tv_label_aantalterug)
-        
+
         if (isZwSeizoen) {
             // ZW seizoen: hoofdrichting is ZW, terug is NO
             labelAantal?.text = getString(R.string.annotation_count_zw)
@@ -447,13 +435,13 @@ class AnnotatieScherm : AppCompatActivity() {
             labelAantalterug?.text = getString(R.string.annotation_count_zw)
         }
     }
-    
+
     /**
      * Helper to get the current season status.
      * Delegates to SeizoenUtils for consistent behavior across the app.
      */
     private fun isZwSeizoen(): Boolean = SeizoenUtils.isZwSeizoen()
-    
+
     /**
      * Shows the compass dialog for selecting sighting direction.
      * The compass uses device sensors to show a real moving needle.
@@ -462,52 +450,52 @@ class AnnotatieScherm : AppCompatActivity() {
     private fun showCompassDialog() {
         // Store original direction to restore on cancel
         val originalDirection = selectedSightingDirection
-        
+
         val dialog = Dialog(this)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
         dialog.setContentView(R.layout.dialog_compass)
         dialog.setCancelable(true)
-        
+
         val compassNeedleView = dialog.findViewById<CompassNeedleView>(R.id.compass_needle_view)
         val tvSelectedDirection = dialog.findViewById<TextView>(R.id.tv_selected_direction)
         val btnCancel = dialog.findViewById<Button>(R.id.btn_compass_cancel)
         val btnClear = dialog.findViewById<Button>(R.id.btn_compass_clear)
         val btnOk = dialog.findViewById<Button>(R.id.btn_compass_ok)
-        
+
         // Track active dialog and compass view for cleanup on activity destroy
         activeCompassDialog = dialog
         activeCompassNeedleView = compassNeedleView
-        
+
         // Get all direction buttons using predefined ID list
         val directionButtons = directionButtonIds.map { id ->
             dialog.findViewById<MaterialButton>(id)
         }
-        
+
         // Colors for button states
         val normalColor = getColor(R.color.vt5_dark_gray)
         val selectedColor = getColor(R.color.vt5_light_blue)
-        
+
         // Set initial selection if already selected
         val initialLabel = selectedSightingDirection?.let { code ->
             directionLabelToCode.entries.find { it.value == code }?.key
         }
         updateDirectionButtonColors(directionButtons, initialLabel, normalColor, selectedColor)
         updateCompassSelectionText(tvSelectedDirection, selectedSightingDirection)
-        
+
         // Track previous label for remarks tag management
         var previousLabel: String? = initialLabel
-        
+
         // Set up click handlers for all direction buttons
         directionButtons.forEach { btn ->
             btn.setOnClickListener {
                 val label = btn.text.toString()
                 val code = directionLabelToCode[label] ?: label
-                
+
                 // Toggle: if same button tapped again, deselect
                 if (selectedSightingDirection == code) {
                     // Remove tag from remarks when deselecting
                     removeTagFromRemarks(label)
-                    
+
                     selectedSightingDirection = null
                     updateDirectionButtonColors(directionButtons, null, normalColor, selectedColor)
                     updateCompassSelectionText(tvSelectedDirection, null)
@@ -515,10 +503,10 @@ class AnnotatieScherm : AppCompatActivity() {
                 } else {
                     // Remove previous direction tag from remarks if any
                     previousLabel?.let { removeTagFromRemarks(it) }
-                    
+
                     // Add new direction tag to remarks
                     addTagToRemarks(label)
-                    
+
                     selectedSightingDirection = code
                     updateDirectionButtonColors(directionButtons, label, normalColor, selectedColor)
                     updateCompassSelectionText(tvSelectedDirection, code)
@@ -528,10 +516,10 @@ class AnnotatieScherm : AppCompatActivity() {
                 updateSightingDirectionDisplay()
             }
         }
-        
+
         // Start sensors when dialog is shown
         compassNeedleView.startSensors()
-        
+
         btnCancel.setOnClickListener {
             // Cancel reverts to the original selection (before opening dialog)
             // Remove current tag from remarks if different from original
@@ -544,44 +532,44 @@ class AnnotatieScherm : AppCompatActivity() {
             if (initialLabel != null && previousLabel != initialLabel) {
                 addTagToRemarks(initialLabel)
             }
-            
+
             selectedSightingDirection = originalDirection
             updateSightingDirectionDisplay()
             cleanupCompassDialog()
             dialog.dismiss()
         }
-        
+
         btnClear.setOnClickListener {
             // Remove current tag from remarks
             previousLabel?.let { removeTagFromRemarks(it) }
-            
+
             selectedSightingDirection = null
             updateDirectionButtonColors(directionButtons, null, normalColor, selectedColor)
             updateCompassSelectionText(tvSelectedDirection, null)
             updateSightingDirectionDisplay()
             previousLabel = null
         }
-        
+
         btnOk.setOnClickListener {
             // Selection is already stored, just close the dialog
             cleanupCompassDialog()
             dialog.dismiss()
         }
-        
+
         // Stop sensors when dialog is dismissed (by back button, etc.)
         dialog.setOnDismissListener {
             cleanupCompassDialog()
         }
-        
+
         dialog.show()
-        
+
         // Set dialog width to match parent with some margin
         dialog.window?.setLayout(
             (resources.displayMetrics.widthPixels * 0.95).toInt(),
             android.view.ViewGroup.LayoutParams.WRAP_CONTENT
         )
     }
-    
+
     /**
      * Updates the background colors of direction buttons based on selection.
      */
@@ -598,7 +586,7 @@ class AnnotatieScherm : AppCompatActivity() {
             )
         }
     }
-    
+
     /**
      * Cleans up the compass dialog resources, stopping sensors.
      */
@@ -607,13 +595,13 @@ class AnnotatieScherm : AppCompatActivity() {
         activeCompassNeedleView = null
         activeCompassDialog = null
     }
-    
+
     override fun onDestroy() {
         // Ensure compass sensors are stopped if activity is destroyed while dialog is showing
         cleanupCompassDialog()
         super.onDestroy()
     }
-    
+
     /**
      * Updates the text showing the selected direction in the compass dialog.
      */
@@ -626,16 +614,16 @@ class AnnotatieScherm : AppCompatActivity() {
             textView.text = getString(R.string.compass_selected, label)
         }
     }
-    
+
     /**
      * Updates the sighting direction display in the main annotation screen.
      */
     private fun updateSightingDirectionDisplay() {
         val tvSelectedDirection = findViewById<TextView>(R.id.tv_selected_sighting_direction)
-        
+
         if (selectedSightingDirection != null) {
             // Find the Dutch label for the English code
-            val label = directionLabelToCode.entries.find { it.value == selectedSightingDirection }?.key 
+            val label = directionLabelToCode.entries.find { it.value == selectedSightingDirection }?.key
                 ?: selectedSightingDirection
             tvSelectedDirection?.text = label
         } else {
