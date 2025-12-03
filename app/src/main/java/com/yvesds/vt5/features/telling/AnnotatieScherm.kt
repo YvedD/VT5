@@ -76,6 +76,14 @@ class AnnotatieScherm : AppCompatActivity() {
         "Z" to "S", "ZZW" to "SSW", "ZW" to "SW", "WZW" to "WSW",
         "W" to "W", "WNW" to "WNW", "NW" to "NW", "NNW" to "NNW"
     )
+    
+    // Direction button IDs for compass dialog
+    private val directionButtonIds = listOf(
+        R.id.btn_dir_n, R.id.btn_dir_nno, R.id.btn_dir_no, R.id.btn_dir_ono,
+        R.id.btn_dir_o, R.id.btn_dir_ozo, R.id.btn_dir_zo, R.id.btn_dir_zzo,
+        R.id.btn_dir_z, R.id.btn_dir_zzw, R.id.btn_dir_zw, R.id.btn_dir_wzw,
+        R.id.btn_dir_w, R.id.btn_dir_wnw, R.id.btn_dir_nw, R.id.btn_dir_nnw
+    )
 
     // Pre-drawn button IDs per column (layout contains these)
     private val leeftijdBtnIds = listOf(
@@ -461,45 +469,20 @@ class AnnotatieScherm : AppCompatActivity() {
         activeCompassDialog = dialog
         activeCompassNeedleView = compassNeedleView
         
-        // Get all direction buttons and set up click handlers
-        val directionButtons = listOf(
-            dialog.findViewById<MaterialButton>(R.id.btn_dir_n),
-            dialog.findViewById<MaterialButton>(R.id.btn_dir_nno),
-            dialog.findViewById<MaterialButton>(R.id.btn_dir_no),
-            dialog.findViewById<MaterialButton>(R.id.btn_dir_ono),
-            dialog.findViewById<MaterialButton>(R.id.btn_dir_o),
-            dialog.findViewById<MaterialButton>(R.id.btn_dir_ozo),
-            dialog.findViewById<MaterialButton>(R.id.btn_dir_zo),
-            dialog.findViewById<MaterialButton>(R.id.btn_dir_zzo),
-            dialog.findViewById<MaterialButton>(R.id.btn_dir_z),
-            dialog.findViewById<MaterialButton>(R.id.btn_dir_zzw),
-            dialog.findViewById<MaterialButton>(R.id.btn_dir_zw),
-            dialog.findViewById<MaterialButton>(R.id.btn_dir_wzw),
-            dialog.findViewById<MaterialButton>(R.id.btn_dir_w),
-            dialog.findViewById<MaterialButton>(R.id.btn_dir_wnw),
-            dialog.findViewById<MaterialButton>(R.id.btn_dir_nw),
-            dialog.findViewById<MaterialButton>(R.id.btn_dir_nnw)
-        )
+        // Get all direction buttons using predefined ID list
+        val directionButtons = directionButtonIds.map { id ->
+            dialog.findViewById<MaterialButton>(id)
+        }
         
         // Colors for button states
         val normalColor = getColor(R.color.vt5_dark_gray)
         val selectedColor = getColor(R.color.vt5_light_blue)
         
-        // Helper function to update button colors based on selection
-        fun updateButtonColors(selectedLabel: String?) {
-            directionButtons.forEach { btn ->
-                val isSelected = btn.text.toString() == selectedLabel
-                btn.backgroundTintList = ColorStateList.valueOf(
-                    if (isSelected) selectedColor else normalColor
-                )
-            }
-        }
-        
         // Set initial selection if already selected
         val initialLabel = selectedSightingDirection?.let { code ->
             directionLabelToCode.entries.find { it.value == code }?.key
         }
-        updateButtonColors(initialLabel)
+        updateDirectionButtonColors(directionButtons, initialLabel, normalColor, selectedColor)
         updateCompassSelectionText(tvSelectedDirection, selectedSightingDirection)
         
         // Set up click handlers for all direction buttons
@@ -511,11 +494,11 @@ class AnnotatieScherm : AppCompatActivity() {
                 // Toggle: if same button tapped again, deselect
                 if (selectedSightingDirection == code) {
                     selectedSightingDirection = null
-                    updateButtonColors(null)
+                    updateDirectionButtonColors(directionButtons, null, normalColor, selectedColor)
                     updateCompassSelectionText(tvSelectedDirection, null)
                 } else {
                     selectedSightingDirection = code
-                    updateButtonColors(label)
+                    updateDirectionButtonColors(directionButtons, label, normalColor, selectedColor)
                     updateCompassSelectionText(tvSelectedDirection, code)
                 }
                 // Update the main view display as well
@@ -536,7 +519,7 @@ class AnnotatieScherm : AppCompatActivity() {
         
         btnClear.setOnClickListener {
             selectedSightingDirection = null
-            updateButtonColors(null)
+            updateDirectionButtonColors(directionButtons, null, normalColor, selectedColor)
             updateCompassSelectionText(tvSelectedDirection, null)
             updateSightingDirectionDisplay()
         }
@@ -559,6 +542,23 @@ class AnnotatieScherm : AppCompatActivity() {
             (resources.displayMetrics.widthPixels * 0.95).toInt(),
             android.view.ViewGroup.LayoutParams.WRAP_CONTENT
         )
+    }
+    
+    /**
+     * Updates the background colors of direction buttons based on selection.
+     */
+    private fun updateDirectionButtonColors(
+        buttons: List<MaterialButton>,
+        selectedLabel: String?,
+        normalColor: Int,
+        selectedColor: Int
+    ) {
+        buttons.forEach { btn ->
+            val isSelected = btn.text.toString() == selectedLabel
+            btn.backgroundTintList = ColorStateList.valueOf(
+                if (isSelected) selectedColor else normalColor
+            )
+        }
     }
     
     /**
