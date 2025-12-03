@@ -33,6 +33,8 @@ class TellingAnnotationHandler(
         private const val RICHTING_NO = "o"  // East/Northeast (counter-seasonal direction)
         
         // Regex to extract trailing number from text like "Buizerd 5"
+        // Group 1: species name (everything before the number)
+        // Group 2: count (the trailing number)
         private val RE_TRAILING_NUMBER = Regex("""^(.+?)\s+(\d+)\s*$""")
     }
 

@@ -39,6 +39,14 @@ class CompassView @JvmOverloads constructor(
         private const val BUTTON_HEIGHT_FACTOR = 0.14f // Height of each button
         private const val BUTTON_DISTANCE_FACTOR = 1.15f // Distance from center to button center
         
+        // Scaling factors for button sizing in calculateButtonRects
+        private const val BUTTON_SIZE_MULTIPLIER = 2.2f // Multiplier for button size calculation
+        private const val BUTTON_DISTANCE_MULTIPLIER = 1.35f // Multiplier for button distance from center
+        
+        // Text size factors relative to radius
+        private const val BUTTON_TEXT_SIZE_FACTOR = 0.18f // Button label text size
+        private const val AZIMUTH_TEXT_SIZE_FACTOR = 0.2f // Degree display text size
+        
         // 16-punts windroos in graden (beginnend bij Noord = 0°)
         private val DIRECTION_ANGLES = floatArrayOf(
             0f,    // N
@@ -247,17 +255,17 @@ class CompassView @JvmOverloads constructor(
         radius = min(w, h) / 2f * 0.55f
 
         // Update text sizes based on radius
-        paintButtonText.textSize = radius * 0.18f
-        paintAzimuthText.textSize = radius * 0.2f
+        paintButtonText.textSize = radius * BUTTON_TEXT_SIZE_FACTOR
+        paintAzimuthText.textSize = radius * AZIMUTH_TEXT_SIZE_FACTOR
         
         // Calculate button rectangles for hit testing
         calculateButtonRects()
     }
     
     private fun calculateButtonRects() {
-        val buttonWidth = radius * BUTTON_WIDTH_FACTOR * 2.2f
-        val buttonHeight = radius * BUTTON_HEIGHT_FACTOR * 2.2f
-        val buttonDistance = radius * BUTTON_DISTANCE_FACTOR * 1.35f
+        val buttonWidth = radius * BUTTON_WIDTH_FACTOR * BUTTON_SIZE_MULTIPLIER
+        val buttonHeight = radius * BUTTON_HEIGHT_FACTOR * BUTTON_SIZE_MULTIPLIER
+        val buttonDistance = radius * BUTTON_DISTANCE_FACTOR * BUTTON_DISTANCE_MULTIPLIER
         
         for (i in DIRECTION_ANGLES.indices) {
             val angle = DIRECTION_ANGLES[i]
