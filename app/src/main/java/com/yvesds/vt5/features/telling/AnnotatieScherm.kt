@@ -62,6 +62,10 @@ class AnnotatieScherm : AppCompatActivity() {
     
     // Selected sighting direction (code from windoms, e.g., "N", "NNE", etc.)
     private var selectedSightingDirection: String? = null
+    
+    // Track active compass dialog and view for proper sensor cleanup
+    private var activeCompassDialog: Dialog? = null
+    private var activeCompassView: CompassView? = null
 
     // Pre-drawn button IDs per column (layout contains these)
     private val leeftijdBtnIds = listOf(
@@ -448,12 +452,16 @@ class AnnotatieScherm : AppCompatActivity() {
         val btnClear = dialog.findViewById<Button>(R.id.btn_compass_clear)
         val btnOk = dialog.findViewById<Button>(R.id.btn_compass_ok)
         
+        // Track active dialog and compass view for cleanup on activity destroy
+        activeCompassDialog = dialog
+        activeCompassView = compassView
+        
         // Set initial selection if already selected
         compassView.setSelectedDirection(selectedSightingDirection)
         updateCompassSelectionText(tvSelectedDirection, selectedSightingDirection)
         
         // Handle direction selection
-        compassView.onDirectionSelectedListener = { _, label, code ->
+        compassView.onDirectionSelectedListener = { _, _, code ->
             updateCompassSelectionText(tvSelectedDirection, code)
         }
         
@@ -461,7 +469,7 @@ class AnnotatieScherm : AppCompatActivity() {
         compassView.startSensors()
         
         btnCancel.setOnClickListener {
-            compassView.stopSensors()
+            cleanupCompassDialog()
             dialog.dismiss()
         }
         
@@ -477,13 +485,13 @@ class AnnotatieScherm : AppCompatActivity() {
             // Update the button/text in main view to show selection
             updateSightingDirectionDisplay()
             
-            compassView.stopSensors()
+            cleanupCompassDialog()
             dialog.dismiss()
         }
         
         // Stop sensors when dialog is dismissed (by back button, etc.)
         dialog.setOnDismissListener {
-            compassView.stopSensors()
+            cleanupCompassDialog()
         }
         
         dialog.show()
@@ -493,6 +501,21 @@ class AnnotatieScherm : AppCompatActivity() {
             (resources.displayMetrics.widthPixels * 0.95).toInt(),
             android.view.ViewGroup.LayoutParams.WRAP_CONTENT
         )
+    }
+    
+    /**
+     * Cleans up the compass dialog resources, stopping sensors.
+     */
+    private fun cleanupCompassDialog() {
+        activeCompassView?.stopSensors()
+        activeCompassView = null
+        activeCompassDialog = null
+    }
+    
+    override fun onDestroy() {
+        // Ensure compass sensors are stopped if activity is destroyed while dialog is showing
+        cleanupCompassDialog()
+        super.onDestroy()
     }
     
     /**

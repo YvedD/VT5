@@ -33,6 +33,10 @@ class CompassView @JvmOverloads constructor(
 ) : View(context, attrs, defStyleAttr), SensorEventListener {
 
     companion object {
+        // Touch area bounds - defines the ring where user can tap to select direction
+        private const val TOUCH_AREA_INNER_RADIUS_FACTOR = 0.4f
+        private const val TOUCH_AREA_OUTER_RADIUS_FACTOR = 1.1f
+        
         // 16-punts windroos in graden (beginnend bij Noord = 0°)
         private val DIRECTION_ANGLES = floatArrayOf(
             0f,    // N
@@ -78,6 +82,10 @@ class CompassView @JvmOverloads constructor(
     private val magnetometerReading = FloatArray(3)
     private val rotationMatrix = FloatArray(9)
     private val orientationAngles = FloatArray(3)
+    
+    // Track if we have received both sensor readings (for accel+mag fallback)
+    private var hasAccelerometerReading = false
+    private var hasMagnetometerReading = false
 
     // Geselecteerde richting (-1 = geen selectie)
     private var selectedDirectionIndex = -1
@@ -170,6 +178,9 @@ class CompassView @JvmOverloads constructor(
 
     fun stopSensors() {
         sensorManager?.unregisterListener(this)
+        // Reset sensor reading flags when stopping
+        hasAccelerometerReading = false
+        hasMagnetometerReading = false
     }
 
     override fun onSensorChanged(event: SensorEvent) {
@@ -183,16 +194,23 @@ class CompassView @JvmOverloads constructor(
             }
             Sensor.TYPE_ACCELEROMETER -> {
                 System.arraycopy(event.values, 0, accelerometerReading, 0, 3)
+                hasAccelerometerReading = true
                 updateOrientationFromAccelMag()
             }
             Sensor.TYPE_MAGNETIC_FIELD -> {
                 System.arraycopy(event.values, 0, magnetometerReading, 0, 3)
+                hasMagnetometerReading = true
                 updateOrientationFromAccelMag()
             }
         }
     }
 
     private fun updateOrientationFromAccelMag() {
+        // Only update orientation if we have readings from both sensors
+        if (!hasAccelerometerReading || !hasMagnetometerReading) {
+            return
+        }
+        
         if (SensorManager.getRotationMatrix(rotationMatrix, null, accelerometerReading, magnetometerReading)) {
             SensorManager.getOrientation(rotationMatrix, orientationAngles)
             currentAzimuth = Math.toDegrees(orientationAngles[0].toDouble()).toFloat()
@@ -302,9 +320,11 @@ class CompassView @JvmOverloads constructor(
             val dx = touchX - centerX
             val dy = touchY - centerY
 
-            // Check of touch binnen kompas cirkel is
+            // Check of touch binnen kompas ring is (tussen inner en outer radius)
             val distance = kotlin.math.sqrt(dx * dx + dy * dy)
-            if (distance > radius * 0.4f && distance < radius * 1.1f) {
+            val innerBound = radius * TOUCH_AREA_INNER_RADIUS_FACTOR
+            val outerBound = radius * TOUCH_AREA_OUTER_RADIUS_FACTOR
+            if (distance > innerBound && distance < outerBound) {
                 // Bereken hoek (0 = rechts, dus we moeten corrigeren)
                 var angle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble())).toFloat()
                 angle += 90f // Correctie voor N bovenaan
@@ -352,11 +372,19 @@ class CompassView @JvmOverloads constructor(
     /**
      * Zet de geselecteerde richting programmatisch
      */
+    /**
+     * Zet de geselecteerde richting programmatisch.
+     * Als de code niet gevonden wordt, wordt geen selectie gemaakt.
+     * 
+     * @param code De richtingscode (bijv. "N", "NNE", etc.) of null om selectie te wissen
+     */
     fun setSelectedDirection(code: String?) {
         if (code == null) {
             selectedDirectionIndex = -1
         } else {
-            selectedDirectionIndex = DIRECTION_CODES.indexOf(code.uppercase())
+            val index = DIRECTION_CODES.indexOf(code.uppercase())
+            // Only set if valid index found, otherwise leave as no selection
+            selectedDirectionIndex = if (index >= 0) index else -1
         }
         invalidate()
     }
