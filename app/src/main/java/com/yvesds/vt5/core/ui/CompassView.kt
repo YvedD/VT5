@@ -34,8 +34,9 @@ class CompassView @JvmOverloads constructor(
 
     companion object {
         // Touch area bounds - defines the ring where user can tap to select direction
-        private const val TOUCH_AREA_INNER_RADIUS_FACTOR = 0.4f
-        private const val TOUCH_AREA_OUTER_RADIUS_FACTOR = 1.1f
+        // Using a larger area for easier touch detection
+        private const val TOUCH_AREA_INNER_RADIUS_FACTOR = 0.3f
+        private const val TOUCH_AREA_OUTER_RADIUS_FACTOR = 1.15f
         
         // 16-punts windroos in graden (beginnend bij Noord = 0°)
         private val DIRECTION_ANGLES = floatArrayOf(
@@ -92,6 +93,9 @@ class CompassView @JvmOverloads constructor(
 
     // Callback voor richting selectie
     var onDirectionSelectedListener: ((index: Int, label: String, code: String) -> Unit)? = null
+    
+    // Callback voor deselectie (wanneer gebruiker op dezelfde richting tikt om te ontdoen)
+    var onDirectionDeselectedListener: (() -> Unit)? = null
 
     // Paint objecten
     private val paintCircle = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -128,7 +132,7 @@ class CompassView @JvmOverloads constructor(
     }
 
     private val paintSelectedMarker = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#FF9800") // Orange 500
+        color = Color.parseColor("#F44336") // Red 500 - indicates selected direction
         style = Paint.Style.FILL
     }
 
@@ -333,11 +337,17 @@ class CompassView @JvmOverloads constructor(
 
                 // Vind dichtsbijzijnde richting
                 val directionIndex = findClosestDirection(angle)
-                selectedDirectionIndex = directionIndex
                 
-                val label = DIRECTION_LABELS[directionIndex]
-                val code = DIRECTION_CODES[directionIndex]
-                onDirectionSelectedListener?.invoke(directionIndex, label, code)
+                // Toggle: if tapping the same direction, deselect it
+                if (directionIndex == selectedDirectionIndex) {
+                    selectedDirectionIndex = -1
+                    onDirectionDeselectedListener?.invoke()
+                } else {
+                    selectedDirectionIndex = directionIndex
+                    val label = DIRECTION_LABELS[directionIndex]
+                    val code = DIRECTION_CODES[directionIndex]
+                    onDirectionSelectedListener?.invoke(directionIndex, label, code)
+                }
                 
                 invalidate()
                 performClick()

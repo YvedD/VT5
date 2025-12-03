@@ -464,6 +464,13 @@ class AnnotatieScherm : AppCompatActivity() {
             updateSightingDirectionDisplay()
         }
         
+        // Handle deselection - when user taps the same direction again to undo
+        compassView.onDirectionDeselectedListener = {
+            selectedSightingDirection = null
+            updateCompassSelectionText(tvSelectedDirection, null)
+            updateSightingDirectionDisplay()
+        }
+        
         // Start sensors when dialog is shown
         compassView.startSensors()
         
