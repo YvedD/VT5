@@ -370,9 +370,6 @@ class CompassView @JvmOverloads constructor(
     }
 
     /**
-     * Zet de geselecteerde richting programmatisch
-     */
-    /**
      * Zet de geselecteerde richting programmatisch.
      * Als de code niet gevonden wordt, wordt geen selectie gemaakt.
      * 

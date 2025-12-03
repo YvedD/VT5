@@ -536,7 +536,6 @@ class AnnotatieScherm : AppCompatActivity() {
      */
     private fun updateSightingDirectionDisplay() {
         val tvSelectedDirection = findViewById<TextView>(R.id.tv_selected_sighting_direction)
-        val btnCompass = findViewById<Button>(R.id.btn_compass)
         
         if (selectedSightingDirection != null) {
             val dirIndex = CompassView.DIRECTION_CODES.indexOf(selectedSightingDirection)
