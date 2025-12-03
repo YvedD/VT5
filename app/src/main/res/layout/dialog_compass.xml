@@ -4,7 +4,7 @@
     android:layout_height="wrap_content"
     android:background="@color/design_dark_default_color_background"
     android:orientation="vertical"
-    android:padding="8dp">
+    android:padding="1dp">
 
     <TextView
         android:id="@+id/tv_compass_title"
@@ -30,14 +30,14 @@
     <!-- Compass with buttons around it -->
     <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="360dp"
+        android:layout_height="380dp"
         android:layout_gravity="center">
 
         <!-- Central compass needle -->
         <com.yvesds.vt5.core.ui.CompassNeedleView
             android:id="@+id/compass_needle_view"
-            android:layout_width="300dp"
-            android:layout_height="300dp"
+            android:layout_width="225dp"
+            android:layout_height="225dp"
             android:layout_gravity="center"
             android:contentDescription="@string/compass_content_description" />
 
@@ -56,7 +56,7 @@
             style="@style/CompassDirectionButton"
             android:layout_width="48dp"
             android:layout_gravity="top|start"
-            android:layout_marginStart="105dp"
+            android:layout_marginStart="90dp"
             android:layout_marginTop="12dp"
             android:text="NNW" />
 
@@ -65,7 +65,7 @@
             style="@style/CompassDirectionButton"
             android:layout_gravity="top|end"
             android:layout_marginTop="12dp"
-            android:layout_marginEnd="105dp"
+            android:layout_marginEnd="90dp"
             android:text="NNO" />
 
         <!-- Row 3: NW and NO -->
@@ -73,16 +73,16 @@
             android:id="@+id/btn_dir_nw"
             style="@style/CompassDirectionButton"
             android:layout_gravity="top|start"
-            android:layout_marginStart="45dp"
-            android:layout_marginTop="50dp"
+            android:layout_marginStart="38dp"
+            android:layout_marginTop="63dp"
             android:text="NW" />
 
         <Button
             android:id="@+id/btn_dir_no"
             style="@style/CompassDirectionButton"
             android:layout_gravity="top|end"
-            android:layout_marginTop="50dp"
-            android:layout_marginEnd="45dp"
+            android:layout_marginTop="63dp"
+            android:layout_marginEnd="38dp"
             android:text="NO" />
 
         <!-- Row 4: WNW and ONO -->
@@ -90,7 +90,7 @@
             android:id="@+id/btn_dir_wnw"
             style="@style/CompassDirectionButton"
             android:layout_gravity="start|center_vertical"
-            android:layout_marginStart="15dp"
+            android:layout_marginStart="10dp"
             android:layout_marginTop="-60dp"
             android:text="WNW" />
 
@@ -99,7 +99,7 @@
             style="@style/CompassDirectionButton"
             android:layout_gravity="end|center_vertical"
             android:layout_marginTop="-60dp"
-            android:layout_marginEnd="15dp"
+            android:layout_marginEnd="10dp"
             android:text="ONO" />
 
         <!-- Row 5: W and O (center sides) -->
@@ -122,7 +122,7 @@
             android:id="@+id/btn_dir_wzw"
             style="@style/CompassDirectionButton"
             android:layout_gravity="start|center_vertical"
-            android:layout_marginStart="15dp"
+            android:layout_marginStart="10dp"
             android:layout_marginTop="60dp"
             android:text="WZW" />
 
@@ -131,7 +131,7 @@
             style="@style/CompassDirectionButton"
             android:layout_gravity="end|center_vertical"
             android:layout_marginTop="60dp"
-            android:layout_marginEnd="15dp"
+            android:layout_marginEnd="10dp"
             android:text="OZO" />
 
         <!-- Row 7: ZW and ZO -->
@@ -139,16 +139,16 @@
             android:id="@+id/btn_dir_zw"
             style="@style/CompassDirectionButton"
             android:layout_gravity="bottom|start"
-            android:layout_marginStart="45dp"
-            android:layout_marginBottom="50dp"
+            android:layout_marginStart="38dp"
+            android:layout_marginBottom="63dp"
             android:text="ZW" />
 
         <Button
             android:id="@+id/btn_dir_zo"
             style="@style/CompassDirectionButton"
             android:layout_gravity="bottom|end"
-            android:layout_marginEnd="45dp"
-            android:layout_marginBottom="50dp"
+            android:layout_marginEnd="38dp"
+            android:layout_marginBottom="63dp"
             android:text="ZO" />
 
         <!-- Row 8: ZZW and ZZO -->
@@ -156,7 +156,7 @@
             android:id="@+id/btn_dir_zzw"
             style="@style/CompassDirectionButton"
             android:layout_gravity="bottom|start"
-            android:layout_marginStart="105dp"
+            android:layout_marginStart="90dp"
             android:layout_marginBottom="12dp"
             android:text="ZZW" />
 
@@ -164,7 +164,7 @@
             android:id="@+id/btn_dir_zzo"
             style="@style/CompassDirectionButton"
             android:layout_gravity="bottom|end"
-            android:layout_marginEnd="105dp"
+            android:layout_marginEnd="90dp"
             android:layout_marginBottom="12dp"
             android:text="ZZO" />
 
@@ -183,7 +183,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center"
-        android:paddingTop="8dp"
+        android:padding="2dp"
         android:text="@string/compass_no_selection"
         android:textColor="@android:color/white"
         android:textSize="14sp" />
