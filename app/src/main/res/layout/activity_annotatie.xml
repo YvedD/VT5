@@ -581,27 +581,9 @@
                 android:padding="2dp">
 
                 <CheckBox
-                    android:id="@+id/cb_zw"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:padding="1dp"
-                    android:text="@string/annotation_direction_sw"
-                    android:textSize="11sp" />
-
-                <CheckBox
-                    android:id="@+id/cb_no"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
-                    android:padding="1dp"
-                    android:text="@string/annotation_direction_no"
-                    android:textSize="11sp" />
-
-                <CheckBox
                     android:id="@+id/cb_markeren"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
                     android:padding="1dp"
                     android:text="@string/annotation_mark"
                     android:textSize="11sp" />

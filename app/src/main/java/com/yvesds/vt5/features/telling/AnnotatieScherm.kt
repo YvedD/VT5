@@ -147,14 +147,6 @@ class AnnotatieScherm : AppCompatActivity() {
                 }
             }
             // Checkboxes
-            findViewById<CheckBox>(R.id.cb_zw)?.takeIf { it.isChecked }?.let {
-                resultMap["ZW"] = "1"
-                selectedLabels.add("ZW")
-            }
-            findViewById<CheckBox>(R.id.cb_no)?.takeIf { it.isChecked }?.let {
-                resultMap["NO"] = "1"
-                selectedLabels.add("NO")
-            }
             findViewById<CheckBox>(R.id.cb_markeren)?.takeIf { it.isChecked }?.let {
                 resultMap["markeren"] = "1"
                 selectedLabels.add("Markeren")
@@ -441,6 +433,9 @@ class AnnotatieScherm : AppCompatActivity() {
      * User can tap on any of the 16 wind directions to select it.
      */
     private fun showCompassDialog() {
+        // Store original direction to restore on cancel
+        val originalDirection = selectedSightingDirection
+        
         val dialog = Dialog(this)
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
         dialog.setContentView(R.layout.dialog_compass)
@@ -460,31 +455,35 @@ class AnnotatieScherm : AppCompatActivity() {
         compassView.setSelectedDirection(selectedSightingDirection)
         updateCompassSelectionText(tvSelectedDirection, selectedSightingDirection)
         
-        // Handle direction selection
-        compassView.onDirectionSelectedListener = { _, _, code ->
+        // Handle direction selection - immediately store the selected direction
+        compassView.onDirectionSelectedListener = { _, label, code ->
+            // Store the selected direction immediately when tapped
+            selectedSightingDirection = code
             updateCompassSelectionText(tvSelectedDirection, code)
+            // Update the main view display as well
+            updateSightingDirectionDisplay()
         }
         
         // Start sensors when dialog is shown
         compassView.startSensors()
         
         btnCancel.setOnClickListener {
+            // Cancel reverts to the original selection (before opening dialog)
+            selectedSightingDirection = originalDirection
+            updateSightingDirectionDisplay()
             cleanupCompassDialog()
             dialog.dismiss()
         }
         
         btnClear.setOnClickListener {
             compassView.setSelectedDirection(null)
+            selectedSightingDirection = null
             updateCompassSelectionText(tvSelectedDirection, null)
+            updateSightingDirectionDisplay()
         }
         
         btnOk.setOnClickListener {
-            val selectedCode = compassView.getSelectedDirectionCode()
-            selectedSightingDirection = selectedCode
-            
-            // Update the button/text in main view to show selection
-            updateSightingDirectionDisplay()
-            
+            // Selection is already stored, just close the dialog
             cleanupCompassDialog()
             dialog.dismiss()
         }
