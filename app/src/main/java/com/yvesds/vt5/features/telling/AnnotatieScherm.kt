@@ -1,16 +1,19 @@
 package com.yvesds.vt5.features.telling
 
 import android.app.Activity
+import android.app.Dialog
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.util.Log
 import android.view.View
+import android.view.Window
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.AppCompatToggleButton
 import androidx.lifecycle.lifecycleScope
 import com.yvesds.vt5.R
+import com.yvesds.vt5.core.ui.CompassView
 import com.yvesds.vt5.core.ui.ProgressDialogHelper
 import com.yvesds.vt5.features.annotation.AnnotationsManager
 import com.yvesds.vt5.features.annotation.AnnotationOption
@@ -56,6 +59,9 @@ class AnnotatieScherm : AppCompatActivity() {
     
     // Reference to remarks EditText for location/height auto-tagging
     private lateinit var etOpmerkingen: EditText
+    
+    // Selected sighting direction (code from windoms, e.g., "N", "NNE", etc.)
+    private var selectedSightingDirection: String? = null
 
     // Pre-drawn button IDs per column (layout contains these)
     private val leeftijdBtnIds = listOf(
@@ -108,6 +114,11 @@ class AnnotatieScherm : AppCompatActivity() {
             } finally {
                 progress.dismiss()
             }
+        }
+
+        // Wire compass button
+        findViewById<Button>(R.id.btn_compass).setOnClickListener {
+            showCompassDialog()
         }
 
         // Wire action buttons
@@ -177,6 +188,15 @@ class AnnotatieScherm : AppCompatActivity() {
             findViewById<EditText>(R.id.et_opmerkingen)?.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
                 resultMap["opmerkingen"] = it
                 selectedLabels.add("Opm: $it")
+            }
+            
+            // Sighting direction from compass
+            selectedSightingDirection?.let { direction ->
+                resultMap["sightingdirection"] = direction
+                // Find the Dutch label for display
+                val dirIndex = CompassView.DIRECTION_CODES.indexOf(direction)
+                val label = if (dirIndex >= 0) CompassView.DIRECTION_LABELS[dirIndex] else direction
+                selectedLabels.add("Richting: $label")
             }
 
             val payload = json.encodeToString(resultMap)
@@ -410,4 +430,97 @@ class AnnotatieScherm : AppCompatActivity() {
      * Delegates to SeizoenUtils for consistent behavior across the app.
      */
     private fun isZwSeizoen(): Boolean = SeizoenUtils.isZwSeizoen()
+    
+    /**
+     * Shows the compass dialog for selecting sighting direction.
+     * The compass uses device sensors to show a real moving needle.
+     * User can tap on any of the 16 wind directions to select it.
+     */
+    private fun showCompassDialog() {
+        val dialog = Dialog(this)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+        dialog.setContentView(R.layout.dialog_compass)
+        dialog.setCancelable(true)
+        
+        val compassView = dialog.findViewById<CompassView>(R.id.compass_view)
+        val tvSelectedDirection = dialog.findViewById<TextView>(R.id.tv_selected_direction)
+        val btnCancel = dialog.findViewById<Button>(R.id.btn_compass_cancel)
+        val btnClear = dialog.findViewById<Button>(R.id.btn_compass_clear)
+        val btnOk = dialog.findViewById<Button>(R.id.btn_compass_ok)
+        
+        // Set initial selection if already selected
+        compassView.setSelectedDirection(selectedSightingDirection)
+        updateCompassSelectionText(tvSelectedDirection, selectedSightingDirection)
+        
+        // Handle direction selection
+        compassView.onDirectionSelectedListener = { _, label, code ->
+            updateCompassSelectionText(tvSelectedDirection, code)
+        }
+        
+        // Start sensors when dialog is shown
+        compassView.startSensors()
+        
+        btnCancel.setOnClickListener {
+            compassView.stopSensors()
+            dialog.dismiss()
+        }
+        
+        btnClear.setOnClickListener {
+            compassView.setSelectedDirection(null)
+            updateCompassSelectionText(tvSelectedDirection, null)
+        }
+        
+        btnOk.setOnClickListener {
+            val selectedCode = compassView.getSelectedDirectionCode()
+            selectedSightingDirection = selectedCode
+            
+            // Update the button/text in main view to show selection
+            updateSightingDirectionDisplay()
+            
+            compassView.stopSensors()
+            dialog.dismiss()
+        }
+        
+        // Stop sensors when dialog is dismissed (by back button, etc.)
+        dialog.setOnDismissListener {
+            compassView.stopSensors()
+        }
+        
+        dialog.show()
+        
+        // Set dialog width to match parent with some margin
+        dialog.window?.setLayout(
+            (resources.displayMetrics.widthPixels * 0.95).toInt(),
+            android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+        )
+    }
+    
+    /**
+     * Updates the text showing the selected direction in the compass dialog.
+     */
+    private fun updateCompassSelectionText(textView: TextView, directionCode: String?) {
+        if (directionCode == null) {
+            textView.text = getString(R.string.compass_no_selection)
+        } else {
+            val dirIndex = CompassView.DIRECTION_CODES.indexOf(directionCode)
+            val label = if (dirIndex >= 0) CompassView.DIRECTION_LABELS[dirIndex] else directionCode
+            textView.text = getString(R.string.compass_selected, label)
+        }
+    }
+    
+    /**
+     * Updates the sighting direction display in the main annotation screen.
+     */
+    private fun updateSightingDirectionDisplay() {
+        val tvSelectedDirection = findViewById<TextView>(R.id.tv_selected_sighting_direction)
+        val btnCompass = findViewById<Button>(R.id.btn_compass)
+        
+        if (selectedSightingDirection != null) {
+            val dirIndex = CompassView.DIRECTION_CODES.indexOf(selectedSightingDirection)
+            val label = if (dirIndex >= 0) CompassView.DIRECTION_LABELS[dirIndex] else selectedSightingDirection
+            tvSelectedDirection?.text = label
+        } else {
+            tvSelectedDirection?.text = ""
+        }
+    }
 }

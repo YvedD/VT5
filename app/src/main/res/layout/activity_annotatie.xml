@@ -625,6 +625,42 @@
                     android:textSize="11sp" />
             </LinearLayout>
 
+            <!-- Sighting Direction (Compass) row -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="4dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/annotation_sighting_direction"
+                    android:textSize="12sp" />
+
+                <Button
+                    android:id="@+id/btn_compass"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:layout_marginStart="8dp"
+                    android:minWidth="100dp"
+                    android:padding="4dp"
+                    android:text="@string/compass_select"
+                    android:textSize="11sp" />
+
+                <TextView
+                    android:id="@+id/tv_selected_sighting_direction"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text=""
+                    android:textColor="@color/design_default_color_primary"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+            </LinearLayout>
+
             <!-- Manual count inputs section -->
             <LinearLayout
                 android:layout_width="match_parent"
