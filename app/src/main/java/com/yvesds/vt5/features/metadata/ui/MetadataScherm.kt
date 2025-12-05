@@ -48,6 +48,13 @@ import kotlinx.coroutines.withContext
 class MetadataScherm : AppCompatActivity() {
     companion object {
         private const val TAG = "MetadataScherm"
+        
+        /**
+         * Extra key for vervolgtelling: contains the eindtijd of the previous telling
+         * as epoch seconds string. When present, this will be used as the begintijd
+         * for the new telling, and the weather "Auto" button will be enabled.
+         */
+        const val EXTRA_VERVOLG_BEGINTIJD_EPOCH = "EXTRA_VERVOLG_BEGINTIJD_EPOCH"
     }
 
     private lateinit var binding: SchermMetadataBinding
@@ -96,6 +103,10 @@ class MetadataScherm : AppCompatActivity() {
         // pickers + defaults
         formManager.initDateTimePickers()
         formManager.prefillCurrentDateTime()
+        
+        // Check for vervolgtelling: if begintijd is passed from previous telling,
+        // use it to preset the time field and ensure weather button is enabled
+        handleVervolgtellingIntent()
 
         // Acties
         binding.btnVerder.setOnClickListener { onVerderClicked() }
@@ -106,6 +117,34 @@ class MetadataScherm : AppCompatActivity() {
         // 1. Eerst de essentiële codes (snel)
         // 2. Later, terwijl de gebruiker bezig is, de rest van de data
         loadEssentialData()
+    }
+    
+    /**
+     * Handle vervolgtelling intent: if this activity was started from TellingScherm
+     * after a successful upload with "Vervolgtelling aanmaken", the begintijd
+     * of the previous telling's eindtijd will be preset.
+     */
+    private fun handleVervolgtellingIntent() {
+        val vervolgBegintijdEpoch = intent.getStringExtra(EXTRA_VERVOLG_BEGINTIJD_EPOCH)
+        if (!vervolgBegintijdEpoch.isNullOrBlank()) {
+            try {
+                val epochSeconds = vervolgBegintijdEpoch.toLongOrNull()
+                if (epochSeconds != null && epochSeconds > 0) {
+                    // Set the time field to match the eindtijd of the previous telling
+                    val date = java.util.Date(epochSeconds * 1000L)
+                    val timeFmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                    binding.etTijd.setText(timeFmt.format(date))
+                    
+                    // Update formManager's startEpochSec to reflect this
+                    formManager.startEpochSec = epochSeconds
+                    
+                    // Ensure the weather "Auto" button is enabled for new weather data
+                    binding.btnWeerAuto.isEnabled = true
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to parse vervolgtelling begintijd: ${e.message}")
+            }
+        }
     }
 
     /**

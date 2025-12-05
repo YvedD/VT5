@@ -104,6 +104,9 @@ class TellingScherm : AppCompatActivity() {
 
         private const val MAX_LOG_ROWS = 600
         
+        // Auto-dismiss delay for success dialog (ms)
+        private const val SUCCESS_DIALOG_DELAY_MS = 2000L
+        
         // Intent extra key for hourly alarm trigger
         const val EXTRA_SHOW_HUIDIGE_STAND = "SHOW_HUIDIGE_STAND"
     }
@@ -998,18 +1001,12 @@ class TellingScherm : AppCompatActivity() {
                     pendingBackupInternalPaths.clear()
                     if (::viewModel.isInitialized) viewModel.clearPendingRecords()
 
-                    // Show success dialog
-                    val dlg = AlertDialog.Builder(this@TellingScherm)
-                        .setTitle("Afronden geslaagd")
-                        .setMessage("Afronden upload geslaagd. Envelope opgeslagen: ${result.savedPrettyPath ?: "n.v.t."}")
-                        .setPositiveButton("OK") { _, _ ->
-                            val intent = Intent(this@TellingScherm, MetadataScherm::class.java)
-                            intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                            startActivity(intent)
-                            finish()
-                        }
-                        .show()
-                    dialogHelper.styleAlertDialogTextToWhite(dlg)
+                    // Store the eindtijd for potential vervolgtelling
+                    val eindtijdForVervolg = metadataUpdates?.eindtijd 
+                        ?: (System.currentTimeMillis() / 1000L).toString()
+
+                    // Show auto-dismissing success toast (like other popups in the app)
+                    showAutoDissmissSuccessAndThenVervolg(eindtijdForVervolg)
                 }
                 is TellingAfrondHandler.AfrondResult.Failure -> {
                     // Show failure dialog
@@ -1022,6 +1019,61 @@ class TellingScherm : AppCompatActivity() {
                 }
             }
         }
+    }
+    
+    /**
+     * Show auto-dismissing success popup for 2 seconds, then show vervolgtelling dialog.
+     * 
+     * @param eindtijdEpoch The eindtijd of the finished telling (epoch seconds string)
+     */
+    private fun showAutoDissmissSuccessAndThenVervolg(eindtijdEpoch: String) {
+        // Create and show auto-dismissing success dialog
+        val successDialog = AlertDialog.Builder(this@TellingScherm)
+            .setTitle(getString(R.string.dialog_finish_success))
+            .setMessage(getString(R.string.afrond_upload_success))
+            .setCancelable(false)
+            .create()
+        
+        successDialog.show()
+        dialogHelper.styleAlertDialogTextToWhite(successDialog)
+        
+        // Auto-dismiss after SUCCESS_DIALOG_DELAY_MS and show vervolgtelling dialog
+        lifecycleScope.launch {
+            kotlinx.coroutines.delay(SUCCESS_DIALOG_DELAY_MS)
+            if (successDialog.isShowing) {
+                successDialog.dismiss()
+            }
+            showVervolgtellingDialog(eindtijdEpoch)
+        }
+    }
+    
+    /**
+     * Show dialog asking if user wants to create a follow-up telling.
+     * 
+     * @param eindtijdEpoch The eindtijd to use as begintijd for the follow-up telling
+     */
+    private fun showVervolgtellingDialog(eindtijdEpoch: String) {
+        val dlg = AlertDialog.Builder(this@TellingScherm)
+            .setTitle(getString(R.string.afrond_vervolgtelling_titel))
+            .setMessage(getString(R.string.afrond_vervolgtelling_msg))
+            .setPositiveButton("OK") { _, _ ->
+                // Navigate to MetadataScherm with begintijd preset to eindtijd of previous telling
+                val intent = Intent(this@TellingScherm, MetadataScherm::class.java)
+                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                intent.putExtra(MetadataScherm.EXTRA_VERVOLG_BEGINTIJD_EPOCH, eindtijdEpoch)
+                startActivity(intent)
+                finish()
+            }
+            .setNegativeButton(getString(R.string.dlg_cancel)) { _, _ ->
+                // Navigate to MetadataScherm without preset begintijd
+                val intent = Intent(this@TellingScherm, MetadataScherm::class.java)
+                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                startActivity(intent)
+                finish()
+            }
+            .setCancelable(false)
+            .show()
+        dialogHelper.styleAlertDialogTextToWhite(dlg)
     }
 
     // Write pretty envelope JSON to SAF as "<timestamp>_count_<onlineid>.json"
