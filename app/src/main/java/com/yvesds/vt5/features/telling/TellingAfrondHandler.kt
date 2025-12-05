@@ -119,8 +119,9 @@ class TellingAfrondHandler(
         
         // Apply metadata updates if provided (begintijd, eindtijd, opmerkingen)
         // Otherwise use defaults: keep original begintijd, set eindtijd to now
-        val effectiveBegintijd = metadataUpdates?.begintijd ?: baseEnv.begintijd
-        val effectiveEindtijd = metadataUpdates?.eindtijd ?: nowEpochStr
+        // Note: Use ifBlank to also handle empty string cases, not just null
+        val effectiveBegintijd = metadataUpdates?.begintijd?.ifBlank { null } ?: baseEnv.begintijd
+        val effectiveEindtijd = metadataUpdates?.eindtijd?.ifBlank { null } ?: nowEpochStr
         val effectiveOpmerkingen = metadataUpdates?.opmerkingen ?: baseEnv.opmerkingen
         
         val envWithTimes = baseEnv.copy(
