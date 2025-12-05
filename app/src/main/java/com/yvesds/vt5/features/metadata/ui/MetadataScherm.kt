@@ -48,6 +48,13 @@ import kotlinx.coroutines.withContext
 class MetadataScherm : AppCompatActivity() {
     companion object {
         private const val TAG = "MetadataScherm"
+        
+        /**
+         * Extra key for vervolgtelling: contains the eindtijd of the previous telling
+         * as epoch seconds string. When present, this will be used as the begintijd
+         * for the new telling, and the weather "Auto" button will be enabled.
+         */
+        const val EXTRA_VERVOLG_BEGINTIJD_EPOCH = "EXTRA_VERVOLG_BEGINTIJD_EPOCH"
     }
 
     private lateinit var binding: SchermMetadataBinding
@@ -57,6 +64,9 @@ class MetadataScherm : AppCompatActivity() {
     // Scope voor achtergrondtaken
     private val uiScope = CoroutineScope(Job() + Dispatchers.Main)
     private var backgroundLoadJob: Job? = null
+    
+    // Track if weather fetch is in progress to prevent duplicate calls
+    private var isWeatherFetching = false
 
     // SAF helper for alias manager access
     private lateinit var saf: SaFStorageHelper
@@ -96,6 +106,10 @@ class MetadataScherm : AppCompatActivity() {
         // pickers + defaults
         formManager.initDateTimePickers()
         formManager.prefillCurrentDateTime()
+        
+        // Check for vervolgtelling: if begintijd is passed from previous telling,
+        // use it to preset the time field and ensure weather button is enabled
+        handleVervolgtellingIntent()
 
         // Acties
         binding.btnVerder.setOnClickListener { onVerderClicked() }
@@ -106,6 +120,31 @@ class MetadataScherm : AppCompatActivity() {
         // 1. Eerst de essentiële codes (snel)
         // 2. Later, terwijl de gebruiker bezig is, de rest van de data
         loadEssentialData()
+    }
+    
+    /**
+     * Handle vervolgtelling intent: if this activity was started from TellingScherm
+     * after a successful upload with "Vervolgtelling aanmaken", the begintijd
+     * of the previous telling's eindtijd will be preset.
+     */
+    private fun handleVervolgtellingIntent() {
+        val vervolgBegintijdEpoch = intent.getStringExtra(EXTRA_VERVOLG_BEGINTIJD_EPOCH)
+        if (!vervolgBegintijdEpoch.isNullOrBlank()) {
+            try {
+                val epochSeconds = vervolgBegintijdEpoch.toLongOrNull()
+                if (epochSeconds != null && epochSeconds > 0) {
+                    // Set the time field to match the eindtijd of the previous telling
+                    val date = java.util.Date(epochSeconds * 1000L)
+                    val timeFmt = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                    binding.etTijd.setText(timeFmt.format(date))
+                    
+                    // Update formManager's startEpochSec to reflect this
+                    formManager.startEpochSec = epochSeconds
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to parse vervolgtelling begintijd: ${e.message}")
+            }
+        }
     }
 
     /**
@@ -237,9 +276,10 @@ class MetadataScherm : AppCompatActivity() {
     }
 
     private fun onWeerAutoClicked() {
-        // Toon subtiele visuele feedback
-        binding.btnWeerAuto.isEnabled = false
-
+        // Prevent duplicate weather fetch calls
+        if (isWeatherFetching) return
+        isWeatherFetching = true
+        
         uiScope.launch {
             try {
                 val success = weatherFetcher.fetchAndApplyWeather(snapshot)
@@ -249,7 +289,6 @@ class MetadataScherm : AppCompatActivity() {
                         getString(R.string.metadata_error_weather_fetch),
                         Toast.LENGTH_SHORT
                     ).show()
-                    binding.btnWeerAuto.isEnabled = true
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error fetching weather: ${e.message}")
@@ -258,7 +297,8 @@ class MetadataScherm : AppCompatActivity() {
                     getString(R.string.metadata_error_weather_fetch_short),
                     Toast.LENGTH_SHORT
                 ).show()
-                binding.btnWeerAuto.isEnabled = true
+            } finally {
+                isWeatherFetching = false
             }
         }
     }
@@ -367,5 +407,18 @@ class MetadataScherm : AppCompatActivity() {
         super.onDestroy()
         // Annuleer alle achtergrondtaken
         backgroundLoadJob?.cancel()
+    }
+    
+    /**
+     * Handle new intent when activity is reused (FLAG_ACTIVITY_SINGLE_TOP).
+     * This is essential for vervolgtelling to work correctly when MetadataScherm
+     * is already in the back stack.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        
+        // Re-check for vervolgtelling intent data
+        handleVervolgtellingIntent()
     }
 }

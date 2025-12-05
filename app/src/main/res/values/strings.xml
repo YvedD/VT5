@@ -169,6 +169,9 @@
     <string name="afrond_confirm_info">Controleer en pas eventueel de begin- en eindtijd aan, en voeg opmerkingen toe indien nodig.</string>
     <string name="afrond_confirm_upload">Uploaden</string>
     <string name="afrond_time_picker_title">Tijd kiezen</string>
+    <string name="afrond_upload_success">Upload geslaagd !</string>
+    <string name="afrond_vervolgtelling_titel">Vervolgtelling aanmaken</string>
+    <string name="afrond_vervolgtelling_msg">Wil je een vervolgtelling starten?\n\nDe begintijd wordt automatisch ingesteld op de eindtijd van de vorige telling.</string>
 
     <!-- AliasEditor &amp; AddAliasDialog -->
     <string name="alias_reload_complete">Aliassen herladen: klaar</string>

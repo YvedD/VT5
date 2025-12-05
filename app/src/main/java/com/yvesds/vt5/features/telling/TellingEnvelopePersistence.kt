@@ -378,6 +378,75 @@ class TellingEnvelopePersistence(
     }
     
     /**
+     * Sla de finale envelope JSON direct op in de counts map.
+     * Dit is de JSON die naar de server wordt verzonden en MOET identiek zijn
+     * aan wat wordt opgeslagen.
+     * 
+     * @param tellingId De telling ID voor de bestandsnaam
+     * @param onlineId De online ID voor de bestandsnaam  
+     * @param finalJson De finale JSON string (exact zoals naar server verzonden)
+     * @return Pad naar opgeslagen bestand, of null bij fout
+     */
+    suspend fun saveFinalEnvelopeToCountsDir(
+        tellingId: String?,
+        onlineId: String?,
+        finalJson: String
+    ): String? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+                val tellingPart = sanitizeFilename(tellingId?.takeIf { it.isNotBlank() } ?: "unknown")
+                val onlinePart = sanitizeFilename(onlineId?.takeIf { it.isNotBlank() } ?: "unknown")
+                val filename = "telling_${tellingPart}_${onlinePart}_$timestamp.json"
+                
+                var savedPath: String? = null
+                
+                // Probeer SAF
+                val vt5Dir = safHelper.getVt5DirIfExists()
+                if (vt5Dir != null) {
+                    var countsDir = vt5Dir.findFile(COUNTS_DIR)
+                    if (countsDir == null || !countsDir.isDirectory) {
+                        countsDir = vt5Dir.createDirectory(COUNTS_DIR)
+                    }
+                    
+                    if (countsDir != null) {
+                        val doc = countsDir.createFile("application/json", filename)
+                        if (doc != null) {
+                            context.contentResolver.openOutputStream(doc.uri)?.use { out ->
+                                out.write(finalJson.toByteArray(Charsets.UTF_8))
+                            }
+                            savedPath = "Documents/VT5/$COUNTS_DIR/$filename"
+                            Log.i(TAG, "Finale envelope opgeslagen in counts: $savedPath")
+                        }
+                    }
+                }
+                
+                // Fallback naar internal
+                if (savedPath == null) {
+                    val countsDir = File(context.filesDir, "$VT5_DIR/$COUNTS_DIR")
+                    if (!countsDir.exists()) {
+                        countsDir.mkdirs()
+                    }
+                    val file = File(countsDir, filename)
+                    file.writeText(finalJson, Charsets.UTF_8)
+                    savedPath = "internal:${file.absolutePath}"
+                    Log.i(TAG, "Finale envelope opgeslagen internal: $savedPath")
+                }
+                
+                // Verwijder active_telling.json na succesvolle opslag
+                if (savedPath != null) {
+                    clearSavedEnvelope()
+                }
+                
+                savedPath
+            } catch (e: Exception) {
+                Log.w(TAG, "Kon finale envelope niet opslaan: ${e.message}", e)
+                null
+            }
+        }
+    }
+    
+    /**
      * Sanitize a string for use in a filename - removes unsafe characters.
      */
     private fun sanitizeFilename(input: String): String {

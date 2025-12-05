@@ -119,8 +119,9 @@ class TellingAfrondHandler(
         
         // Apply metadata updates if provided (begintijd, eindtijd, opmerkingen)
         // Otherwise use defaults: keep original begintijd, set eindtijd to now
-        val effectiveBegintijd = metadataUpdates?.begintijd ?: baseEnv.begintijd
-        val effectiveEindtijd = metadataUpdates?.eindtijd ?: nowEpochStr
+        // Note: Use ifBlank to also handle empty string cases, not just null
+        val effectiveBegintijd = metadataUpdates?.begintijd?.ifBlank { null } ?: baseEnv.begintijd
+        val effectiveEindtijd = metadataUpdates?.eindtijd?.ifBlank { null } ?: nowEpochStr
         val effectiveOpmerkingen = metadataUpdates?.opmerkingen ?: baseEnv.opmerkingen
         
         val envWithTimes = baseEnv.copy(
@@ -256,13 +257,19 @@ class TellingAfrondHandler(
                 remove(PREF_SAVED_ENVELOPE_JSON)
             }
             
-            // Archive the active_telling.json (rename to timestamped file in counts folder)
+            // Save the FINAL envelope (with correct eindtijd) to counts folder
+            // This ensures the saved JSON is IDENTICAL to what was sent to the server
             try {
                 val tellingId = finalEnv.tellingid
                 val archiveOnlineId = savedOnlineId ?: finalEnv.onlineid
-                envelopePersistence?.archiveSavedEnvelope(tellingId, archiveOnlineId)
+                if (prettyJson != null) {
+                    envelopePersistence?.saveFinalEnvelopeToCountsDir(tellingId, archiveOnlineId, prettyJson)
+                } else {
+                    // Fallback: archive the old way if prettyJson is null
+                    envelopePersistence?.archiveSavedEnvelope(tellingId, archiveOnlineId)
+                }
             } catch (ex: Exception) {
-                Log.w(TAG, "Failed to archive active_telling.json: ${ex.message}", ex)
+                Log.w(TAG, "Failed to save final envelope to counts: ${ex.message}", ex)
             }
         } catch (e: Exception) {
             Log.w(TAG, "Cleanup after successful Afronden failed: ${e.message}", e)
