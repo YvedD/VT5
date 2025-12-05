@@ -105,7 +105,7 @@ class TellingScherm : AppCompatActivity() {
         private const val MAX_LOG_ROWS = 600
         
         // Auto-dismiss delay for success dialog (ms)
-        private const val SUCCESS_DIALOG_DELAY_MS = 2000L
+        private const val SUCCESS_DIALOG_DELAY_MS = 1000L
         
         // Intent extra key for hourly alarm trigger
         const val EXTRA_SHOW_HUIDIGE_STAND = "SHOW_HUIDIGE_STAND"

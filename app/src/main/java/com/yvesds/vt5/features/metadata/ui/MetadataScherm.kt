@@ -64,6 +64,9 @@ class MetadataScherm : AppCompatActivity() {
     // Scope voor achtergrondtaken
     private val uiScope = CoroutineScope(Job() + Dispatchers.Main)
     private var backgroundLoadJob: Job? = null
+    
+    // Track if weather fetch is in progress to prevent duplicate calls
+    private var isWeatherFetching = false
 
     // SAF helper for alias manager access
     private lateinit var saf: SaFStorageHelper
@@ -137,9 +140,6 @@ class MetadataScherm : AppCompatActivity() {
                     
                     // Update formManager's startEpochSec to reflect this
                     formManager.startEpochSec = epochSeconds
-                    
-                    // Ensure the weather "Auto" button is enabled for new weather data
-                    binding.btnWeerAuto.isEnabled = true
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to parse vervolgtelling begintijd: ${e.message}")
@@ -276,9 +276,10 @@ class MetadataScherm : AppCompatActivity() {
     }
 
     private fun onWeerAutoClicked() {
-        // Toon subtiele visuele feedback
-        binding.btnWeerAuto.isEnabled = false
-
+        // Prevent duplicate weather fetch calls
+        if (isWeatherFetching) return
+        isWeatherFetching = true
+        
         uiScope.launch {
             try {
                 val success = weatherFetcher.fetchAndApplyWeather(snapshot)
@@ -288,7 +289,6 @@ class MetadataScherm : AppCompatActivity() {
                         getString(R.string.metadata_error_weather_fetch),
                         Toast.LENGTH_SHORT
                     ).show()
-                    binding.btnWeerAuto.isEnabled = true
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error fetching weather: ${e.message}")
@@ -297,7 +297,8 @@ class MetadataScherm : AppCompatActivity() {
                     getString(R.string.metadata_error_weather_fetch_short),
                     Toast.LENGTH_SHORT
                 ).show()
-                binding.btnWeerAuto.isEnabled = true
+            } finally {
+                isWeatherFetching = false
             }
         }
     }
