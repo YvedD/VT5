@@ -1066,8 +1066,8 @@ class TellingScherm : AppCompatActivity() {
                 finish()
             }
             .setNegativeButton(getString(R.string.dlg_cancel)) { _, _ ->
-                // Navigate to MetadataScherm without preset begintijd
-                val intent = Intent(this@TellingScherm, MetadataScherm::class.java)
+                // Navigate to HoofdActiviteit (main screen) so user can close app or edit tellingen
+                val intent = Intent(this@TellingScherm, com.yvesds.vt5.hoofd.HoofdActiviteit::class.java)
                 intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 startActivity(intent)
                 finish()
