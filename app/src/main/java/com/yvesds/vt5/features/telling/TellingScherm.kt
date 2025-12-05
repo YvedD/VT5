@@ -1002,7 +1002,8 @@ class TellingScherm : AppCompatActivity() {
                     if (::viewModel.isInitialized) viewModel.clearPendingRecords()
 
                     // Store the eindtijd for potential vervolgtelling
-                    val eindtijdForVervolg = metadataUpdates?.eindtijd 
+                    // Use ifBlank to handle empty strings and fallback to system time
+                    val eindtijdForVervolg = metadataUpdates?.eindtijd?.ifBlank { null }
                         ?: (System.currentTimeMillis() / 1000L).toString()
 
                     // Show auto-dismissing success toast (like other popups in the app)

@@ -408,4 +408,17 @@ class MetadataScherm : AppCompatActivity() {
         // Annuleer alle achtergrondtaken
         backgroundLoadJob?.cancel()
     }
+    
+    /**
+     * Handle new intent when activity is reused (FLAG_ACTIVITY_SINGLE_TOP).
+     * This is essential for vervolgtelling to work correctly when MetadataScherm
+     * is already in the back stack.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        
+        // Re-check for vervolgtelling intent data
+        handleVervolgtellingIntent()
+    }
 }

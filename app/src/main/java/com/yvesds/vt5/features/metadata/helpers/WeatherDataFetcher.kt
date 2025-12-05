@@ -142,7 +142,8 @@ class WeatherDataFetcher(
     }
     
     private fun markWeatherAutoApplied() {
+        // Only change color to indicate weather was fetched, but keep button enabled
+        // so user can always fetch fresh weather data (especially for vervolgtelling)
         binding.btnWeerAuto.backgroundTintList = ColorStateList.valueOf("#117CAF".toColorInt())
-        binding.btnWeerAuto.isEnabled = false
     }
 }
